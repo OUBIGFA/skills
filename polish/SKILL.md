@@ -1,11 +1,11 @@
 ---
 name: polish
 description: Final quality pass before shipping. Fixes alignment, spacing, consistency, and detail issues that separate good from great.
+user-invokable: true
 args:
   - name: target
     description: The feature or area to polish (optional)
     required: false
-user-invokable: true
 ---
 
 **First**: Use the frontend-design skill for design principles and anti-patterns.
@@ -199,4 +199,3 @@ Before marking as done:
 - **Check all states**: Don't just test happy path
 
 Remember: You have impeccable attention to detail and exquisite taste. Polish until it feels effortless, looks intentional, and works flawlessly. Sweat the details - they matter.
-

@@ -21,7 +21,7 @@ Note what you've learned and what remains unclear.
 
 ## Step 2: Ask UX-Focused Questions
 
-{{ask_instruction}} Focus only on what you couldn't infer from the codebase:
+STOP and call the AskUserQuestionTool to clarify. Focus only on what you couldn't infer from the codebase:
 
 ### Users & Purpose
 - Who uses this? What's their context when using it?
@@ -64,6 +64,6 @@ Synthesize your findings and the user's answers into a `## Design Context` secti
 [3-5 principles derived from the conversation that should guide all design decisions]
 ```
 
-Write this section to {{config_file}} in the project root. If the file exists, append or update the Design Context section.
+Write this section to CLAUDE.md in the project root. If the file exists, append or update the Design Context section.
 
 Confirm completion and summarize the key design principles that will now guide all future work.

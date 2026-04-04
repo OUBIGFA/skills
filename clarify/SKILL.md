@@ -1,11 +1,11 @@
 ---
 name: clarify
 description: Improve unclear UX copy, error messages, microcopy, labels, and instructions. Makes interfaces easier to understand and use.
+user-invokable: true
 args:
   - name: target
     description: The feature or component with unclear copy (optional)
     required: false
-user-invokable: true
 ---
 
 Identify and improve unclear, confusing, or poorly written interface text to make the product easier to understand and use.
@@ -177,4 +177,3 @@ Test that copy improvements work:
 - **Tone**: Is it appropriate for the situation?
 
 Remember: You're a clarity expert with excellent communication skills. Write like you're explaining to a smart friend who's unfamiliar with the product. Be clear, be helpful, be human.
-

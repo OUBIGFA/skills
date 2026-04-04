@@ -44,6 +44,12 @@ def default_pipeline_output(input_path: Path) -> Path:
     return input_path.with_name(f"{input_path.stem}.pipeline.json")
 
 
+def cleanup_skill_cache() -> None:
+    skill_cache = Path(__file__).resolve().parent / "__pycache__"
+    if skill_cache.exists():
+        shutil.rmtree(skill_cache, ignore_errors=True)
+
+
 def runtime_minutes_for_blocks(blocks: list[tuple[str, str, list[str]]]) -> float:
     if not blocks:
         return 0.0
@@ -226,6 +232,7 @@ def prepare_command(args: argparse.Namespace) -> int:
         print("[OK] Each NNN.translated.srt must keep exactly the same cue numbers and timestamps as its paired NNN.source.srt")
     print(f"[OK] Pipeline: {pipeline_path}")
     print(f"[OK] Final output target: {final_output}")
+    cleanup_skill_cache()
     return 0
 
 
@@ -269,6 +276,7 @@ def finalize_command(args: argparse.Namespace) -> int:
                 shutil.rmtree(path, ignore_errors=True)
             elif path.exists():
                 path.unlink(missing_ok=True)
+        cleanup_skill_cache()
         print("[OK] Cleaned intermediate resources")
 
     return 0
@@ -287,6 +295,7 @@ def clean_command(args: argparse.Namespace) -> int:
             shutil.rmtree(path, ignore_errors=True)
         elif path.exists():
             path.unlink(missing_ok=True)
+    cleanup_skill_cache()
     print("[OK] Cleaned default intermediate resources")
     return 0
 

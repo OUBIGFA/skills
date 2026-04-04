@@ -31,7 +31,7 @@ Translate subtitle content into concise Simplified Chinese while preserving subt
 ## Hard Constraints
 
 - The `Highest-Priority Rule` overrides every lower-priority workflow preference in this skill.
-- Do not write intermediate resources, smoke-test outputs, caches, or temporary artifacts into the skill directory itself. Put working files beside the source subtitle file, or in an explicit workspace temp location outside the skill directory.
+- Do not write intermediate resources, smoke-test outputs, caches, `__pycache__`, or temporary artifacts into the skill directory itself. Put working files beside the source subtitle file, or in an explicit workspace temp location outside the skill directory, and clean any skill-folder cache directories by default.
 - Treat a subtitle translation request as an end-to-end execution task, not as a checkpointed drafting task.
 - Once processing starts, continue until the final translated subtitle file has been written successfully, or until a real blocker prevents further progress.
 - Do not reframe the task as blocked merely because the helper scripts do not themselves translate text.
@@ -51,8 +51,9 @@ Translate subtitle content into concise Simplified Chinese while preserving subt
 
 1. Detect whether the input is standard SRT or SRT-like subtitle blocks.
 2. If the file extension is `.txt` or another generic text format, inspect the content and treat it as subtitles when it follows numbered timed blocks.
-3. Decide whether the subtitle boundaries are already translation-friendly. If not, preprocess first by merging or splitting neighboring cues into more natural sentence units.
-4. After that decision, enter the translation workflow immediately. Do not insert any translator-discovery phase, dependency-check phase, package-check phase, or external-tool scouting phase.
+3. Identify the source language before applying any sentence-boundary repair. English may use the full local re-segmentation rules in this skill. Non-English subtitles must default to conservative structure handling unless the source punctuation and grammar make a repair unambiguous.
+4. Decide whether the subtitle boundaries are already translation-friendly. If not, preprocess first by merging or splitting neighboring cues into more natural sentence units.
+5. After that decision, enter the translation workflow immediately. Do not insert any translator-discovery phase, dependency-check phase, package-check phase, or external-tool scouting phase.
 5. After preprocessing or chunk preparation, do not detour into artifact-discovery or channel-discovery. The prepared subtitle text is the work queue; translate it directly.
 6. Before translating, pre-read the full subtitle file once to identify recurring names, product names, plugin names, UI labels, abbreviations, and other terms that must stay consistent across the whole job.
 7. If useful, generate a temporary consistency glossary that records candidate terms, intended Chinese renderings, and any rules such as “keep in English” or “translate only on first mention”.
@@ -141,6 +142,8 @@ Translate subtitle content into concise Simplified Chinese while preserving subt
 
 - This section applies to source-side preprocessing, not to the final Chinese translation pass.
 - Once preprocessing is finished, do not perform a second Chinese-side re-segmentation pass unless the user explicitly asks for rebuilt Chinese subtitle timing.
+- Apply the aggressive local sentence-repair rules in this section primarily to English source subtitles. For non-English subtitles, only repair boundaries when punctuation, grammar, and neighboring cues make the intended sentence boundary unambiguous.
+- For non-English subtitles, prefer conservative boundary repair over guesswork. If a boundary is uncertain, keep the original cue ownership and solve the translation problem with chunk-level reference context instead of rewriting subtitle structure.
 - If a sentence is split across adjacent cues in a way that is unsuitable for Chinese translation, merge the local text mentally, re-cut it at better sentence boundaries, and update local timestamps accordingly.
 - Treat long pauses conservatively but not mechanically: if a later cue is still the missing tail of the same sentence, you may merge across a pause and redistribute the local timestamps so the sentence becomes complete.
 - Prefer sentence-complete boundaries over arbitrary source cuts.
@@ -226,6 +229,7 @@ Translate subtitle content into concise Simplified Chinese while preserving subt
 - Each chunk should be large enough to preserve local context but small enough to translate safely in one pass.
 - If a permitted parallel path exists in the current environment, prefer translating independent chunks in parallel.
 - If no permitted parallel path exists, translate chunks sequentially in the current conversation.
+- For non-English chunked subtitles, give each chunk a small reference-only overlap window from the previous and next cues or chunk edge runs. That overlap is for interpretation only and must never be written into `NNN.translated.srt`.
 - Subagent ownership must be disjoint: each subagent receives a clear contiguous chunk range and only writes the matching `NNN.translated.srt` outputs for that range.
 - Inside each `NNN.translated.srt`, do not renumber cues, do not retime cues, and do not merge or split cues. Sequence numbers and timestamps must match the paired `NNN.source.srt` exactly. Chunk translation is text-only.
 - The main conversation remains responsible for chunk planning, manifest inspection, final merge, source-vs-output review, and the last consistency / polish sweep.
@@ -238,6 +242,18 @@ Translate subtitle content into concise Simplified Chinese while preserving subt
 - After chunk translation, merge only after validating that every translated chunk matches the source chunk's cue numbers, timestamps, cue order, and block count exactly.
 - If any chunk fails validation, retranslate only that chunk instead of restarting the entire file.
 - Before final delivery, review the merged output against the source subtitle, then do one consistency and polish sweep over repeated names, terminology, tone, subtitle naturalness, and cross-chunk coherence, and only then delete the temporary glossary artifacts if they are no longer needed.
+
+### Non-English Chunk Solution
+
+- If the source subtitle is not English and chunking is required, do not blindly apply English-specific sentence-splitting heuristics.
+- First classify the source as punctuation-rich or punctuation-poor.
+- If the source is punctuation-rich, allow only conservative local repair around explicit sentence marks, obvious paired clauses, and clearly broken neighboring cues.
+- If the source is punctuation-poor, keep cue boundaries stable by default and do not force speculative restructuring before translation.
+- In both cases, solve cross-chunk context loss by adding a reference-only overlap window, usually the previous `3~5` cues and next `3~5` cues, or the last and first small run around each chunk edge.
+- The overlap window is context only. It must never be written into `NNN.translated.srt`, and it must never change that chunk's cue numbers, timestamps, cue order, or block count.
+- When a sentence clearly continues across a chunk edge, use the overlap window to disambiguate translation, but write text only into the owned cues of the active chunk.
+- If a language lacks reliable sentence markers in the current file, prefer chunking at safer semantic boundaries such as long pauses, scene changes, speaker changes, or subtitle runs with visible topic shifts.
+- For non-English chunked translation, the default strategy is: preserve structure first, borrow context second, and only repair boundaries when the source evidence is strong.
 
 ## Consistency Pass
 

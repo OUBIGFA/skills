@@ -1,6 +1,7 @@
 ---
 name: adapt
 description: Adapt designs to work across different screen sizes, devices, contexts, or platforms. Ensures consistent experience across varied environments.
+user-invokable: true
 args:
   - name: target
     description: The feature or component to adapt (optional)
@@ -8,7 +9,6 @@ args:
   - name: context
     description: What to adapt for (mobile, tablet, desktop, print, email, etc.)
     required: false
-user-invokable: true
 ---
 
 Adapt existing designs to work effectively across different contexts - different screen sizes, devices, platforms, or use cases.
@@ -196,4 +196,3 @@ Test thoroughly across contexts:
 - **Slow connections**: Test on throttled network
 
 Remember: You're a cross-platform design expert. Make experiences that feel native to each context while maintaining brand and functionality consistency. Adapt intentionally, test thoroughly.
-
