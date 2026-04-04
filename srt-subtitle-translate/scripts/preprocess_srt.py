@@ -87,6 +87,8 @@ DISCOURSE_FRAGMENT_WORDS = {
 ORPHAN_LEAD_PATTERNS = (
     re.compile(r"(?i)^(?:what|all|that)\b.+\b(?:is|are|was|were)$"),
     re.compile(r"(?i)^i\s+(?:really\s+)?like$"),
+    re.compile(r"(?i)^(?:this|that|it|which|what|there|here)\s+(?:is|are|was|were)\s+[a-z']+$"),
+    re.compile(r"(?i)^.+\b(?:let's|let\s+me)$"),
     re.compile(r"(?i)^for\b.+$"),
     re.compile(r"(?i)^to\b.+$"),
 )
@@ -139,6 +141,9 @@ def collapse_spaces(text: str) -> str:
 
 def normalize_source_text(text: str) -> str:
     text = collapse_spaces(text)
+    text = re.sub(r"\.\s*\.\s*\.(?:\s*\.)*", "...", text)
+    text = re.sub(r"(?<=\w)\.\s*\.(?=\s*\w)", ".", text)
+    text = re.sub(r"(?<=\w)\.\.(?=\s*\w)", ".", text)
     text = re.sub(r"([.!?。！？])(?=(?:[\"'”’\)\]]*)[A-Z\u4e00-\u9fff])", r"\1 ", text)
     text = re.sub(
         r"\b(We|I|You|They)\s+can\s+(we'll|i'll|you'll|they'll)\b",
@@ -205,17 +210,24 @@ def strip_terminal_punctuation(text: str) -> str:
     return text.rstrip(TERMINAL_PUNCTUATION + "\"'”’)]").strip()
 
 
+def has_ellipsis_like_ending(text: str) -> bool:
+    compact = text.rstrip()
+    return bool(re.search(r"(?:\.\s*){2,}$", compact))
+
+
 def is_incomplete_chunk(text: str) -> bool:
     compact = text.strip()
     if not compact:
         return False
+    if has_ellipsis_like_ending(compact):
+        return True
     if compact[-1] not in TERMINAL_PUNCTUATION:
         return True
     stripped = compact.rstrip(TERMINAL_PUNCTUATION + "\"'”’)]")
     tail_word = last_word(stripped)
     if tail_word in CONTINUATION_WORDS or tail_word in COPULAR_WORDS:
         return True
-    if tail_word in {"maybe", "like", "okay", "ok", "well", "right", "alright"}:
+    if tail_word in {"maybe", "like", "okay", "ok", "well", "right", "alright", "let's", "lets"}:
         return True
     lowered = stripped.lower()
     if any(pattern.fullmatch(lowered) for pattern in ORPHAN_LEAD_PATTERNS):
@@ -292,6 +304,40 @@ def lowercase_continuation(text: str) -> str:
 def has_terminal_punctuation(text: str) -> bool:
     compact = text.rstrip()
     return bool(compact) and compact[-1] in TERMINAL_PUNCTUATION
+
+
+def merge_sentence_fragments(parts: list[str]) -> list[str]:
+    merged = [collapse_spaces(part) for part in parts if collapse_spaces(part)]
+    if len(merged) <= 1:
+        return merged
+
+    changed = True
+    while changed and len(merged) > 1:
+        changed = False
+        index = 0
+        while index < len(merged) - 1:
+            left = merged[index]
+            right = merged[index + 1]
+            should_merge = (
+                is_incomplete_chunk(left)
+                or is_connector_fragment(left)
+                or is_orphan_lead_fragment(left)
+                or is_singleton_fragment(right)
+                or is_orphan_lead_fragment(right)
+                or starts_soft_continuation(right)
+                or is_numeric_tail(right)
+            )
+            if not should_merge:
+                index += 1
+                continue
+            merged[index] = merge_chunks(
+                left,
+                right,
+                lowercase_right=not is_connector_fragment(left),
+            )
+            del merged[index + 1]
+            changed = True
+    return merged
 
 
 def merge_chunks(left: str, right: str, *, lowercase_right: bool = True) -> str:
@@ -411,7 +457,7 @@ def split_long_text(text: str, max_chars: int, max_parts: int) -> list[str] | No
     if not text or len(text) <= max_chars or max_parts <= 1:
         return None
 
-    sentence_parts = split_sentences(text)
+    sentence_parts = merge_sentence_fragments(split_sentences(text))
     if len(sentence_parts) > 1:
         merged_sentence_parts: list[str] = []
         remaining_slots = max_parts
@@ -576,6 +622,8 @@ def split_long_text(text: str, max_chars: int, max_parts: int) -> list[str] | No
             last_idx = boundary_idx
         if not valid or len(candidate_parts) <= 1:
             continue
+        if len(merge_sentence_fragments(candidate_parts)) != len(candidate_parts):
+            continue
 
         if best_score is None or score < best_score:
             best_score = score
@@ -637,6 +685,7 @@ def split_long_text(text: str, max_chars: int, max_parts: int) -> list[str] | No
     if len(parts) > 1 and (word_count(parts[-1]) <= 1 or len(parts[-1]) < 8):
         parts[-2] = collapse_spaces(f"{parts[-2]} {parts[-1]}")
         parts.pop()
+    parts = merge_sentence_fragments(parts)
     return parts if len(parts) > 1 else None
 
 

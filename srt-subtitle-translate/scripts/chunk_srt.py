@@ -33,13 +33,21 @@ def validate_translated_chunk(
         if translated_cue != source_cue:
             return (
                 False,
-                f"Chunk {chunk_index:03d} cue mismatch at block {position}: expected cue {source_cue}, got {translated_cue}",
+                (
+                    f"Chunk {chunk_index:03d} cue mismatch at block {position}: "
+                    f"expected cue {source_cue}, got {translated_cue}. "
+                    "Translated chunks must keep exactly the same cue numbers as their paired source chunks."
+                ),
             )
 
         if translated_timestamp != source_timestamp:
             return (
                 False,
-                f"Chunk {chunk_index:03d} timestamp mismatch at cue {source_cue}: expected {source_timestamp}, got {translated_timestamp}",
+                (
+                    f"Chunk {chunk_index:03d} timestamp mismatch at cue {source_cue}: "
+                    f"expected {source_timestamp}, got {translated_timestamp}. "
+                    "Translated chunks must keep exactly the same timestamps as their paired source chunks."
+                ),
             )
 
     return True, None
@@ -242,7 +250,10 @@ def main() -> int:
     split_parser.add_argument("--target-minutes", type=float, default=20.0, help="Target runtime minutes per chunk")
     split_parser.set_defaults(func=split_command)
 
-    merge_parser = subparsers.add_parser("merge", help="Merge translated chunk files into a final subtitle file")
+    merge_parser = subparsers.add_parser(
+        "merge",
+        help="Merge translated chunk files into a final subtitle file after verifying identical cue numbers and timestamps",
+    )
     merge_parser.add_argument("manifest", help="Path to the manifest.json produced by split")
     merge_parser.add_argument("output", nargs="?", help="Optional final output subtitle path")
     merge_parser.set_defaults(func=merge_command)

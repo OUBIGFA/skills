@@ -105,6 +105,37 @@ def write_pipeline_file(
             "preferred": "direct_fullfile" if direct_translate else "parallel_subagents",
             "fallback": "direct_fullfile" if direct_translate else "sequential_chunks",
         },
+        "current_stage": "ready_for_model_translation",
+        "allowed_next_actions": (
+            ["translate_fullfile_with_model", "write_final_output", "run_final_review"]
+            if direct_translate
+            else ["translate_chunk_with_model", "resume_next_unfinished_chunk", "merge_translated_chunks"]
+        ),
+        "execution_constraints": {
+            "translation_executor": "model_only",
+            "translator_discovery_forbidden": True,
+            "translated_file_structure_locked": True,
+            "translated_file_contract": (
+                "Every in-progress translated file must preserve exactly the same cue numbers, "
+                "timestamps, cue order, and block count as its paired source file. Only subtitle text may change."
+            ),
+            "forbidden_actions": [
+                "search_for_existing_translators",
+                "probe_local_translation_tools",
+                "probe_translation_packages",
+                "install_translation_packages",
+                "use_browser_translation_workflows",
+                "use_external_translation_apis",
+                "use_translation_websites",
+                "search_for_existing_subtitles",
+                "probe_local_llm_wrappers",
+                "probe_local_api_relays",
+            ],
+            "required_next_step": (
+                "Translate the subtitle text directly with the model. "
+                "Use local scripts only for preprocessing, chunk orchestration, validation, merge, and cleanup."
+            ),
+        },
         "work_items": [
             {
                 "chunk_index": item["index"],
@@ -188,8 +219,11 @@ def prepare_command(args: argparse.Namespace) -> int:
     print(f"[OK] Terms: {terms_path} ({term_count} candidates)")
     if direct_translate:
         print(f"[OK] Direct full-file translation recommended")
+        print("[OK] Translation must preserve the preprocessed cue numbering and timestamps until final completion")
     else:
         print(f"[OK] Chunks: {chunk_dir}")
+        print("[OK] Next step is model-driven chunk translation only; translator discovery is forbidden")
+        print("[OK] Each NNN.translated.srt must keep exactly the same cue numbers and timestamps as its paired NNN.source.srt")
     print(f"[OK] Pipeline: {pipeline_path}")
     print(f"[OK] Final output target: {final_output}")
     return 0
@@ -206,9 +240,6 @@ def finalize_command(args: argparse.Namespace) -> int:
     if not manifest_value:
         print("[ERROR] This pipeline is configured for direct full-file translation and does not use finalize.", file=sys.stderr)
         return 1
-    if not args.reviewed:
-        print("[ERROR] Finalize requires --reviewed after completing the mandatory master-pass review.", file=sys.stderr)
-        return 1
 
     manifest = Path(manifest_value)
     final_output = Path(args.output) if args.output else Path(payload["final_output"])
@@ -220,6 +251,11 @@ def finalize_command(args: argparse.Namespace) -> int:
     status = chunk_merge_command(merge_args)
     if status != 0:
         return status
+
+    if not args.reviewed:
+        print("[OK] Merged translated chunks into a draft final subtitle")
+        print("[OK] Master-pass review is still required before cleanup and final completion")
+        return 0
 
     if not args.keep_intermediates:
         cleanup_paths = [
@@ -262,6 +298,15 @@ def status_command(args: argparse.Namespace) -> int:
         return 1
 
     payload = json.loads(pipeline_path.read_text(encoding="utf-8"))
+    print(f"[OK] Source: {payload['source']}")
+    print(f"[OK] Stage: {payload.get('current_stage', 'unknown')}")
+    print(f"[OK] Runtime minutes: {payload.get('runtime_minutes', 0)}")
+    print(f"[OK] Final output: {payload['final_output']}")
+    mode = payload.get("translation_mode", {}).get("preferred", "unknown")
+    print(f"[OK] Translation mode: {mode}")
+    allowed = payload.get("allowed_next_actions", [])
+    if allowed:
+        print(f"[OK] Allowed next actions: {', '.join(allowed)}")
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 
@@ -288,7 +333,7 @@ def main() -> int:
     finalize = subparsers.add_parser("finalize", help="Merge translated chunks into the final subtitle and optionally clean intermediates")
     finalize.add_argument("pipeline", help="Path to the pipeline JSON written by prepare")
     finalize.add_argument("--output", help="Optional final output subtitle path override")
-    finalize.add_argument("--reviewed", action="store_true", help="Confirm that the mandatory post-merge master-pass review has been completed")
+    finalize.add_argument("--reviewed", action="store_true", help="Confirm that the mandatory post-merge master-pass review has been completed; without this flag, finalize only merges and keeps intermediates")
     finalize.add_argument("--keep-intermediates", action="store_true", help="Keep preprocessed, terms, chunk dir, and pipeline metadata")
     finalize.set_defaults(func=finalize_command)
 

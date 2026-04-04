@@ -15,6 +15,8 @@ Translate subtitle content into concise Simplified Chinese while preserving subt
 - Highest priority: if chunking or subagents are used, that does not create a stopping point. You must still drive the task through merge, master-pass review, and final output delivery in the same execution flow.
 - Highest priority: subtitle translation itself must be performed by the language model running this task. Do not search for, probe for, install, call, or switch to any external translator, translation website, translation API, browser translation flow, or third-party translation library in place of doing the translation directly.
 - Highest priority: never start a subtitle task by checking whether a separate translator exists. Do not run dependency discovery, package probing, `pip show`, `pip install`, `importlib` checks, browser lookups, or local-tool scouting for translators. Start the actual subtitle workflow instead.
+- Highest priority: once preprocessing or chunk preparation has finished, the next step is always direct model translation of the prepared subtitle text. Do not insert any search for existing Chinese subtitles, reusable translated artifacts, local translation channels, local LLM wrappers, API relays, browser tools, or external translator substitutes.
+- Highest priority: every in-progress translated subtitle file must preserve exactly the same cue numbers, timestamps, cue order, and block count as its paired source subtitle file. Only subtitle text may change at translation time.
 
 ## Execution Boundary
 
@@ -29,11 +31,13 @@ Translate subtitle content into concise Simplified Chinese while preserving subt
 ## Hard Constraints
 
 - The `Highest-Priority Rule` overrides every lower-priority workflow preference in this skill.
+- Do not write intermediate resources, smoke-test outputs, caches, or temporary artifacts into the skill directory itself. Put working files beside the source subtitle file, or in an explicit workspace temp location outside the skill directory.
 - Treat a subtitle translation request as an end-to-end execution task, not as a checkpointed drafting task.
 - Once processing starts, continue until the final translated subtitle file has been written successfully, or until a real blocker prevents further progress.
 - Do not reframe the task as blocked merely because the helper scripts do not themselves translate text.
 - Do not treat the absence of an automatic translation script or translation package as a reason to go hunting for external translators. The model itself must do the translation work.
 - Do not execute translator-discovery commands. Examples of forbidden behavior include checking translation packages, attempting translator installs, or scanning the machine for translation-specific tools before translating.
+- Do not search for existing translation artifacts or alternate translation channels as a substitute for doing the translation now. Forbidden examples include searching for ready-made Chinese subtitle files, probing workspace scripts for translator wrappers, probing local API relays, or browsing for external subtitle copies before translating.
 - Do not pause mid-work to ask whether you should continue chunking, continue translating, merge the chunks, or finish the file.
 - Do not stop merely to report progress when untranslated chunks still remain and no blocker exists.
 - Do not ask for confirmation between preprocessing, chunking, translating, validation, merge, cleanup, or final file write.
@@ -49,28 +53,29 @@ Translate subtitle content into concise Simplified Chinese while preserving subt
 2. If the file extension is `.txt` or another generic text format, inspect the content and treat it as subtitles when it follows numbered timed blocks.
 3. Decide whether the subtitle boundaries are already translation-friendly. If not, preprocess first by merging or splitting neighboring cues into more natural sentence units.
 4. After that decision, enter the translation workflow immediately. Do not insert any translator-discovery phase, dependency-check phase, package-check phase, or external-tool scouting phase.
-5. Before translating, pre-read the full subtitle file once to identify recurring names, product names, plugin names, UI labels, abbreviations, and other terms that must stay consistent across the whole job.
-6. If useful, generate a temporary consistency glossary that records candidate terms, intended Chinese renderings, and any rules such as “keep in English” or “translate only on first mention”.
-7. When preprocessing changes boundaries, redistribute timestamps proportionally so the new timing matches the new sentence segmentation and still follows playback order.
-8. After preprocessing, run a whole-file boundary audit instead of trusting local fixes blindly. Scan the rebuilt subtitle for suspicious break classes such as noun-phrase splits, phrasal-verb splits, subject-modal splits, determiner-to-noun breaks, preposition-object breaks, dangling conjunction tails, and over-compressed action chains; then normalize those classes before translation.
-9. Before translating, estimate whether the full subtitle file is too large for one stable pass. If the runtime is within about 30 minutes and the subtitle can be completed safely in one conversation, prefer translating the whole file directly instead of chunking. If chunking is required, prefer runtime-based chunks of about 20 minutes each.
-10. When chunking is needed, continue the job by default. Do not stop just to ask whether chunk-by-chunk translation is acceptable.
-11. If a permitted parallel path exists in the current environment, assign disjoint contiguous cue ranges to it in parallel. Otherwise, continue sequentially with the same chunk boundaries in the current conversation.
-12. Give every chunk translator the same terminology decisions, punctuation rules, and formatting constraints before translation starts.
-13. If the full translation cannot be completed safely in a single response, continue across multiple turns or responses using the same chunk manifest until every chunk has been translated and merged.
-14. Track progress through the existing chunk files and `manifest.json`, and resume from the next unfinished `NNN.translated.srt` instead of restarting the whole file.
-15. Translate only subtitle text.
-16. Reuse the same term decisions across every chunk so names and terminology remain stable from start to finish.
-17. Compress filler words, hesitations, and repetitive fragments into the shortest faithful Chinese phrasing.
-18. Preserve technical terms, product names, and important English terms when forced translation would reduce accuracy.
-19. Normalize symbols, units, and mixed Chinese/English spacing before returning the final subtitle text.
-20. After chunked translation, validate that every translated chunk preserves the same block count, cue numbering, and timestamps as its source chunk, then merge all translated chunks back into one final subtitle file.
-21. If subagents were used, the main conversation must compare the merged Chinese subtitle against the original source subtitle and run a final master-pass review before delivery.
-22. The mandatory master-pass review must catch and fix terminology drift, tone drift, mistranslations caused by chunk-local context loss, awkward literal phrasing, missing text, duplicated text, formatting drift, and subtitle lines that are accurate but still not natural Chinese.
-23. Merge validation alone is never sufficient when subagents were used. Completion requires both successful merge and a final master-pass polish by the main conversation.
-24. After merge, run one final global consistency and polish pass locally to normalize terminology drift, punctuation differences, wording mismatches, and style inconsistencies across chunks.
-25. After the final subtitle file is written successfully, clean up temporary consistency artifacts such as term lists or scratch glossary files unless the user explicitly asks to keep them.
-26. Unless a real blocker occurs, do not emit a progress-only completion message before the validation, merge, final master-pass review, final polish pass, and cleanup steps are finished.
+5. After preprocessing or chunk preparation, do not detour into artifact-discovery or channel-discovery. The prepared subtitle text is the work queue; translate it directly.
+6. Before translating, pre-read the full subtitle file once to identify recurring names, product names, plugin names, UI labels, abbreviations, and other terms that must stay consistent across the whole job.
+7. If useful, generate a temporary consistency glossary that records candidate terms, intended Chinese renderings, and any rules such as “keep in English” or “translate only on first mention”.
+8. When preprocessing changes boundaries, redistribute timestamps proportionally so the new timing matches the new sentence segmentation and still follows playback order.
+9. After preprocessing, run a whole-file boundary audit instead of trusting local fixes blindly. Scan the rebuilt subtitle for suspicious break classes such as noun-phrase splits, phrasal-verb splits, subject-modal splits, determiner-to-noun breaks, preposition-object breaks, dangling conjunction tails, and over-compressed action chains; then normalize those classes before translation.
+10. Before translating, estimate whether the full subtitle file is too large for one stable pass. If the runtime is within about 30 minutes and the subtitle can be completed safely in one conversation, prefer translating the whole file directly instead of chunking. If chunking is required, prefer runtime-based chunks of about 20 minutes each.
+11. When chunking is needed, continue the job by default. Do not stop just to ask whether chunk-by-chunk translation is acceptable.
+12. If a permitted parallel path exists in the current environment, assign disjoint contiguous cue ranges to it in parallel. Otherwise, continue sequentially with the same chunk boundaries in the current conversation.
+13. Give every chunk translator the same terminology decisions, punctuation rules, and formatting constraints before translation starts.
+14. If the full translation cannot be completed safely in a single response, continue across multiple turns or responses using the same chunk manifest until every chunk has been translated and merged.
+15. Track progress through the existing chunk files and `manifest.json`, and resume from the next unfinished `NNN.translated.srt` instead of restarting the whole file.
+16. Translate only subtitle text.
+17. Reuse the same term decisions across every chunk so names and terminology remain stable from start to finish.
+18. Compress filler words, hesitations, and repetitive fragments into the shortest faithful Chinese phrasing.
+19. Preserve technical terms, product names, and important English terms when forced translation would reduce accuracy.
+20. Normalize symbols, units, and mixed Chinese/English spacing before returning the final subtitle text.
+21. After chunked translation, validate that every translated chunk preserves exactly the same cue numbers, timestamps, cue order, and block count as its paired source chunk, then merge all translated chunks back into one final subtitle file.
+22. If subagents were used, the main conversation must compare the merged Chinese subtitle against the original source subtitle and run a final master-pass review after merge and before final completion.
+23. The mandatory master-pass review must catch and fix terminology drift, tone drift, mistranslations caused by chunk-local context loss, awkward literal phrasing, missing text, duplicated text, formatting drift, and subtitle lines that are accurate but still not natural Chinese.
+24. Merge validation alone is never sufficient when subagents were used. Completion requires both successful merge and a final master-pass polish by the main conversation.
+25. After merge, run one final global consistency and polish pass locally to normalize terminology drift, punctuation differences, wording mismatches, and style inconsistencies across chunks.
+26. After the final subtitle file is written successfully, clean up temporary consistency artifacts such as term lists or scratch glossary files unless the user explicitly asks to keep them.
+27. Unless a real blocker occurs, do not emit a progress-only completion message before the validation, merge, final master-pass review, final polish pass, and cleanup steps are finished.
 
 ## Quick Start
 
@@ -85,12 +90,13 @@ Translate subtitle content into concise Simplified Chinese while preserving subt
 - If a permitted parallel path exists in the current environment, translate the generated chunk files in parallel by assigning disjoint chunk ranges to it.
 - If no permitted parallel path exists, translate the generated chunk files one by one in the current conversation.
 - When chunking is required, proceed automatically. Do not pause merely to ask for permission to continue chunk by chunk.
+- Once chunking has been prepared, treat the listed `source_file` entries as the immediate translation queue. Do not search for translators, wrappers, APIs, ready-made subtitle copies, or alternate channels before translating them.
 - If the environment requires multiple replies to finish the whole subtitle, keep translating subsequent chunks in later replies until the final merge step is done.
 - Do not surface external translation products or APIs as an alternative path. Finish the job with the current conversation and locally available workflow tools unless a parallel path is already permitted in the current environment.
 - Resume from any already-finished translated chunks in the chunk folder instead of retranslating completed work.
 - Keep the temporary consistency glossary beside the working subtitle or chunk folder while translating, and apply it to every chunk.
-- Save each translated chunk into the same chunk folder using the matching `NNN.translated.srt` filename from `manifest.json`.
-- After all chunks are translated, run `scripts/chunk_srt.py merge` to validate block counts and write the final merged subtitle file.
+- Save each translated chunk into the same chunk folder using the matching `NNN.translated.srt` filename from `manifest.json`, and keep the cue numbers and timestamps exactly identical to the paired `NNN.source.srt`.
+- After all chunks are translated, run `scripts/chunk_srt.py merge` to validate structure and write the merged draft subtitle file, then do the mandatory master-pass review before treating it as complete.
 - After the final `-CN` file has been written and checked, delete temporary consistency files unless the user asked to preserve them.
 - When writing the translated result to disk, save it in the same directory as the source subtitle file and append `-CN` before the original extension.
 - If you need to persist the resegmented intermediate, save it beside the source file as `<original-name>.preprocessed<ext>`.
@@ -110,7 +116,7 @@ Translate subtitle content into concise Simplified Chinese while preserving subt
 - After re-segmentation, renumber cues sequentially from top to bottom in the final output.
 - Preserve timestamps exactly unless preprocessing is explicitly used to repair broken segmentation.
 - Do not reorder or skip subtitle blocks.
-- In chunked workflows, each translated chunk must preserve exactly the same subtitle blocks as its source chunk: same cue numbers, same timestamps, same cue order, and same block count. Only the subtitle text may change.
+- In chunked workflows, each translated chunk must preserve exactly the same subtitle blocks as its source chunk: same cue numbers, same timestamps, same cue order, and same block count. This is a hard structural requirement. Only the subtitle text may change.
 - Names, terminology, and first-chosen translations must remain consistent across the entire file, including across chunk boundaries.
 - In subagent workflows, each subagent must own only its assigned contiguous chunk range and must not rewrite other chunks.
 - In subagent workflows, merged output is never considered final until the main conversation has reviewed it against the source subtitle and completed a final polish pass.
@@ -221,7 +227,7 @@ Translate subtitle content into concise Simplified Chinese while preserving subt
 - If a permitted parallel path exists in the current environment, prefer translating independent chunks in parallel.
 - If no permitted parallel path exists, translate chunks sequentially in the current conversation.
 - Subagent ownership must be disjoint: each subagent receives a clear contiguous chunk range and only writes the matching `NNN.translated.srt` outputs for that range.
-- Inside each `NNN.translated.srt`, do not renumber cues, do not retime cues, and do not merge or split cues. Chunk translation is text-only.
+- Inside each `NNN.translated.srt`, do not renumber cues, do not retime cues, and do not merge or split cues. Sequence numbers and timestamps must match the paired `NNN.source.srt` exactly. Chunk translation is text-only.
 - The main conversation remains responsible for chunk planning, manifest inspection, final merge, source-vs-output review, and the last consistency / polish sweep.
 - Once chunking starts, treat completion of all chunks plus final merge as the default end-to-end task. Do not stop solely to ask whether to continue.
 - Once chunking starts, do not stop after a partial set of translated chunks just to summarize status or wait for another user message.
@@ -229,7 +235,7 @@ Translate subtitle content into concise Simplified Chinese while preserving subt
 - Do not treat sequential chunk translation in the current conversation as a degraded fallback. It is a first-class completion path.
 - On resumed work, inspect the chunk directory and continue from the first missing `NNN.translated.srt`.
 - On resumed work, also reload the temporary glossary or term list before continuing, so the remaining chunks use the same terminology decisions.
-- After chunk translation, merge only after validating that every translated chunk matches the source chunk's cue numbers, timestamps, cue order, and block count.
+- After chunk translation, merge only after validating that every translated chunk matches the source chunk's cue numbers, timestamps, cue order, and block count exactly.
 - If any chunk fails validation, retranslate only that chunk instead of restarting the entire file.
 - Before final delivery, review the merged output against the source subtitle, then do one consistency and polish sweep over repeated names, terminology, tone, subtitle naturalness, and cross-chunk coherence, and only then delete the temporary glossary artifacts if they are no longer needed.
 
@@ -272,9 +278,9 @@ Translate subtitle content into concise Simplified Chinese while preserving subt
 - `extract_subtitle_terms.py` scans the full subtitle and writes a temporary JSON list of recurring candidate names and terms to help maintain translation consistency across chunks.
 - `chunk_srt.py split` writes a chunk folder with `manifest.json`, `NNN.source.srt`, and reserved `NNN.translated.srt` output names.
 - `chunk_srt.py split` uses runtime-based chunking and targets about `20` minutes per chunk by default.
-- `chunk_srt.py merge` validates translated chunk cue numbers, timestamps, cue order, and block counts before merging and writes the final merged subtitle beside the original source by default.
+- `chunk_srt.py merge` validates translated chunk cue numbers, timestamps, cue order, and block counts before merging and hard-fails on any mismatch. It writes the final merged subtitle beside the original source by default.
 - `subtitle_pipeline.py prepare` runs preprocessing, extracts recurring terms, and only creates chunks when runtime or stability requires it. Subtitles within about `30` minutes stay on the direct full-file path by default unless `--force-chunk` is used.
-- `subtitle_pipeline.py finalize` merges translated chunks into the final subtitle file only after the mandatory master-pass review has been completed and acknowledged with `--reviewed`.
+- `subtitle_pipeline.py finalize` always performs the merge first. Without `--reviewed`, it stops after producing the merged draft so the mandatory master-pass review can happen. With `--reviewed`, it also performs completion cleanup.
 - `subtitle_pipeline.py clean` deletes the default intermediate resources for a source subtitle.
 - `subtitle_pipeline.py status` prints the pipeline JSON for inspection or recovery.
 - If `output-file` is omitted, the script writes beside the source file and appends `-CN` before the original extension.
