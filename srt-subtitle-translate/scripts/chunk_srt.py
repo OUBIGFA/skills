@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import sys
+sys.dont_write_bytecode = True
+
 import argparse
 import json
 from pathlib import Path
-import sys
 
 from preprocess_srt import TERMINAL_PUNCTUATION, parse_blocks, parse_timestamp_range, render_blocks
 
@@ -81,11 +83,11 @@ def choose_split_index(
         return 1
 
     start_ms, _ = parse_timestamp_range(chunk[0][1])
-    best_index = len(chunk) - 1
+    best_index = len(chunk)
     best_score: float | None = None
     min_index = max(1, round(len(chunk) * 0.6))
 
-    for index in range(min_index, len(chunk)):
+    for index in range(min_index, len(chunk) + 1):
         previous_block = chunk[index - 1]
         next_block = chunk[index] if index < len(chunk) else None
         _, boundary_ms = parse_timestamp_range(previous_block[1])

@@ -1,41 +1,18 @@
-# Subtitle Translation Reference
+﻿# Subtitle Translation Reference
 
 Use this file only when terminology consistency or edge-case formatting matters.
 
-## Non-Translatable Or Usually Kept In English
-
-- Cinema
-- Noise
-- Redshift
-- Volume
-- Fields
-- Beauty
-- Coloso
-- Bucket Rendering
-
-## Preferred Mappings
-
-- Plane -> 平面
-- Material -> 材质
-- Light -> 灯光
-- Lighting -> 布光
-- Displacement -> 置换
-- Mask -> 遮罩
-- Commander -> 管理器
-- Viewport -> 视窗
-- Example -> 案例
-
 ## Terminology Policy
 
-- Keep English person names as written in the source.
-- Transliterate non-English person names into a stable English-form spelling when needed by the source convention.
-- Preserve software names, feature names, and abbreviations in English if Chinese translation would be ambiguous.
-- Use `中文（English）` only when first-use clarification is helpful.
+- Keep English person names as written in the source unless the project already uses an established Chinese form.
+- Preserve software names, product names, feature names, abbreviations, and UI labels in English when Chinese translation would be ambiguous.
+- Use `中文（English）` only when first-use clarification is genuinely helpful.
+- Build a temporary project glossary from the current subtitle file instead of relying on fixed domain mappings.
 
 ## Subtitle-Specific Constraints
 
 - Do not output Markdown block quotes or citation markers.
-- Do not append `。` to the end of translated subtitle lines by default.
+- Do not append Chinese sentence-final punctuation to translated subtitle lines by default.
 - Do not use emoji.
 - Keep the output concise enough for subtitle reading speed.
 
@@ -43,13 +20,6 @@ Use this file only when terminology consistency or edge-case formatting matters.
 
 Usually remove or compress these when they are merely filler:
 
-- 嗯
-- 哦
-- 呃
-- 这个
-- 那个
-- 实际上
-- 就是说
 - Yeah
 - OK
 - Ok
@@ -75,4 +45,3 @@ Keep them only if they function as real content, such as:
 - `10 by 10` -> `10×10`
 - `from 10 to 20` -> `10~20`
 - `plus or minus 5` -> `±5`
-- `在 C4D 中设置 100%，亮度为 500nits`

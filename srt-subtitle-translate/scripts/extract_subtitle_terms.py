@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
+import sys
+sys.dont_write_bytecode = True
+
 import argparse
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
 import re
-import sys
 
 from preprocess_srt import parse_blocks
 

@@ -1,37 +1,40 @@
-# Chunk Workflow
+﻿# Subtitle Translation Helper Scripts
 
-Use `chunk_srt.py` when the subtitle file is too large to translate reliably in one pass.
+These scripts only preprocess, scan, split, validate, and merge subtitle files. The language model in the main conversation does the actual semantic segmentation review, translation, and final review/polish.
 
-Before translating a large or terminology-heavy subtitle, do one full-file consistency pass first. The simplest workflow is:
+Entry points:
+
+- `preprocess_srt.py` - whitespace/formatting normalization; never rewrites cue boundaries. Default output is `<stem>.preprocessed<ext>` beside the source; `-CN` is reserved for the formal final deliverable.
+- `extract_subtitle_terms.py` - scan the subtitle for recurring names/terms and emit a candidate glossary JSON for translation consistency.
+- `detect_orphan_tails.py` - report-only scan for suspicious orphan-tail / orphan-lead cue pairs that may deserve review during semantic segmentation.
+- `detect_clause_rebalance.py` - report-only scan for possible clause-boundary rebalance candidates. The model decides whether any repair is actually warranted.
+- `chunk_srt.py` - `split` a large subtitle into runtime-based chunks (default about 20 min each) and later `merge` translated chunks back into one draft subtitle; hard-fails on any cue / timestamp / block-count mismatch.
+- `subtitle_pipeline.py` - orchestrator. `prepare` runs preprocess + term extract + optional hint reports, and only creates chunks when runtime exceeds about 30 min or `--force-chunk` is passed. `set-stage` persists `prepared`, `translated`, `review_polished`, or `finalized` after main-conversation work. `finalize` merges to a draft subtitle by default and writes the formal final output only when passed `--reviewed`. `clean` deletes default intermediates. `status` prints the pipeline JSON.
+
+Typical flows:
+
+## Full pipeline (recommended)
+
+```bash
+python scripts/subtitle_pipeline.py prepare "D:\Data\Desktop\demo.srt"
+# Main model reviews segmentation, translates, and polishes.
+python scripts/subtitle_pipeline.py finalize "D:\Data\Desktop\demo.pipeline.json" --reviewed
+```
+
+## Manual chunking
 
 ```bash
 python scripts/extract_subtitle_terms.py "D:\Data\Desktop\demo.srt"
-```
-
-This creates a temporary sibling file such as `demo.terms.json` with recurring candidate names and terms. Use it as a working glossary while translating, then delete it after the final subtitle is merged unless the user wants to keep it.
-
-When chunking is required, the expected workflow is to keep going until all `*.translated.srt` files are created and the final merged `-CN` file is written. Do not stop only to ask whether chunk-by-chunk continuation is acceptable.
-
-## Split
-
-```bash
 python scripts/chunk_srt.py split "D:\Data\Desktop\demo.srt"
-```
-
-This creates a sibling chunk folder such as `demo.chunks\` containing:
-
-- `manifest.json`
-- `001.source.srt`
-- `002.source.srt`
-- `...`
-
-Translate each `*.source.srt` into the matching `*.translated.srt` file while preserving block count, timestamps, and local cue order.
-If the full job spans multiple replies, resume from the first missing `*.translated.srt` instead of restarting completed chunks.
-
-## Merge
-
-```bash
+# Main model translates each NNN.source.srt into NNN.translated.srt with identical cue numbers and timestamps.
 python scripts/chunk_srt.py merge "D:\Data\Desktop\demo.chunks\manifest.json"
 ```
 
-This validates block counts for every translated chunk and writes the merged final subtitle beside the source file as `demo-CN.srt`.
+Optional hint reports during semantic segmentation review:
+
+```bash
+python scripts/detect_orphan_tails.py "D:\Data\Desktop\demo.srt"
+python scripts/detect_clause_rebalance.py "D:\Data\Desktop\demo.srt"
+```
+
+If execution spans multiple replies, resume from the first missing `*.translated.srt` instead of restarting completed chunks. Do not use parallel subagents as the default translation path.
