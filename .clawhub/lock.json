@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "skills": {
+    "openstoryline-install": {
+      "version": "0.0.4",
+      "installedAt": 1777111448138
+    },
+    "openstoryline-use": {
+      "version": "0.0.5",
+      "installedAt": 1777111466441
+    }
+  }
+}
