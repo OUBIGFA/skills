@@ -1,274 +1,106 @@
 ---
 name: agent-reach
 description: >
-  Give your AI agent eyes to see the entire internet. Install and configure
-  upstream tools for Twitter/X, Reddit, YouTube, GitHub, Bilibili, XiaoHongShu,
-  Douyin, LinkedIn, Boss直聘, RSS, and any web page — then call them directly.
-  Use when: (1) setting up platform access tools for the first time,
-  (2) checking which platforms are available,
-  (3) user asks to configure/enable a platform channel.
-  Triggers: "帮我配", "帮我添加", "帮我安装", "agent reach", "install channels",
-  "configure twitter", "enable reddit".
+  Give your AI agent eyes to see the entire internet.
+  17 platforms via CLI, MCP, curl, and Python scripts.
+  Zero config for 8 channels.
+
+  【路由方式】SKILL.md 包含路由表和常用命令，复杂场景需按需阅读对应分类的 references/*.md。
+  分类：search / social (小红书/抖音/微博/推特/B站/V2EX/Reddit) / career(LinkedIn) / dev(github) / web(网页/文章/公众号/RSS) / video(YouTube/B站/播客).
+
+  Use when user asks to search, read, or interact on any supported platform,
+  shares a URL, or asks to search the web.
+triggers:
+  - search: 搜/查/找/search/搜索/查一下/帮我搜
+  - social:
+    - 小红书: xiaohongshu/xhs/小红书/红书
+    - 抖音: douyin/抖音
+    - Twitter: twitter/推特/x.com/推文
+    - 微博: weibo/微博
+    - B站: bilibili/b站/哔哩哔哩
+    - V2EX: v2ex
+    - Reddit: reddit
+  - career: 招聘/职位/求职/linkedin/领英/找工作
+  - dev: github/代码/仓库/gh/issue/pr/分支/commit
+  - web: 网页/链接/文章/公众号/微信文章/rss/读一下/打开这个
+  - video: youtube/视频/播客/字幕/小宇宙/转录/yt
+  - finance: 雪球/股票/stock/xueqiu/行情/基金
+metadata:
+  openclaw:
+    homepage: https://github.com/Panniantong/Agent-Reach
 ---
 
-# Agent Reach
+# Agent Reach — 路由器
 
-Install and configure upstream tools for 12+ platforms. After setup, call them directly — no wrapper layer.
+17 平台工具集合。根据用户意图选择对应分类。
 
-## Setup
+## 路由表
 
-```bash
-pip install https://github.com/Panniantong/agent-reach/archive/main.zip
-agent-reach install --env=auto
-agent-reach doctor
-```
+| 用户意图 | 分类 | 详细文档 |
+|---------|------|---------|
+| 网页搜索/代码搜索 | search | [references/search.md](references/search.md) |
+| 小红书/抖音/微博/推特/B站/V2EX/Reddit | social | [references/social.md](references/social.md) |
+| 招聘/职位/LinkedIn | career | [references/career.md](references/career.md) |
+| GitHub/代码 | dev | [references/dev.md](references/dev.md) |
+| 网页/文章/公众号/RSS | web | [references/web.md](references/web.md) |
+| YouTube/B站/播客字幕 | video | [references/video.md](references/video.md) |
 
-`install` auto-detects your environment and installs core dependencies (Node.js, mcporter, xreach CLI, gh CLI, yt-dlp, feedparser). Run `doctor` to see what's active.
-
-## Management
-
-```bash
-agent-reach doctor        # channel status overview
-agent-reach watch         # quick health + update check
-agent-reach check-update  # check for new versions
-```
-
-## Configure channels
+## 零配置快速命令
 
 ```bash
-agent-reach configure twitter-cookies "auth_token=xxx; ct0=yyy"
-agent-reach configure proxy http://user:pass@ip:port
-agent-reach configure --from-browser chrome    # auto-extract cookies from local browser
-```
-
-## Configuring a channel ("帮我配 XXX")
-
-When a user asks to configure/enable any channel:
-
-1. Run `agent-reach doctor`
-2. Find the channel — it shows status (✅/⚠️/⬜) and **what to do next**
-3. Execute what you can automatically (install packages, start services)
-4. For human-required steps (paste cookies), tell the user what to do
-5. Run `agent-reach doctor` again to verify
-
-**Do NOT memorize per-channel steps.** Always rely on `doctor` output.
-
-### Cookie 导入（所有需要登录的平台通用）
-
-> ⚠️ **重要提醒：** 使用 Cookie 登录的平台存在封号风险，请提醒用户务必使用**专用小号**。
-
-所有需要 Cookie 的平台（Twitter、小红书等），**优先使用 Cookie-Editor 导入**：
-
-1. 用户在自己的浏览器登录对应平台
-2. 安装 [Cookie-Editor](https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm) Chrome 插件
-3. 点击插件 → Export → Header String
-4. 把导出的字符串发给 Agent
-
-本地电脑用户也可以用 `agent-reach configure --from-browser chrome` 一键自动提取。
-
-扫码登录是备选方案（仅限本地有浏览器的情况），Cookie-Editor 更简单可靠。
-
-### Other human actions
-
-- **Proxy:** Reddit/Bilibili/XiaoHongShu may block server IPs — suggest a residential proxy if on a server
-
----
-
-## Using Upstream Tools Directly
-
-After `agent-reach install`, call the upstream tools directly. No need for `agent-reach read` or `agent-reach search`.
-
-### Twitter/X（默认先可读中转，xreach 为降级方案）
-
-默认优先顺序：
-1. `https://defuddle.md/https://x.com/...`
-2. `https://r.jina.ai/http://x.com/...`
-3. 只有当两路失败、内容缺失、或需要更高置信复核时，再用 xreach / 官方 X API
-
-```bash
-# Search tweets
-xreach search "query" --json -n 10
-
-# Read a specific tweet
-xreach tweet https://x.com/user/status/123 --json
-
-# Read a user's timeline
-xreach tweets @username --json -n 20
-```
-
-### YouTube (yt-dlp)
-
-> ⚠️ yt-dlp 需要 JS runtime 才能下载 YouTube。`agent-reach install` 会自动配置 Node.js 作为 runtime。
-> 如果遇到 "Sign in to confirm you're not a bot"，是 IP 被 YouTube 反爬，换代理或加 cookies。
-
-```bash
-# Get video metadata
-yt-dlp --dump-json "https://www.youtube.com/watch?v=xxx"
-
-# Download subtitles only
-yt-dlp --write-sub --write-auto-sub --sub-lang "zh-Hans,zh,en" --skip-download -o "/tmp/%(id)s" "URL"
-# Then read the .vtt file
-
-# Search (yt-dlp ytsearch)
-yt-dlp --dump-json "ytsearch5:query"
-
-# If "no JS runtime" warning: ensure Node.js is installed, then run:
-#   mkdir -p ~/.config/yt-dlp && echo "--js-runtimes node" >> ~/.config/yt-dlp/config
-```
-
-### Bilibili (yt-dlp)
-
-> ⚠️ 服务器 IP 可能被 Bilibili 拦截（412 错误）。建议通过代理访问，或加 `--cookies-from-browser chrome`。
-
-```bash
-# Get video metadata
-yt-dlp --dump-json "https://www.bilibili.com/video/BVxxx"
-
-# Download subtitles
-yt-dlp --write-sub --write-auto-sub --sub-lang "zh-Hans,zh,en" --convert-subs vtt --skip-download -o "/tmp/%(id)s" "URL"
-
-# If blocked (412 / login required):
-yt-dlp --cookies-from-browser chrome --dump-json "URL"
-```
-
-### Reddit (JSON API)
-
-```bash
-# Read a subreddit
-curl -s "https://www.reddit.com/r/python/hot.json?limit=10" -H "User-Agent: agent-reach/1.0"
-
-# Read a post with comments
-curl -s "https://www.reddit.com/r/python/comments/POST_ID.json" -H "User-Agent: agent-reach/1.0"
-
-# Search
-curl -s "https://www.reddit.com/search.json?q=query&limit=10" -H "User-Agent: agent-reach/1.0"
-```
-
-Note: On servers, Reddit may block your IP. Use proxy or search via Exa instead.
-
-### 小红书 / XiaoHongShu (mcporter + xiaohongshu-mcp)
-
-```bash
-# Search notes
-mcporter call 'xiaohongshu.search_feeds(keyword: "query")'
-
-# Read a note
-mcporter call 'xiaohongshu.get_feed_detail(feed_id: "xxx", xsec_token: "yyy")'
-
-# Get comments
-mcporter call 'xiaohongshu.get_feed_comments(feed_id: "xxx", xsec_token: "yyy")'
-
-# Post a note
-mcporter call 'xiaohongshu.create_image_feed(title: "标题", desc: "内容", image_paths: ["/path/to/img.jpg"])'
-```
-
-### 抖音 / Douyin (mcporter + douyin-mcp-server)
-
-```bash
-# 解析抖音视频信息（分享链接 → 标题、作者、无水印视频URL等）
-mcporter call 'douyin.parse_douyin_video_info(share_link: "https://v.douyin.com/xxx/")'
-
-# 获取无水印视频下载链接
-mcporter call 'douyin.get_douyin_download_link(share_link: "https://v.douyin.com/xxx/")'
-
-# AI 提取视频语音文案（需要配置硅基流动 API Key）
-mcporter call 'douyin.extract_douyin_text(share_link: "https://v.douyin.com/xxx/")'
-```
-
-> 无需登录即可解析视频。支持抖音分享链接和直接链接。
-
-### GitHub (gh CLI)
-
-```bash
-# Search repos
-gh search repos "query" --sort stars --limit 10
-
-# View a repo
-gh repo view owner/repo
-
-# Search code
-gh search code "query" --language python
-
-# List issues
-gh issue list -R owner/repo --state open
-
-# View a specific issue/PR
-gh issue view 123 -R owner/repo
-```
-
-### Web — Any URL (Jina Reader)
-
-```bash
-# Read any webpage as markdown
-curl -s "https://r.jina.ai/URL" -H "Accept: text/markdown"
-
-# Search the web
-curl -s "https://s.jina.ai/query" -H "Accept: text/markdown"
-```
-
-### Exa Search (mcporter + exa MCP)
-
-```bash
-# Web search
+# Exa 网页搜索
 mcporter call 'exa.web_search_exa(query: "query", numResults: 5)'
 
-# Code search (GitHub, StackOverflow, docs)
-mcporter call 'exa.get_code_context_exa(query: "how to parse JSON in Python", tokensNum: 3000)'
+# 通用网页阅读
+curl -s "https://r.jina.ai/URL"
 
-# Company research
-mcporter call 'exa.company_research_exa(companyName: "OpenAI")'
+# GitHub 搜索
+gh search repos "query" --sort stars --limit 10
+
+# Twitter 搜索
+twitter search "query" --limit 10
+
+# YouTube/B站字幕
+yt-dlp --write-sub --skip-download -o "/tmp/%(id)s" "URL"
+
+# Reddit 搜索
+rdt search "query" --limit 10
+
+# Reddit 读帖 + 评论
+rdt read POST_ID
+
+# V2EX 热门
+curl -s "https://www.v2ex.com/api/topics/hot.json" -H "User-Agent: agent-reach/1.0"
 ```
 
-### LinkedIn (mcporter + linkedin-scraper-mcp)
+## 环境检查
 
 ```bash
-# View a profile
-mcporter call 'linkedin.get_person_profile(linkedin_url: "https://linkedin.com/in/username")'
+# 检查可用 channel
+agent-reach doctor
 
-# Search people
-mcporter call 'linkedin.search_people(keyword: "AI engineer", limit: 10)'
-
-# View company
-mcporter call 'linkedin.get_company_profile(linkedin_url: "https://linkedin.com/company/xxx")'
+# 查看所有 MCP 服务
+mcporter_list_servers()
 ```
 
-Fallback: `curl -s "https://r.jina.ai/https://linkedin.com/in/username"`
+## 工作区规则
 
-### Boss直聘 (mcporter + mcp-bosszp)
+**不要在 agent workspace 创建文件。** 使用 `/tmp/` 存放临时输出，`~/.agent-reach/` 存放持久数据。
 
-```bash
-# Browse recommended jobs
-mcporter call 'bosszhipin.get_recommend_jobs_tool(page: 1)'
+## 详细文档
 
-# Search jobs
-mcporter call 'bosszhipin.search_jobs_tool(keyword: "Python", city: "北京", page: 1)'
+根据用户需求，阅读对应的详细文档：
 
-# View job details
-mcporter call 'bosszhipin.get_job_detail_tool(job_url: "https://www.zhipin.com/job_detail/xxx")'
-```
+- [搜索工具](references/search.md) — Exa AI 搜索
+- [社交媒体](references/social.md) — 小红书, 抖音, Twitter, B站, V2EX, Reddit
+- [职场招聘](references/career.md) — LinkedIn
+- [开发工具](references/dev.md) — GitHub CLI
+- [网页阅读](references/web.md) — Jina Reader, 微信公众号, RSS
+- [视频播客](references/video.md) — YouTube, B站, 小宇宙
 
-Fallback: `curl -s "https://r.jina.ai/https://www.zhipin.com/job_detail/xxx"`
+## 配置渠道
 
-### RSS (feedparser)
+如果某个 channel 需要配置，获取安装指南：
+https://raw.githubusercontent.com/Panniantong/agent-reach/main/docs/install.md
 
-```python
-python3 -c "
-import feedparser
-d = feedparser.parse('https://example.com/feed')
-for e in d.entries[:5]:
-    print(f'{e.title} — {e.link}')
-"
-```
-
-## Troubleshooting
-
-### Twitter "fetch failed"
-
-xreach CLI uses Node.js `undici`, which doesn't respect `HTTP_PROXY`. Solutions:
-1. Ensure `undici` is installed: `npm install -g undici`
-2. Configure proxy: `agent-reach configure proxy http://user:pass@ip:port`
-3. If still failing, use transparent proxy (Clash TUN, Proxifier)
-
-### Channel broken?
-
-Run `agent-reach doctor` — it shows what's wrong and how to fix it.
+用户只需提供 cookies，其他配置由 agent 完成。

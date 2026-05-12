@@ -1,4 +1,0 @@
-﻿interface:
-  display_name: "SRT Subtitle Translate"
-  short_description: "Translate SRT subtitles into concise Simplified Chinese"
-  default_prompt: "Use $srt-subtitle-translate to translate this subtitle into concise Simplified Chinese in the current conversation. The main model in the current conversation must handle semantic segmentation review, translation, and final review/polish itself. Read the full file for terminology consistency, optionally build a temporary glossary, and if the file is long split it into stable chunks and translate those chunks sequentially in the same conversation. Treat preprocessed cue boundaries as canonical unless source-side segmentation repair is clearly necessary. Do not suggest or depend on any external translation service. Use local scripts only for normalization, optional report-only boundary hints, chunk orchestration, validation, merge, and cleanup."

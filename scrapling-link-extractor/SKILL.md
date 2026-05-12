@@ -1,56 +1,128 @@
 ---
 name: scrapling-link-extractor
-description: 当 BIGFA 发送网页链接并要求“爬取/提取/抓内容/整理正文”时触发。默认先走可读中转双路（defuddle.md / r.jina.ai）；两路抓不到或内容明显缺失时，再用 Scrapling 补抓。X/Twitter 也先走这套双路，官方 X API 只作备用。
+description: Use this skill whenever the user sends one or more web links and wants the page content extracted, saved, cleaned up, summarized, archived, converted to Markdown/JSON, or prepared for later use. This should trigger automatically for requests like "grab this page", "extract this article", "save this X post", "整理这篇文章", "抓一下这个网页", or a bare URL plus an action. Prefer readable relay routes first (`defuddle.md`, `r.jina.ai`), then fall back to Scrapling when the relays fail or content is incomplete. X/Twitter links also use this route first; do not wait for the user to explicitly name the skill.
+description_zh: 当用户发送一个或多个网页链接，并希望抓正文、提取内容、保存文章、整理链接、转成 Markdown/JSON、做摘要、入库或归档时，必须优先使用这个 skill。对“把这篇文章保存下来”“抓一下这个网页”“提取这条 X 帖子”“整理这个链接内容”以及“URL + 动词”的请求，应自动触发；不要等用户点名 `scrapling-link-extractor`。
+version: 1.1.0
 ---
 
 # Scrapling Link Extractor
 
-把用户给的网页链接快速转成可用内容，默认输出：
-- `*.md`（可读正文）
-- `*.json`（结构化结果）
+Turn user-supplied URLs into usable article/page content with predictable outputs:
 
-## 何时使用
+- `*.md` for readable text
+- `*.json` for structured extraction
+- `summary.json` for multi-link runs
 
-- 用户只发了 1 个或多个 URL，希望你直接“把内容抓出来”
-- 用户要后续做整理、摘要、入库、RAG
+## Trigger Rules
 
-## 默认路由（先中转，后补抓）
+Use this skill by default when any of these are true:
 
-1. 识别输入链接（支持多个）。
-2. 对每个 URL 先试可读中转双路：
+- The user sends a URL and asks to:
+  - extract
+  - scrape
+  - save
+  - archive
+  -整理
+  -提取
+  -抓取
+  -转成 Markdown
+  -summarize after fetching
+- The user sends mostly links with little other context, and the intent is clearly "get the content out".
+- The target is an article, blog post, documentation page, X/Twitter post, forum thread, newsletter, public note, or other readable webpage.
+- The user wants the content stored locally for later use.
+
+This skill should also trigger for common phrasings like:
+
+- "把这篇文章保存到桌面"
+- "抓一下这个网页正文"
+- "提取这个链接里的内容"
+- "Save this post as markdown"
+- "Archive this X thread"
+- "帮我整理这几个网页"
+
+Do not require the user to explicitly say `scrapling-link-extractor`.
+
+## When Not To Use It
+
+Do not use this as the first tool when the user mainly wants:
+
+- broad discovery across the web: use `web-search`
+- interactive browsing, login, clicking, or screenshots: use `browser-use`
+- only a quick fact lookup from a page the model already has in context
+
+If the request starts from a concrete URL and the goal is to extract page content, this skill has priority over `web-search`.
+
+## Default Route
+
+For each URL:
+
+1. Identify the input URL(s).
+2. Try readable relay path 1:
    - `https://defuddle.md/<URL>`
+3. Try readable relay path 2:
    - `https://r.jina.ai/http://...`
-3. 若中转已拿到足够正文，直接返回，不必进 Scrapling。
-4. 若两路都失败、内容明显缺失、或页面结构被中转吃掉，再用 Scrapling 补抓。
-5. 若是 X/Twitter 链接，也先走这套双路；只有双路失败、内容缺失、或需要更高置信复核时，才降级到 X 专用路线，官方 X API 只作备用/复核。
+4. If one relay returns enough clean content, use that result directly.
+5. If both relays fail, are blocked, or clearly lose important content, fall back to Scrapling.
+6. For X/Twitter links, use the same two relay paths first. Only use an X-specific route as fallback or for verification.
 
-## Scrapling 执行命令
+## Practical Heuristic
+
+If the user message matches either of these patterns, trigger this skill automatically:
+
+- `URL` + action verb
+- one or more `URL`s with an implied content-handling intent
+
+Examples:
+
+- `https://x.com/... 把这篇文章保存到桌面`
+- `https://example.com/post/123 提取正文`
+- `帮我把这三个链接整理成 md`
+
+## Scrapling Fallback Command
+
+Prefer portable paths and existing local files:
 
 ```powershell
-D:\Software\scrapling-bot\.venv\Scripts\python.exe \
-  E:\_BIGFA Free\_code\skills\scrapling-link-extractor\run_scrapling_extract.py \
-  "<URL1>" "<URL2>" --out-dir "D:\Software\scrapling-bot\output"
+python "$SKILLS_ROOT/scrapling-link-extractor/run_scrapling_extract.py" `
+  "<URL1>" "<URL2>" `
+  --out-dir "D:\Software\scrapling-bot\output"
 ```
 
-执行后返回结果文件路径 + 简短内容概览。
+If the environment requires a specific interpreter, resolve it first, but keep the skill behavior the same.
 
-## 可选参数
+## Output Contract
 
-- `--insecure`：当目标站 SSL 证书链异常时启用（会降低校验安全性）。
-- `--timeout <秒>`：单链接请求超时。
+For each URL, produce:
 
-## 输出约定
-
-每个 URL 产出两份文件：
 - `<slug>.md`
 - `<slug>.json`
 
-并生成汇总文件：
+And one run summary:
+
 - `summary.json`
 
-## 注意事项
+When reporting back to the user, include:
 
-- 仅抓公开可访问内容；登录墙/验证码墙不保证成功。
-- 需要登录账号的网站，也先试 `defuddle.md` / `r.jina.ai`，不要一上来就走站点专用技能。
-- 抓取失败要明确报错原因（超时、403、证书问题等）并给下一步选项。
-- 不要声称“100% 成功抓取”，必须以实际输出文件为准。
+- whether extraction succeeded
+- where the files were saved
+- whether the result came from relay content or Scrapling fallback
+- any known lossiness or blockers
+
+## Failure Handling
+
+When extraction fails, state the reason concretely:
+
+- timeout
+- 403 / 503 / anti-bot wall
+- login required
+- certificate / SSL issue
+- relay returned empty or partial content
+
+Then continue to the next sensible fallback instead of stopping early.
+
+## Notes
+
+- Only promise successful extraction when files were actually produced.
+- Public content first; authenticated pages may still fail.
+- For X/Twitter, do not start with official API assumptions. Relay-first is the default path.
+- If the user asks to save the result locally, complete the save as part of the same workflow.
