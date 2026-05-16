@@ -83,6 +83,8 @@ Translation stage:
 
 The optimized subtitle exists to make translation natural and coherent. Do this before translating, especially for ASR subtitles.
 
+Optimization is not unlimited merging. The goal is readable, concise subtitles that are easier to translate into natural Chinese. Do not create overlong subtitle blocks.
+
 Merge when a subtitle break interrupts:
 
 - A noun phrase or technical term
@@ -97,6 +99,54 @@ Split when a subtitle block contains:
 - A cause-and-effect boundary
 - A contrast such as `but`, `however`, `because`, `so`
 - A very long subtitle that would create an overloaded Chinese line
+
+Length and timing constraints:
+
+- Keep optimized subtitle blocks short enough for comfortable reading
+- Prefer one natural clause or one compact sentence per subtitle block
+- Do not merge multiple complete sentences just because they are topically related
+- Do not create a block whose text would become a long, dense Chinese subtitle
+- Do not assign text to a timestamp range where that speech does not occur
+- Do not pull later speech into an earlier subtitle block
+- When merging broken text, the new timestamp may only cover the actual merged speech span
+- When splitting a long subtitle, divide timestamps proportionally or at a natural pause, keeping chronological order and non-overlap
+- If a greeting, topic introduction, and next-step instruction appear in sequence, keep them as separate readable blocks unless the timing is genuinely too short
+
+Bad optimization:
+
+```srt
+1
+00:00:00,000 --> 00:00:04,920
+How's it going, guys? Today we're going to learn how to make this animation with the sole purpose of highlighting a very specific color trick that I've been doing in some of my animations
+
+2
+00:00:04,920 --> 00:00:12,080
+So let's talk about the color trick first, then we'll make the animation. In this case, I have some glass bricks that I want to use a noise texture as a light behind it in order to color it and to light the scene
+```
+
+This is wrong because the blocks are too long, the reading load is high, and the second block includes later content not covered by the shown source segment.
+
+Better optimization:
+
+```srt
+1
+00:00:00,000 --> 00:00:00,840
+How's it going, guys?
+
+2
+00:00:00,840 --> 00:00:04,920
+Today we're going to learn how to make this animation
+
+3
+00:00:04,920 --> 00:00:09,260
+to highlight a specific color trick I use in some of my animations
+
+4
+00:00:09,260 --> 00:00:12,080
+Let's talk about the color trick first, then we'll make the animation
+```
+
+This keeps the same meaning while preserving readable timing and avoiding overloaded subtitles.
 
 Examples:
 
