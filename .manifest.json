@@ -1,10 +1,10 @@
 {
   "codeg_version": "0.13.10",
-  "installed_at": "2026-05-23T00:55:09.918903400+00:00",
+  "installed_at": "2026-05-24T00:23:26.131134300+00:00",
   "experts": {
     "brainstorming": {
       "hash": "15094f9c5f5afc4cd95653685747ee22ac61ea5c45297ba9f83ea978c1482804",
-      "installed_at": "2026-05-23T00:34:56.955764700+00:00",
+      "installed_at": "2026-05-24T00:23:25.845747500+00:00",
       "pending_user_review": true
     },
     "dispatching-parallel-agents": {
@@ -54,7 +54,7 @@
     },
     "using-superpowers": {
       "hash": "707814e306e42fb396770379ced2f5af3e4a2935c856070cae5dfa9559850342",
-      "installed_at": "2026-05-23T00:34:57.185953400+00:00",
+      "installed_at": "2026-05-24T00:23:26.070562600+00:00",
       "pending_user_review": true
     },
     "verification-before-completion": {
