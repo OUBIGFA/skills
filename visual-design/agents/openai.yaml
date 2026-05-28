@@ -1,0 +1,3 @@
+display_name: Visual Design
+short_description: Restraint-focused visual design rules for readable, low-fatigue UI
+default_prompt: Review this design against visual-design rules for typography weight, card density, shadows, status dots, contrast, and color saturation
