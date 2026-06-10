@@ -1,208 +1,104 @@
 ---
 name: srt-subtitle-translator
-description: Optimize and translate SRT subtitle files into clean Chinese. Always first read the full subtitle, build a terminology table, semantically re-segment non-Chinese subtitles into a human-edited optimized SRT, then translate the optimized SRT while preserving its numbering and timestamps exactly. Use this skill whenever the user asks to translate subtitles, localize SRT files, clean ASR subtitles, translate tutorial captions, produce Chinese .srt output, or handle Cinema 4D/3D/rendering tutorial subtitles, even if they only say "翻译这份字幕" or mention an .srt file.
+description: Translate non-Chinese SRT subtitles into concise, professional Simplified Chinese by manual human-quality translation only, while preserving the original SRT numbering, timestamps, block order, and blank-line structure exactly. Never use third-party translation APIs, machine translation tools, browser translators, online translation websites, local translation software, or automated translation plugins. Always use this skill whenever the user asks to translate subtitles, clean ASR subtitle text, produce Chinese SRT output, handle tutorial captions, or mentions .srt files, subtitle translation, SRT Mode, Cinema 4D, rendering, or technical course captions.
 version: 1.0.0
 ---
 
 # SRT Subtitle Translator
 
-Use this skill to optimize and translate `.srt` subtitles into concise, professional Chinese. The main goal is readable subtitles, not word-for-word transcription. First create a semantically optimized source subtitle with better human sentence breaks, then translate that optimized version while cleaning noisy spoken language and standardizing symbols, units, terminology, and Chinese-English typography.
+Use this skill to translate non-Chinese `.srt` subtitles into clean, accurate, high-signal Simplified Chinese. Preserve the SRT timeline structure exactly while removing spoken-language noise, standardizing symbols and units, and keeping technical terminology consistent.
+
+## Role
+
+Act as a professional technical-document translator and subtitle editor with a strong science and engineering background. Prioritize fluent Chinese, accurate technical meaning, subtitle readability, and strict SRT structural integrity.
+
+## Manual Translation Only
+
+This skill requires manual translation by the assistant. Do not delegate translation to any external or third-party translation system.
+
+Forbidden tools and sources:
+
+- Third-party translation APIs
+- Online translation websites
+- Browser built-in translation
+- Local translation applications
+- Machine translation plugins
+- AI translation services outside the current assistant workflow
+- Batch translation scripts that call an external translation service
+
+Allowed assistance:
+
+- Read the source subtitle file
+- Inspect surrounding subtitle context
+- Use domain knowledge and reasoning to translate manually
+- Use local text-processing tools only for non-translation tasks such as counting blocks, checking timestamps, validating SRT structure, comparing indices, or formatting output
+
+If a translation tool is available, ignore it. If the user asks to use a translation API or external translator, refuse that part and proceed with manual translation unless the user changes the requirement.
 
 ## Core Tasks
 
-1. Maintain complete SRT structure
-2. Read the full subtitle before translating and build a terminology table
-3. Semantically optimize subtitle segmentation before translation
-4. Clean spoken-language noise and ASR artifacts
-5. Symbolize numbers, angles, ranges, and logic expressions
-6. Standardize Chinese-English mixed typography
-7. Preserve domain terminology for 3D, rendering, software UI, and technical tutorials
+1. Preserve SRT structure exactly
+2. Translate non-Chinese subtitle text into Simplified Chinese
+3. Perform all translation manually without third-party translation tools or APIs
+4. Remove filler words, hesitation, and low-value spoken noise
+5. Correct obvious ASR errors using full-context understanding
+6. Standardize symbols, numbers, units, and Chinese-English typography
+7. Preserve or consistently translate technical terminology
+8. Output only the final translated SRT
 
 ## Required Workflow
 
-1. Inspect the input file
-   - Confirm it is SRT-like: numeric index, timestamp line, subtitle text, blank separator
-   - Count total lines and subtitle blocks
-   - Note encoding if obvious
+1. Read the full SRT before translating
+   - Understand the topic, domain, speaker habits, repeated UI labels, and repeated terms
+   - Identify likely ASR errors from context
+   - Decide terminology mappings before producing final output
+   - Do not send source subtitle text to any third-party translation API, website, tool, plugin, or external service
 
-2. Read the full subtitle before translating
-   - Understand topic, speaker habits, repeated UI terms, repeated verbs, and domain context
-   - Identify ASR errors that can only be corrected with global context
-   - Create a working terminology table before producing the final translation
-   - Keep terminology and repeated expressions consistent across the whole file
+2. Validate the SRT structure
+   - Keep every original subtitle index
+   - Keep every timestamp line unchanged
+   - Keep block order unchanged
+   - Keep blank-line separation between blocks
+   - Do not merge, split, skip, renumber, or retime blocks
 
-3. Create the optimized source subtitle
-   - Re-segment subtitle text semantically before translation
-   - Apply human sentence breaks so each subtitle block contains a complete or natural phrase
-   - This applies to all non-Chinese subtitle sources, not only English
-   - Merge or split subtitle text when ASR line breaks cut through a phrase, clause, object name, or technical term
-   - Adjust timestamps when needed so the optimized subtitle remains readable and timed to speech
-   - Save this file in the source subtitle directory as `<原文件夹名>_Optimize.srt`
+3. Translate each block in place
+   - Translate the text belonging to each source index into the corresponding output index
+   - If a source line is fragmented or noisy, condense it into readable Chinese inside the same block
+   - If ASR caused obvious wording errors, correct the meaning with context while keeping the result in the same block
+   - If the meaning cannot be confidently repaired, translate the original text directly and keep it readable
 
-4. Translate from the optimized subtitle
-   - Treat the optimized file as the structural source for translation
-   - Keep optimized subtitle indices unchanged
-   - Keep optimized timestamp lines unchanged
-   - Keep optimized blank separator lines unchanged
-   - Clean and compress meaning while preserving actual operations, parameter values, UI labels, software names, and causal explanations
-   - Save the final Chinese subtitle in the source subtitle directory as `<原文件夹名>_Optimize_CN.srt`
+4. Verify before responding
+   - Output indices exactly match the input indices
+   - Timestamp lines are byte-for-byte unchanged
+   - No input block is missing
+   - No output block is added
+   - No Markdown citations, explanations, comments, or notes are present
+   - Subtitle text line endings do not use sentence-final punctuation
 
-5. Clean up intermediate artifacts
-   - Deliver only the optimized source subtitle and final Chinese subtitle
-   - Remove temporary scripts, scratch files, temporary terminology files, chunk files, and partial outputs after successful completion
-   - Do not remove the original subtitle or the two delivered files
+## Hard Structural Rules
 
-6. Verify output
-   - Optimized source subtitle is valid SRT
-   - Final Chinese subtitle has the same indices, timestamps, and block count as the optimized subtitle
-   - Every timestamp line in the final Chinese subtitle matches the optimized subtitle exactly
-   - Report both output paths and verification result
+These rules are mandatory.
 
-## Structural Integrity Rules
-
-These rules have two stages:
-
-Optimization stage:
-
-- The original subtitle may be semantically re-segmented to improve translation quality and Chinese readability
-- Adjacent blocks may be merged when a sentence, technical phrase, UI label, or object name is broken across blocks
-- Long blocks may be split at natural semantic boundaries such as cause, contrast, result, or operation steps
-- Timestamps may be adjusted when necessary, but keep chronological order, non-overlap, and realistic timing
-- Renumber the optimized subtitle sequentially if merging or splitting changes the block structure
-- Do not drop substantive information during optimization
-
-Translation stage:
-
-- The final Chinese subtitle must exactly match the optimized subtitle's indices
-- The final Chinese subtitle must exactly preserve the optimized subtitle's timestamps
-- Do not merge, split, renumber, or retime while translating from the optimized subtitle
-- If ASR content is illogical, correct the meaning using global context, but keep it in the corresponding optimized block
-- If a block is too short or too broken to infer confidently, translate the optimized source directly and keep it readable
-
-## Semantic Segmentation Rules
-
-The optimized subtitle exists to make translation natural and coherent. Do this before translating, especially for ASR subtitles.
-
-Optimization is not unlimited merging. The goal is readable, concise subtitles that are easier to translate into natural Chinese. Do not create overlong subtitle blocks.
-
-Merge when a subtitle break interrupts:
-
-- A noun phrase or technical term
-- A software command or UI path
-- A verb-object phrase
-- A short clause that depends on the next block
-- A sentence that clearly continues into the next timestamp
-
-Split when a subtitle block contains:
-
-- Two independent operations
-- A cause-and-effect boundary
-- A contrast such as `but`, `however`, `because`, `so`
-- A very long subtitle that would create an overloaded Chinese line
-
-Length and timing constraints:
-
-- Keep optimized subtitle blocks short enough for comfortable reading
-- Prefer one natural clause or one compact sentence per subtitle block
-- Do not merge multiple complete sentences just because they are topically related
-- Do not create a block whose text would become a long, dense Chinese subtitle
-- Do not assign text to a timestamp range where that speech does not occur
-- Do not pull later speech into an earlier subtitle block
-- When merging broken text, the new timestamp may only cover the actual merged speech span
-- When splitting a long subtitle, divide timestamps proportionally or at a natural pause, keeping chronological order and non-overlap
-- If a greeting, topic introduction, and next-step instruction appear in sequence, keep them as separate readable blocks unless the timing is genuinely too short
-
-Bad optimization:
-
-```srt
-1
-00:00:00,000 --> 00:00:04,920
-How's it going, guys? Today we're going to learn how to make this animation with the sole purpose of highlighting a very specific color trick that I've been doing in some of my animations
-
-2
-00:00:04,920 --> 00:00:12,080
-So let's talk about the color trick first, then we'll make the animation. In this case, I have some glass bricks that I want to use a noise texture as a light behind it in order to color it and to light the scene
-```
-
-This is wrong because the blocks are too long, the reading load is high, and the second block includes later content not covered by the shown source segment.
-
-Better optimization:
-
-```srt
-1
-00:00:00,000 --> 00:00:00,840
-How's it going, guys?
-
-2
-00:00:00,840 --> 00:00:04,920
-Today we're going to learn how to make this animation
-
-3
-00:00:04,920 --> 00:00:09,260
-to highlight a specific color trick I use in some of my animations
-
-4
-00:00:09,260 --> 00:00:12,080
-Let's talk about the color trick first, then we'll make the animation
-```
-
-This keeps the same meaning while preserving readable timing and avoiding overloaded subtitles.
-
-Examples:
-
-Input:
-
-```srt
-12
-00:00:28,740 --> 00:00:35,320
-I just selected those edges and stored those selections to bevel them out only with that
-
-13
-00:00:35,320 --> 00:00:36,385
-bevel deformer.
-```
-
-Optimized:
-
-```srt
-12
-00:00:28,740 --> 00:00:36,385
-I just selected those edges and stored those selections to bevel them out only with that bevel deformer
-```
-
-Input:
-
-```srt
-23
-00:01:10,160 --> 00:01:14,960
-And as you can see, the result is far from what it is supposed to look like because we
-
-24
-00:01:14,960 --> 00:01:19,440
-don't have right now the supporting edges to support those sharp edges.
-```
-
-Optimized:
-
-```srt
-23
-00:01:10,160 --> 00:01:14,860
-As you can see, the result is far from what it is supposed to look like
-
-24
-00:01:14,860 --> 00:01:19,440
-because we don't have the supporting edges for those sharp edges
-```
+- Output numbering must match the input numbering exactly
+- Timestamp lines must remain exactly unchanged
+- Do not alter any timestamp number, comma, arrow, spacing, or symbol
+- Do not merge subtitle blocks
+- Do not split subtitle blocks
+- Do not reorder subtitle blocks
+- Do not skip subtitle blocks
+- Do not add extra subtitle blocks
+- If ASR text is illogical, correct the meaning with context but keep it under the same index
+- If a block is extremely short or malformed, still preserve the index and timestamp and provide the best readable translation
 
 ## Noise Filtering
 
 Priority: highest.
 
-Strongly filter meaningless spoken-language noise. Subtitles should communicate the operation or meaning, not every hesitation.
+Aggressively remove meaningless filler, hesitation, agreement, self-talk, and emotional padding. Subtitles should communicate the actual operation or meaning, not every spoken fragment.
 
 Remove when used as filler, hesitation, or agreement:
 
-- 中文: 嗯, 哦, 呃, 这个, 那个, 实际上, 就是说
+- Chinese: 嗯, 哦, 呃, 这个, 那个, 实际上, 就是说
 - English: Yeah, OK, Ok, Okay, Nice, Cool, Uh, Um, Like, You know, Sort of, I mean
 
 Keep only when the word carries actual meaning:
@@ -211,37 +107,22 @@ Keep only when the word carries actual meaning:
 - `Click OK` -> `点击 OK` or `点击确定`
 - `OK button` -> `OK 按钮`
 
-For fragmented self-talk, condense aggressively:
+For fragmented self-talk, condense rather than translating word for word:
 
 - `Cool, let's check this, yeah, maybe this is okay` -> `我们来检查一下，这样基本可以`
 - `I mean, like, maybe just move this over here` -> `可以把它移到这里`
 
-Do not remove operational content, values, object names, or visual judgments that guide the tutorial.
-
-## Terminology Table Before Translation
-
-Before translating, build a working terminology table from the full subtitle. This table can be kept as an internal working artifact and should be cleaned up after delivery unless the user asks to keep it.
-
-Include:
-
-- Software names
-- UI labels and menu paths
-- Object names
-- Modifier, shader, renderer, and algorithm names
-- Repeated verbs or expressions that need consistent Chinese rendering
-- ASR correction decisions
-
-Use the terminology table to keep the entire file consistent. If a term appears multiple ways because of ASR errors, normalize it to one chosen form in the optimized subtitle and final translation.
+Do not remove actual operations, parameter values, object names, visual judgments, warnings, or causal explanations.
 
 ## Symbolization Rules
 
 Priority: highest.
 
-Use professional symbols to improve subtitle reading speed:
+Use compact professional symbols to improve subtitle reading speed:
 
-- Negative numbers: keep the mathematical sign, do not write Chinese words
+- Negative numbers: keep mathematical signs, do not write them as Chinese words
   - `Negative 50` -> `-50`
-- Angles: use degree symbol
+- Angles: use degree symbols
   - `360 degrees` -> `360°`
   - `90 degrees` -> `90°`
 - Percentages: use `%`
@@ -254,135 +135,117 @@ Use professional symbols to improve subtitle reading speed:
   - `less than 3` -> `<3`
   - `plus or minus 5` -> `±5`
 
-Prefer Arabic numerals over Chinese numerals for settings, counts, steps, frames, and UI values.
+Prefer Arabic numerals for settings, counts, frames, steps, parameter values, and UI values.
 
 ## Unit Standardization
 
-Use SI and common technical unit symbols. Do not translate unit names into Chinese full names.
-
-- `50 kilograms` -> `50kg`
-- `100 meters` -> `100m`
-- `220 volts` -> `220V`
-- `50 hertz` -> `50Hz`
-- `500 nits` -> `500nits`
-
-Do not add a space between a number and its unit symbol.
-
-## Chinese-English Typography
-
-Follow Pangu spacing:
-
-- Add one half-width space between Chinese text and English words
-- Add one half-width space between Chinese text and numbers
-- Do not add a space between numbers and unit symbols
-- Keep punctuation in Chinese style unless preserving a UI label
-
-Correct:
-
-- `在 C4D 中设置 100%，亮度为 500nits`
-- `把 Volume Builder 的 Voxel Size 调到 0.3`
-- `使用 Redshift Render View 预览`
-
-Wrong:
-
-- `在C4D中设置100%,亮度为500nits`
-- `把Volume Builder的Voxel Size调到0.3`
-
-## Subtitle-Specific Formatting
-
-- Do not add full stops or other ending punctuation at the end of translated subtitle lines
-- Do not use emoji
-- Never output `[cite]`, `[]`, citation markers, footnotes, or source markers inside subtitles
-- Preserve English personal names
-- Transliterate non-English personal names into English form if needed
-- Keep UI labels in English when exact software operation matters
-- For UI labels that benefit from clarity, use `中文（English）` on first or important occurrence
-
-Ending punctuation ban applies to subtitle text lines. Commas and pauses inside a line are allowed when needed for readability, but avoid heavy punctuation.
-
-## Terminology Handling
-
-For software names, renderer names, algorithms, UI labels, and abbreviations:
-
-- Preserve the English term if translating it may create ambiguity
-- Use `中文（English）` when a Chinese explanation helps
-- Prefer established CG/C4D terminology
-- Do not force-translate UI labels that users need to locate in software
-
-Use the bundled terminology reference when translating C4D, Redshift, 3D, rendering, or tutorial subtitles:
-
-- `references/c4d-rendering-terms.md`
-
-## Built-In Terminology Rules
-
-Do not translate these terms unless context clearly demands explanation:
-
-- Cinema
-- Noise
-- Map
-- Ramp
-- Planar
-- Redshift
-- Volume
-- Fields
-- Beauty
-- Coloso
-- Bucket Rendering
-
-Compulsory mappings:
-
-- `Okay` as filler -> remove; as UI label -> `OK`
-- `Plane` -> `平面`
-- `Material` -> `材质`
-- `Light` -> `灯光` when object/source; use context for adjective senses
-- `Lighting` -> `布光` when referring to lighting setup
-- `Displacement` -> `置换`
-- `Mask` -> `遮罩`
-- `Commander` -> `管理器`
-- `Viewport` -> `视窗`, not `视口`
-- `Example` -> `案例`, not `示例`, when referring to a worked example or demo result
-
-## ASR Correction Guidelines
-
-When subtitles come from speech recognition:
-
-- Correct obvious domain misrecognitions using global context
-- Preserve the intended tutorial operation rather than the literal mistaken word
-- Do not stop the task because one line is odd
-- If a short timestamp contains an unusually long sentence, translate it directly and concisely
-- Do not invent missing technical steps
+Use SI and common technical unit symbols. Do not translate units into Chinese full names when a standard symbol is expected.
 
 Examples:
 
-- `cam model` in a pouring soda tutorial likely means `can model` -> `易拉罐模型`
-- `negative wire` in a C4D transform context likely means `negative Y` -> `负 Y`
-- `cool sticks` in Redshift render settings likely means `Caustics` -> `Caustics`
+- `50kg`, not `50千克`
+- `100m`, not `100米`
+- `220V`, not `220伏特`
+- `50Hz`, not `50赫兹`
+- `500nits`, not `500 尼特`
 
-## Output Quality Checklist
+Do not add spaces between numbers and unit symbols.
 
-Before final response, verify:
+## Chinese-English Typography
 
-- `<原文件夹名>_Optimize.srt` exists in the original subtitle directory
-- `<原文件夹名>_Optimize_CN.srt` exists in the original subtitle directory
-- Optimized subtitle is valid SRT
-- Final Chinese subtitle indices exactly match the optimized subtitle
-- Final Chinese subtitle timestamp lines exactly match the optimized subtitle
-- Optimized subtitle and final Chinese subtitle block counts match
-- No subtitle text line ends with `。`, `.`, `！`, `!`, `？`, or `?`
-- No citation markers are present
-- Chinese-English spacing is applied
-- Numbers, units, angles, percentages, and ranges use standardized symbols
-- Technical terms are consistent
-- Filler words are removed unless semantically required
-- Temporary scripts, scratch files, chunk files, temporary terminology files, and partial outputs have been removed
+Apply Chinese-English mixed typography rules.
 
-## Final Response
+- Add one half-width space between Chinese text and English words
+- Add one half-width space between Chinese text and Arabic numerals
+- Add one half-width space between Chinese text and software names, abbreviations, and UI labels
+- Do not add spaces between numbers and unit symbols
+- Use Chinese punctuation inside translated subtitle text, except where subtitle punctuation rules prohibit it
 
-Keep the final response brief. Include:
+Correct:
 
-- Optimized source subtitle path
-- Final Chinese subtitle path
-- Verification summary: optimized/final block count match, final timestamp preservation against optimized file, cleanup complete
-- Any important caveat, such as uncertain ASR corrections
+```text
+在 C4D 中设置 100%，亮度为 500nits
+```
 
-Do not paste the whole subtitle content unless the user explicitly asks.
+Wrong:
+
+```text
+在C4D中设置100%,亮度为500nits
+```
+
+## Subtitle Punctuation Rules
+
+- Do not end subtitle text lines with a Chinese full stop, English period, exclamation mark, question mark, semicolon, colon, or other sentence-final punctuation
+- Avoid unnecessary commas at line ends
+- Do not use emoji
+- Do not output `[cite]`, `[]`, footnotes, source markers, or any citation markers
+- Do not output explanations, translator notes, comments, or thinking process
+
+If a line naturally requires a question or warning, preserve the meaning without sentence-final punctuation when possible.
+
+## Names and Terminology
+
+- Keep English personal names in English
+- Romanize non-English personal names into English form when needed
+- Keep software names, algorithm names, renderer names, plugin names, and acronyms in English unless a stable Chinese translation exists
+- For important technical concepts, use `中文（English）` on first appearance when it improves clarity
+- Do not force-translate terms in a way that creates ambiguity
+
+Preferred domain handling:
+
+- Preserve these terms in English when they refer to products, UI labels, render passes, or named features: `Cinema`, `Noise`, `Redshift`, `Volume`, `Fields`, `Beauty`, `Coloso`, `Bucket Rendering`
+- Use these mappings when context matches:
+  - `Plane` -> `平面`
+  - `Material` -> `材质`
+  - `Light` -> `灯光`
+  - `Lighting` -> `布光`
+  - `Displacement` -> `置换`
+  - `Mask` -> `遮罩`
+  - `Commander` -> `管理器`
+  - `Viewport` -> `视窗`
+  - `Example` -> `案例`
+
+Do not translate `Viewport` as `视口` in Cinema 4D or similar tutorial contexts. Do not translate `Example` as `示例` when it means a tutorial case.
+
+## ASR Error Handling
+
+When speech recognition has clearly produced the wrong word:
+
+- Use the surrounding subtitles and domain context to infer the intended meaning
+- Correct the translated result naturally in Chinese
+- Keep the corrected content under the original index
+- Do not move corrected content into neighboring blocks
+- Do not terminate or refuse just because a block contains ASR errors
+
+For extremely short timestamps containing unusually long or garbled text, translate the original as well as possible while preserving structure.
+
+## Output Format
+
+Return only the final translated SRT inside one Markdown code block.
+
+Use raw SRT structure:
+
+```srt
+1
+00:00:00,000 --> 00:00:02,000
+翻译后的字幕文本
+
+2
+00:00:02,000 --> 00:00:04,000
+翻译后的字幕文本
+```
+
+Do not include any preface, summary, verification table, explanation, or extra text unless the user explicitly asks for it.
+
+## Final Self-Check
+
+Before responding, compare the output against the input:
+
+- Same subtitle indices
+- Same timestamp lines
+- Same block count
+- Same block order
+- No changed timestamps
+- No added explanations or citations
+- No sentence-final punctuation on subtitle text lines
+- Chinese-English spacing and unit formatting are correct
