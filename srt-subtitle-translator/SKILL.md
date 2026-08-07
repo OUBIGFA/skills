@@ -1,251 +1,198 @@
 ---
 name: srt-subtitle-translator
-description: Translate non-Chinese SRT subtitles into concise, professional Simplified Chinese by manual human-quality translation only, while preserving the original SRT numbering, timestamps, block order, and blank-line structure exactly. Never use third-party translation APIs, machine translation tools, browser translators, online translation websites, local translation software, or automated translation plugins. Always use this skill whenever the user asks to translate subtitles, clean ASR subtitle text, produce Chinese SRT output, handle tutorial captions, or mentions .srt files, subtitle translation, SRT Mode, Cinema 4D, rendering, or technical course captions.
-version: 1.0.0
+description: Hand-translate non-Chinese SRT subtitles into clean, professional Simplified Chinese with no machine-translation services involved. Preserves the SRT timeline exactly by default; when the user asks to check or fix segmentation, audits every boundary and repairs only genuine ASR breakage — orphan tails, split terms, stranded prepositions, sub-second flash blocks — before translating. Use this skill whenever the user asks to translate subtitles or captions, review or fix subtitle segmentation, merge fragmented ASR blocks, clean up auto-generated captions, produce a Chinese or bilingual subtitle file, or hands over an .srt file with any request at all — even a bare "translate this". Never route subtitle text through third-party translation APIs, browser translation, online translators, or local MT software.
+version: 2.1.0
 ---
 
 # SRT Subtitle Translator
 
-Use this skill to translate non-Chinese `.srt` subtitles into clean, accurate, high-signal Simplified Chinese. Preserve the SRT timeline structure exactly while removing spoken-language noise, standardizing symbols and units, and keeping technical terminology consistent.
+Turn a foreign-language `.srt` — usually machine-transcribed, usually noisy — into a
+Simplified Chinese subtitle file a viewer can read at speed without pausing the video.
 
-## Role
+Three things decide whether the result is good:
 
-Act as a professional technical-document translator and subtitle editor with a strong science and engineering background. Prioritize fluent Chinese, accurate technical meaning, subtitle readability, and strict SRT structural integrity.
+- **Timeline integrity.** Timestamps are contracts with the video. Every one in the output
+  must come from the input.
+- **Reading load.** Each block must be readable in the time it is on screen. Chinese
+  carries more meaning per character than English, so a faithful translation is usually
+  too long — condensing is part of the job, not a compromise. Reading load is measured in
+  seconds, never in a per-line character count.
+- **Boundaries.** ASR cuts on pauses and character counts, not on grammar, so it strands
+  articles, prepositions, and single trailing words. Those cuts are defects; the natural
+  breaks a speaker actually made are not. Your own breaks must be decided by phrasing
+  alone — one block, one line, no wrapping.
 
-## Manual Translation Only
+## Manual translation only
 
-This skill requires manual translation by the assistant. Do not delegate translation to any external or third-party translation system.
+Translate every line yourself, using context and domain knowledge. Do not call translation
+APIs, online translators, browser translation, MT plugins, or local translation software,
+and do not write scripts that call them. If asked to use one, say that this skill
+translates by hand and continue manually unless the user changes the requirement.
 
-Forbidden tools and sources:
+Local tooling is fine for everything that is not translation: reading files, counting
+blocks, validating structure, comparing timestamps, formatting output.
 
-- Third-party translation APIs
-- Online translation websites
-- Browser built-in translation
-- Local translation applications
-- Machine translation plugins
-- AI translation services outside the current assistant workflow
-- Batch translation scripts that call an external translation service
+## Two modes — pick one before you start
 
-Allowed assistance:
+**Structure-preserving (default).** Same indices, same timestamps, same block count, same
+order. Translate each block in place. Use this whenever the user only asked for a
+translation. Re-segmenting uninvited destroys sync with anything the user has already cut
+or burned in.
 
-- Read the source subtitle file
-- Inspect surrounding subtitle context
-- Use domain knowledge and reasoning to translate manually
-- Use local text-processing tools only for non-translation tasks such as counting blocks, checking timestamps, validating SRT structure, comparing indices, or formatting output
+**Re-segmentation.** Boundaries may be repaired. Triggered by an explicit request (merge
+fragments, fix orphan words, re-split) *and* by a conditional one — "先检查，需要就合并",
+"看看要不要重新断句" — which authorizes an audit and whatever minimum repairs it finds. It
+does not authorize broad merging. Announce the mode decision briefly; do not ask again.
 
-If a translation tool is available, ignore it. If the user asks to use a translation API or external translator, refuse that part and proceed with manual translation unless the user changes the requirement.
+Before repairing boundaries, read `references/segmentation.md`.
 
-## Core Tasks
+## Workflow
 
-1. Preserve SRT structure exactly
-2. Translate non-Chinese subtitle text into Simplified Chinese
-3. Perform all translation manually without third-party translation tools or APIs
-4. Remove filler words, hesitation, and low-value spoken noise
-5. Correct obvious ASR errors using full-context understanding
-6. Standardize symbols, numbers, units, and Chinese-English typography
-7. Preserve or consistently translate technical terminology
-8. Output only the final translated SRT
+1. **Read the whole file first.** Not the first 50 blocks — the whole thing. You are
+   looking for the domain, the speaker's habits, recurring UI labels and terms, and
+   passages where ASR clearly misheard something. Decide the glossary now, before any line
+   is translated; consistency across 300 blocks is impossible to retrofit.
 
-## Required Workflow
+2. **Decide the mode**, and if re-segmentation is authorized, audit every boundary in the
+   source language before translating. Classifying boundaries after translation does not
+   work — fluent Chinese can paper over a break that still splits the thought in time.
 
-1. Read the full SRT before translating
-   - Understand the topic, domain, speaker habits, repeated UI labels, and repeated terms
-   - Identify likely ASR errors from context
-   - Decide terminology mappings before producing final output
-   - Do not send source subtitle text to any third-party translation API, website, tool, plugin, or external service
+3. **Translate in passes over contiguous ranges.** Keep each block's meaning inside its own
+   time window. When one sentence spans several blocks, translate the sentence whole, then
+   distribute it as natural Chinese phrases in time order — each block must read on its
+   own, none may be left empty, and the whole sentence must not be dumped into one block.
 
-2. Validate the SRT structure
-   - Keep every original subtitle index
-   - Keep every timestamp line unchanged
-   - Keep block order unchanged
-   - Keep blank-line separation between blocks
-   - Do not merge, split, skip, renumber, or retime blocks
+4. **Write the output**, then **verify it mechanically**:
 
-3. Translate each block in place
-   - Translate the text belonging to each source index into the corresponding output index
-   - If a source line is fragmented or noisy, condense it into readable Chinese inside the same block
-   - If ASR caused obvious wording errors, correct the meaning with context while keeping the result in the same block
-   - If the meaning cannot be confidently repaired, translate the original text directly and keep it readable
+   ```bash
+   python <skill>/scripts/check_srt.py <output.zh.srt> --source <input.srt>
+   ```
 
-4. Verify before responding
-   - Output indices exactly match the input indices
-   - Timestamp lines are byte-for-byte unchanged
-   - No input block is missing
-   - No output block is added
-   - No Markdown citations, explanations, comments, or notes are present
-   - Subtitle text line endings do not use sentence-final punctuation
+   Errors mean the file is broken — invented timestamps, dropped text, overlap, bad
+   numbering — and must be fixed before you reply. Warnings are reading-load and style
+   problems; fix them or explain why they stand.
 
-## Hard Structural Rules
+5. **Report briefly**: file path, mode, what was repaired, what needs a human eye. Not the
+   subtitle text itself.
 
-These rules are mandatory.
+## Delivery
 
-- Output numbering must match the input numbering exactly
-- Timestamp lines must remain exactly unchanged
-- Do not alter any timestamp number, comma, arrow, spacing, or symbol
-- Do not merge subtitle blocks
-- Do not split subtitle blocks
-- Do not reorder subtitle blocks
-- Do not skip subtitle blocks
-- Do not add extra subtitle blocks
-- If ASR text is illogical, correct the meaning with context but keep it under the same index
-- If a block is extremely short or malformed, still preserve the index and timestamp and provide the best readable translation
+Under ~60 blocks: inline in one `srt` code block is fine.
 
-## Noise Filtering
+Above that: **write a file**, `source.srt` → `source.zh.srt`, UTF-8, in the source's
+directory. A 300-block file pasted into a reply risks silent truncation, and a subtitle
+that stops at block 240 with no warning is worse than no subtitle. For long files, build
+parts in a temp directory and concatenate — details and the encoding, tag, and bilingual
+rules are in `references/edge-cases.md`.
 
-Priority: highest.
+Never mix an explanation into the SRT file. Never emit citation markers, translator notes,
+or commentary inside subtitle text.
 
-Aggressively remove meaningless filler, hesitation, agreement, self-talk, and emotional padding. Subtitles should communicate the actual operation or meaning, not every spoken fragment.
+## Reading-load anchors
 
-Remove when used as filler, hesitation, or agreement:
+Reading load is a function of **time**, not of line width. These are the Netflix Timed Text
+Style Guide timing values for Simplified Chinese. Treat them as calibration, not as a
+scoring rubric: a block slightly over is fine if the alternative is a worse break, and
+being under is normal.
 
-- Chinese: 嗯, 哦, 呃, 这个, 那个, 实际上, 就是说
-- English: Yeah, OK, Ok, Okay, Nice, Cool, Uh, Um, Like, You know, Sort of, I mean
+| Parameter | Value |
+|---|---|
+| Lines per block | 1 — always |
+| Reading speed | 9 chars/second (adult), 7 (children's) |
+| Minimum duration | 20 frames ≈ 0.83 s |
+| Maximum duration | 7 s |
+| Minimum gap between blocks | 2 frames |
 
-Keep only when the word carries actual meaning:
+There is deliberately **no characters-per-line limit**. A character budget cannot tell a
+natural phrase from an awkward one, and enforcing it produces exactly the two failures this
+skill exists to prevent: text wrapped mid-phrase, and meaning deleted to hit a count.
 
-- `keep it cool` -> `保持低温` or `冷却`
-- `Click OK` -> `点击 OK` or `点击确定`
-- `OK button` -> `OK 按钮`
+What the timing values mean in practice: a 2-second block holds about 18 characters, not
+30. When the Chinese runs long, condense — drop filler, use symbols and numerals, prefer
+the shorter synonym. Cramming is a translation failure, not a timing problem, and in
+structure-preserving mode condensing is the *only* lever you have. But never condense past
+the meaning: if the choice is between a slightly dense block and a mangled sentence, keep
+the sentence.
 
-For fragmented self-talk, condense rather than translating word for word:
+`scripts/check_srt.py` measures all of this. Its character cost counts a Chinese character
+as 1 and a Latin letter or digit as 0.5, and ignores punctuation.
 
-- `Cool, let's check this, yeah, maybe this is okay` -> `我们来检查一下，这样基本可以`
-- `I mean, like, maybe just move this over here` -> `可以把它移到这里`
+## One block, one line
 
-Do not remove actual operations, parameter values, object names, visual judgments, warnings, or causal explanations.
+Every block is a single line of text. Do not wrap, do not split a block across two lines,
+and never let a character count decide where text breaks.
 
-## Symbolization Rules
+When a block feels too long, the answer is always one of:
 
-Priority: highest.
+1. **Condense** the Chinese — this is the default fix,
+2. **Redistribute** wording across the neighbouring blocks (source language, sound
+   boundaries only), or
+3. In re-segmentation mode, **re-audit the boundary** itself.
 
-Use compact professional symbols to improve subtitle reading speed:
+Never: insert a line break, or delete meaningful words to reach a target length.
 
-- Negative numbers: keep mathematical signs, do not write them as Chinese words
-  - `Negative 50` -> `-50`
-- Angles: use degree symbols
-  - `360 degrees` -> `360°`
-  - `90 degrees` -> `90°`
-- Percentages: use `%`
-  - `20 percent` -> `20%`
-- Dimensions and multiplication: use `×`
-  - `10 by 10` -> `10×10`
-- Logic, comparison, and ranges: use compact symbols where clear
-  - `from 10 to 20` -> `10~20`
-  - `greater than 5` -> `>5`
-  - `less than 3` -> `<3`
-  - `plus or minus 5` -> `±5`
+Two exceptions, both structural rather than cosmetic: bilingual output (Chinese line,
+source line) and multi-speaker blocks where each dash-prefixed speaker needs its own line.
+Both are covered in `references/edge-cases.md`.
 
-Prefer Arabic numerals for settings, counts, frames, steps, parameter values, and UI values.
+## Structural rules
 
-## Unit Standardization
+Both modes:
 
-Use SI and common technical unit symbols. Do not translate units into Chinese full names when a standard symbol is expected.
+- Every timestamp in the output already exists in the input — never invent, shift, round,
+  or interpolate a time point
+- All source content appears exactly once, in time order; no block is empty
+- One line of text per block; no wrapping (see the exceptions above)
+- Blank line between blocks; UTF-8; no BOM required but harmless
 
-Examples:
+Structure-preserving mode additionally:
 
-- `50kg`, not `50千克`
-- `100m`, not `100米`
-- `220V`, not `220伏特`
-- `50Hz`, not `50赫兹`
-- `500nits`, not `500 尼特`
+- Indices and timestamp lines are byte-for-byte unchanged
+- No merging, splitting, reordering, adding, or dropping blocks
+- A garbled or absurdly short block still keeps its index and gets the best readable
+  translation available
 
-Do not add spaces between numbers and unit symbols.
+Re-segmentation mode additionally:
 
-## Chinese-English Typography
+- A merged block spans the first block's start and the last block's end; nothing else moves
+- Renumber sequentially from 1
+- Merge the smallest group that fixes a specific, nameable defect
 
-Apply Chinese-English mixed typography rules.
+## Segmentation in one paragraph
 
-- Add one half-width space between Chinese text and English words
-- Add one half-width space between Chinese text and Arabic numerals
-- Add one half-width space between Chinese text and software names, abbreviations, and UI labels
-- Do not add spaces between numbers and unit symbols
-- Use Chinese punctuation inside translated subtitle text, except where subtitle punctuation rules prohibit it
+Judge each boundary on two questions, in the source language: does the first block end on a
+complete phrase or clause, and can the second block be understood without borrowing a noun,
+verb, or object from the first? Both yes → keep it, even if the sentence continues across
+it. Either no → merge the smallest adjacent group that repairs it. "Same sentence", "same
+topic", and "the merged block would still be readable" are not reasons to merge; a large
+drop in block count is a warning sign, not a goal. Character counts are never a reason to
+merge or split anything — every boundary decision is a grammar and phrasing decision. Full
+taxonomy and worked examples: `references/segmentation.md`.
 
-Correct:
+## Style in one paragraph
 
-```text
-在 C4D 中设置 100%，亮度为 500nits
-```
+Strip filler and hesitation — they cost characters and carry nothing. Use symbols and
+Arabic numerals (`-50`, `360°`, `20%`, `10×10`, `3cm`). One half-width space between
+Chinese and Latin text or numerals; none between a number and its unit. Keep software
+names, UI labels, and acronyms in English unless a stable Chinese term is more familiar.
+No sentence-final punctuation at the end of a subtitle line — the cut in time already ends
+the thought — and no ellipses or dashes to mark a sentence continuing into the next block.
+Repair obvious ASR mishearings from context rather than translating the error. Details,
+glossary practice, and a worked domain example: `references/style.md`.
 
-Wrong:
+## Files in this skill
 
-```text
-在C4D中设置100%,亮度为500nits
-```
+| Path | Read it when |
+|---|---|
+| `references/segmentation.md` | Re-segmentation is authorized — before touching any boundary |
+| `references/style.md` | Any translation task; contains noise, symbol, unit, typography, terminology, and ASR-repair rules |
+| `references/edge-cases.md` | Long files, odd encodings, tags and speaker labels, bilingual output, timing anomalies, what to report |
+| `scripts/check_srt.py` | Always, before replying |
 
-## Subtitle Punctuation Rules
+## Optional: streaming-platform punctuation
 
-- Do not end subtitle text lines with a Chinese full stop, English period, exclamation mark, question mark, semicolon, colon, or other sentence-final punctuation
-- Avoid unnecessary commas at line ends
-- Do not use emoji
-- Do not output `[cite]`, `[]`, footnotes, source markers, or any citation markers
-- Do not output explanations, translator notes, comments, or thinking process
-
-If a line naturally requires a question or warning, preserve the meaning without sentence-final punctuation when possible.
-
-## Names and Terminology
-
-- Keep English personal names in English
-- Romanize non-English personal names into English form when needed
-- Keep software names, algorithm names, renderer names, plugin names, and acronyms in English unless a stable Chinese translation exists
-- For important technical concepts, use `中文（English）` on first appearance when it improves clarity
-- Do not force-translate terms in a way that creates ambiguity
-
-Preferred domain handling:
-
-- Preserve these terms in English when they refer to products, UI labels, render passes, or named features: `Cinema`, `Noise`, `Redshift`, `Volume`, `Fields`, `Beauty`, `Coloso`, `Bucket Rendering`
-- Use these mappings when context matches:
-  - `Plane` -> `平面`
-  - `Material` -> `材质`
-  - `Light` -> `灯光`
-  - `Lighting` -> `布光`
-  - `Displacement` -> `置换`
-  - `Mask` -> `遮罩`
-  - `Commander` -> `管理器`
-  - `Viewport` -> `视窗`
-  - `Example` -> `案例`
-
-Do not translate `Viewport` as `视口` in Cinema 4D or similar tutorial contexts. Do not translate `Example` as `示例` when it means a tutorial case.
-
-## ASR Error Handling
-
-When speech recognition has clearly produced the wrong word:
-
-- Use the surrounding subtitles and domain context to infer the intended meaning
-- Correct the translated result naturally in Chinese
-- Keep the corrected content under the original index
-- Do not move corrected content into neighboring blocks
-- Do not terminate or refuse just because a block contains ASR errors
-
-For extremely short timestamps containing unusually long or garbled text, translate the original as well as possible while preserving structure.
-
-## Output Format
-
-Return only the final translated SRT inside one Markdown code block.
-
-Use raw SRT structure:
-
-```srt
-1
-00:00:00,000 --> 00:00:02,000
-翻译后的字幕文本
-
-2
-00:00:02,000 --> 00:00:04,000
-翻译后的字幕文本
-```
-
-Do not include any preface, summary, verification table, explanation, or extra text unless the user explicitly asks for it.
-
-## Final Self-Check
-
-Before responding, compare the output against the input:
-
-- Same subtitle indices
-- Same timestamp lines
-- Same block count
-- Same block order
-- No changed timestamps
-- No added explanations or citations
-- No sentence-final punctuation on subtitle text lines
-- Chinese-English spacing and unit formatting are correct
+Netflix's Simplified Chinese guide drops commas and full stops entirely, using a single
+space in their place, requires `⋯` (U+2026) for ellipses, forbids italics, and uses
+`《》` for titles. If the user is delivering to a streaming platform or asks for
+platform-compliant subtitles, follow that convention and say you switched. Otherwise keep
+in-line full-width punctuation, which reads more naturally for tutorial and web video.

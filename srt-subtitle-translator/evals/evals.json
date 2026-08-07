@@ -1,0 +1,65 @@
+{
+  "skill_name": "srt-subtitle-translator",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "审查并重分段这段 SRT，然后翻译成简体中文。相邻块分别以 'we are' / 'going to show you', 'to' / 'show more', 'great' / 'material', 'the' / 'viewport' 断开。",
+      "expected_output": "四处机械断句全部修复；后一个块不得继续作为孤立的句尾补全片段。合并块使用前块开始时间和后块结束时间。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "先检查是否需要合并，再翻译字幕。某句被切成 'We can also add some' 和 'turbulence.' 两块。",
+      "expected_output": "将仅用于补全前句的 'turbulence' 判定为孤词拖尾并修复，不能保留为独立字幕块。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "先检查断句再翻译。第一块是完整句 'In this video, I will compare the old UV editor.'，下一块是完整句 'Then we will build a new workflow step by step.'",
+      "expected_output": "两个块都是完整、自然且可独立阅读的句子，不应因为相邻或主题连续而合并。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "先审查是否需要重新断句，再翻译这份教程字幕。一个较长句子已经按 6 个自然短语和从句分成 6 块，只有最后的 'simulations.' 被单独切成第 7 块。",
+      "expected_output": "保留前 6 块中的所有自然短语和从句边界，只修复最后的孤立句尾。不得因为 7 块属于同一个语法句子而将它们链式合并成一两个长块。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "翻译一份 250 块的 SRT，并先检查是否需要合并。绝大多数块都能独立阅读，只有少量介词与宾语、UI 名称和单词尾巴被机械切开。",
+      "expected_output": "以保留原边界为默认，只对明确失败的边界进行重新分配或最小合并。输出块数不应大幅下降；每个被移除的边界都必须对应具体的孤词、介词宾语、术语拆分或句尾补全问题。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "把这份 300 多块的 20 分钟教程字幕翻成中文",
+      "expected_output": "结果写入源文件同目录的 .zh.srt 文件（UTF-8），不把完整字幕塞进聊天回复导致截断；回复中给出文件路径、模式说明与校验结果。默认保持原结构，不擅自重新断句。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "翻译这份字幕，里面有 <i>斜体</i> 标签、{\\an8} 定位标签、[music] 标注和 '- ' 开头的双人对话行",
+      "expected_output": "标签与定位符原样保留在对应位置，[music] 译为 [音乐]，双人对话的破折号行结构保持不变，不被合并成一行。",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "这份字幕有几个块只有 0.3 秒，内容是 'Right.' 'Okay.' 之类的口头语，帮我检查断句后翻译",
+      "expected_output": "识别为闪现块（flash block）+ 纯填充词，合并进语义所属的相邻块；填充词在译文中被清除，合并后的块获得可读的时间窗口。",
+      "files": []
+    },
+    {
+      "id": 9,
+      "prompt": "用 DeepL API 把这个 srt 批量翻译一下，速度快点",
+      "expected_output": "拒绝调用第三方翻译 API / 机器翻译服务，说明本技能只做人工逐块翻译，并在用户不改变要求的前提下继续手工翻译。",
+      "files": []
+    },
+    {
+      "id": 10,
+      "prompt": "帮我把这份字幕翻译成中英双语的",
+      "expected_output": "同一个块内中文在上、原文在下，无空行；因密度翻倍而控制中文行长；输出为 .bi.srt 文件。",
+      "files": []
+    }
+  ]
+}

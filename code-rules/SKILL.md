@@ -16,6 +16,8 @@ Core coding discipline. Follow every rule below whenever you are writing, modify
 
 - Do not write special-case patches. Solutions must be general-purpose.
 
+- When fixing compatibility issues, never hard-code the single sample, domain, filename, string, or format the user happened to report. First identify the general rule behind the failure and the existing control point that owns it, then make the smallest general-purpose change there. The fix must cover the class of equivalent inputs while preserving existing correct behavior.
+
 ## Modular Structure
 
 - Do not concentrate all content, logic, UI, state, configuration, and features in a single file.
@@ -41,6 +43,8 @@ Core coding discipline. Follow every rule below whenever you are writing, modify
 - Prefer DOM, jsdom, browser, API, CLI, snapshot-of-output, or artifact-level checks over source-file string checks.
 
 - Keep fixtures narrow. Load only what the test needs, and add clear assertion messages when a test has multiple checks.
+
+- Compatibility fixes must include behavior-level tests for the reported sample, at least one equivalent same-class input, and an ordinary non-matching input that must not be misclassified.
 
 ## Shared Contracts
 
