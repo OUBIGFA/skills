@@ -34,7 +34,7 @@
     {
       "id": 6,
       "prompt": "把这份 300 多块的 20 分钟教程字幕翻成中文",
-      "expected_output": "结果写入源文件同目录的 .zh.srt 文件（UTF-8），不把完整字幕塞进聊天回复导致截断；回复中给出文件路径、模式说明与校验结果。默认保持原结构，不擅自重新断句。",
+      "expected_output": "结果写入源文件同目录的 .zh.srt 文件（UTF-8），不把完整字幕塞进聊天回复导致截断；回复中给出文件路径、修复说明与校验结果。默认修复真正的 ASR 断句缺陷（孤词拖尾、拆散术语等）并按中文自然意群安排时间轴内边界，但不跨越真实停顿、不做无缺陷依据的大规模合并。",
       "files": []
     },
     {
@@ -59,6 +59,78 @@
       "id": 10,
       "prompt": "帮我把这份字幕翻译成中英双语的",
       "expected_output": "同一个块内中文在上、原文在下，无空行；因密度翻倍而控制中文行长；输出为 .bi.srt 文件。",
+      "files": []
+    },
+    {
+      "id": 11,
+      "prompt": "把这份网页课程的 .vtt 字幕翻成中文，里面有 WEBVTT 头、NOTE 注释块和带 position/align 设置的 cue",
+      "expected_output": "输出仍为 .vtt（.zh.vtt），WEBVTT 头、NOTE 块、cue 标识符与 position/align 设置原样保留，时间戳保持点号毫秒格式不变，不转成 SRT；用 check_subtitle.py 校验。",
+      "files": []
+    },
+    {
+      "id": 12,
+      "prompt": "翻译这份 .ass 字幕，Events 里有 {\\pos(...)} 特效标签、\\N 换行和多个 Style，还有和对话同时出现的注释性 sign 事件",
+      "expected_output": "只翻译 Dialogue 行的 Text 字段；[Script Info]、样式区、字段顺序、{\\...} 标签与既有 \\N 位置原样保留；不新增 \\N；sign 与对话的重叠不视为错误；输出 .zh.ass，不转格式。",
+      "files": []
+    },
+    {
+      "id": 13,
+      "prompt": "把这份中文教程字幕翻译成英文",
+      "expected_output": "手工译为英文而非机器翻译；阅读负荷按英文标准（约 20 字符/秒，含空格）评估；英文遵循常规句末标点习惯，不套用中文的去句末标点规则；输出 .en.srt，校验时使用 --lang en。",
+      "files": []
+    },
+    {
+      "id": 14,
+      "prompt": "把这个 .vtt 转成 .srt 再翻译成中文",
+      "expected_output": "转换属于用户显式请求，可以执行，但必须先说明损失（cue 设置、标识符、NOTE/STYLE 块会丢失，点号毫秒变逗号）；不存在未经请求的静默格式转换。",
+      "files": []
+    },
+    {
+      "id": 15,
+      "prompt": "检查断句后翻译：其中两块之间有 1.2 秒的静音间隙，前后各自都是完整可独立阅读的句子",
+      "expected_output": "明显静音间隙（约 0.3 秒以上）是讲话者真实停顿，且该边界通过完整性与独立性两项测试，必须保留，不得为了句子连贯而跨停顿合并。",
+      "files": []
+    },
+    {
+      "id": 16,
+      "prompt": "把这份字幕翻成中文。其中一块长约 8 秒，源文本含两个独立分句，如实翻译后中文接近 40 字",
+      "expected_output": "整句翻译后按中文意群拆成两条各自可独立阅读的字幕，内部新时间点按语音比例分配，语音段首尾时间不变，两片精确铺满语音段且每片不短于 1 秒；不得整块保留成一眼读不完的长行，也不得按字数硬切或删减有效信息。",
+      "files": []
+    },
+    {
+      "id": 17,
+      "prompt": "翻译成中文：块 4 是 'we are going to take a look at one of many methods on how to create variations of stuff'（3.985→10.760），块 5 是 'using MoGraph.'（10.760→12.445），两块间无停顿",
+      "expected_output": "默认（无需用户要求）识别 'using MoGraph.' 为孤立尾部修饰语并合并两块（3.985→12.445），整句翻成语序自然的中文，如'来看看用 MoGraph 创建随机变化的其中一种方法'——'用 MoGraph' 必须置于动词前。严禁逐块直译产出'介绍一种创建随机变化的方法 / 使用 MoGraph'这类被源语言断句绑架、违反中文语序的译文。译文若过长，则在中文意群边界重新拆分并按语音比例分配时间。",
+      "files": []
+    },
+    {
+      "id": 18,
+      "prompt": "翻译这份 C4D 教程字幕，讲的是先 inner extrude 一圈再倒角，后面调关键帧的 interpolation，并提到 viewport 里看不清、渲染出来 noise 很多",
+      "expected_output": "inner extrude 译为“内部挤压”，绝不出现“内插”“内插面”；interpolation 译为“插值”，绝不出现“内插”；viewport 译为“视窗”，不译“视口”；渲染语境下的 noise 译为“噪点”而非“噪波”。全文每个概念只用一种译法。",
+      "files": []
+    },
+    {
+      "id": 19,
+      "prompt": "把这份 Blender 建模教程字幕翻成中文，里面反复出现 inset faces、extrude、geometry nodes 和 grease pencil",
+      "expected_output": "跨软件对齐 C4D 大陆简体中文：inset faces 译为“内部挤压”而不是 Blender 官方简中的“内插面”，extrude 译为“挤压”而不是“挤出”。geometry nodes、grease pencil 属于 Blender 专有功能，按其自身名称处理（几何节点 / 蜡笔或保留原文），不强行套 C4D 词汇。",
+      "files": []
+    },
+    {
+      "id": 20,
+      "prompt": "翻译这份 Maya 教程字幕，涉及 extrude、bevel、subdivision surface、ambient occlusion、keyframe",
+      "expected_output": "依次为“挤压”（不用 Maya 简中的“挤出”）、“倒角”、“细分曲面”（不用“细分表面”）、“环境吸收”（不用“环境光遮蔽”）、“关键帧”。软件名 Maya 保留原文，AO 等缩写保留。",
+      "files": []
+    },
+    {
+      "id": 21,
+      "prompt": "翻译这份 C4D 字幕：一处是讲师说 'create a null and drop everything inside'，另一处是他指着菜单说 'it's under Create > Null'，还有一处 XPresso 节点里 'if the value is null'",
+      "expected_output": "同一个 null 按语境给出不同译法：口头叙述动作时用中文母语说法“新建一个空对象，把东西都放进去”，绝不僵硬地说“新建一个空白”；指菜单路径时保留界面词“空白”，因为观众要在菜单里找到它；XPresso 里的 null 是“空值”。体现术语表是默认值而非查找替换表。",
+      "files": []
+    },
+    {
+      "id": 22,
+      "prompt": "翻译这份渲染教程字幕：一处说 'add a noise to the roughness'，一处说 'the render is still too noisy'，还有一处说 'the light bounces off the wall twice'",
+      "expected_output": "同一批多义词按子领域区分：材质里的 noise 是“噪波”，渲染画面里的 noisy 是“噪点”（不能说“噪波还很多”）；bounces 的主语是物理光线，译为“光线打到墙上反弹两次”，绝不译成“灯光反弹”。用错子领域词义会让句子变得不知所云，属于严重错误。",
       "files": []
     }
   ]
