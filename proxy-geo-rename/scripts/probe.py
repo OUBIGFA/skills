@@ -27,8 +27,9 @@ from verdict import vote
 
 ensure_utf8_stdout()
 
-NODE_TYPES = {'hysteria2', 'tuic', 'http', 'shadowsocks', 'vless',
-              'trojan', 'vmess', 'anytls', 'socks', 'ssh', 'wireguard'}
+NODE_TYPES = {'hysteria', 'hysteria2', 'tuic', 'http', 'shadowsocks',
+              'shadowsocksr', 'vless', 'trojan', 'vmess', 'anytls',
+              'socks', 'ssh', 'wireguard', 'mieru'}
 STRIP_FIELDS = {'domain_resolver'}  # 新版配置字段，旧内核不识别，测试用不到
 IPAPI_FIELDS = 'status,country,countryCode,regionName,city,query'
 

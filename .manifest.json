@@ -1,10 +1,10 @@
 {
-  "codeg_version": "0.26.2",
-  "installed_at": "2026-08-21T06:39:34.992877600+00:00",
+  "codeg_version": "0.27.0",
+  "installed_at": "2026-08-22T07:42:35.341701+00:00",
   "experts": {
     "brainstorming": {
-      "hash": "dbfb48223668972dce25cea6f90c2a639ab591195440cd71c7158b7fcd18fb1f",
-      "installed_at": "2026-07-27T02:58:35.135409700+00:00",
+      "hash": "34c7df25e370ddd75137407845e562b5e1e844f065c3d3a705a7c78fd4b3eb97",
+      "installed_at": "2026-08-22T07:42:35.306960100+00:00",
       "pending_user_review": false
     },
     "dispatching-parallel-agents": {
@@ -18,8 +18,8 @@
       "pending_user_review": false
     },
     "finishing-a-development-branch": {
-      "hash": "4994c49e0f8a1285e341a6f9cceddb2947e072380321438400587663310f8794",
-      "installed_at": "2026-07-27T02:58:35.171699100+00:00",
+      "hash": "f0bef2e8a00b6b69095f6304253120256a92d459b26979a63d60c368e514281e",
+      "installed_at": "2026-08-22T07:42:35.329405600+00:00",
       "pending_user_review": false
     },
     "receiving-code-review": {
@@ -28,13 +28,13 @@
       "pending_user_review": false
     },
     "requesting-code-review": {
-      "hash": "f6795c3d59f95780edcc987689709d6f746cd59e8bd8879552754749eefd6ef9",
-      "installed_at": "2026-07-27T02:58:35.168772300+00:00",
+      "hash": "d613f09113f5a549e8372ff9c787c1a8004dfcd369afe8a0ad59af93088bc2d0",
+      "installed_at": "2026-08-22T07:42:35.327922+00:00",
       "pending_user_review": false
     },
     "subagent-driven-development": {
-      "hash": "78013d603575852d71b425f158e52503ba644d9dcea8a919f03d4f762b6766c3",
-      "installed_at": "2026-07-27T02:58:35.150983400+00:00",
+      "hash": "bf5face727050f7e556a35974ba6e3d8812d1ea6670890d0f1de90ea0b5e3714",
+      "installed_at": "2026-08-22T07:42:35.324507100+00:00",
       "pending_user_review": false
     },
     "systematic-debugging": {
@@ -53,8 +53,8 @@
       "pending_user_review": false
     },
     "using-superpowers": {
-      "hash": "362364784cc21c6f698d69c058c6cd1a1c2034451576cda5aaa2b4115063a23d",
-      "installed_at": "2026-07-27T02:58:35.176769500+00:00",
+      "hash": "8b76313af36f1b1d9a93c1f9d9de0bdf3bbb10df8216148f2ed3483727dc2e61",
+      "installed_at": "2026-08-22T07:42:35.334657500+00:00",
       "pending_user_review": false
     },
     "verification-before-completion": {
@@ -63,13 +63,13 @@
       "pending_user_review": false
     },
     "writing-plans": {
-      "hash": "2779ada68be8d160ae950b046ffd1d5a7a31235d67d448758dae1d6c7b8f9119",
-      "installed_at": "2026-07-27T02:58:35.144535700+00:00",
+      "hash": "a34716e8941fa8f6363ccb58a91e2b0ee9f3014e97693de9161a600e1172afed",
+      "installed_at": "2026-08-22T07:42:35.319134300+00:00",
       "pending_user_review": false
     },
     "writing-skills": {
-      "hash": "f7a72c14405eb484f4aa6b2a0d5e279baab7b0f2471a983ab107ecf9a986e2cf",
-      "installed_at": "2026-07-27T02:58:35.183115300+00:00",
+      "hash": "feae9c663b932be91ae8b8d13571bfe8a33038947e1fbe87c9e0abe1b7c06f01",
+      "installed_at": "2026-08-22T07:42:35.341694100+00:00",
       "pending_user_review": false
     }
   }

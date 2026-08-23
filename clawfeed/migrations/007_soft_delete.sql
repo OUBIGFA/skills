@@ -1,2 +1,0 @@
-ALTER TABLE sources ADD COLUMN is_deleted INTEGER DEFAULT 0;
-ALTER TABLE sources ADD COLUMN deleted_at TEXT;

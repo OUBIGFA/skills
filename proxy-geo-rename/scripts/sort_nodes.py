@@ -35,8 +35,8 @@ ZH2CC = {v: k for k, v in COUNTRY_ZH.items()}
 ZH_KEYS = sorted(ZH2CC, key=lambda x: (x == '中国', -len(x)))
 ISO_RE = re.compile(r'(?:^|[_\- ])([A-Z]{2})(?:[_\- ]|$)')
 FLAG_RE = re.compile(r'([\U0001F1E6-\U0001F1FF])([\U0001F1E6-\U0001F1FF])')
-# 需要原样保留的自定义标记：AI / USAI / ❇️ 及其组合、家宽、魔改、实验性等
-SUFFIX_RE = re.compile(r'^(?:(?:US)?AI)?❇️?$|^(?:US)?AI$|^家宽$|^魔改$|^实验性$')
+# 需要原样保留的自定义标记：AI / USAI / ❇️ 及其组合、家宽、魔改、实验性、base 等
+SUFFIX_RE = re.compile(r'^(?:(?:US)?AI)?❇️?$|^(?:US)?AI$|^家宽$|^魔改$|^实验性$|^base$|^newsub$', re.I)
 CITY_VOCAB = sorted(set(CITY_ZH.values()), key=len, reverse=True)
 EN_CITY = {'sanjose': '圣何塞', 'newyork': '纽约', 'losangeles': '洛杉矶',
            'frankfurt': '法兰克福', 'amsterdam': '阿姆斯特丹', 'singapore': '新加坡',
@@ -140,8 +140,8 @@ def detect_city(tag, cc):
 
 def detect_suffix(tag):
     seen, out = set(), []
-    for s in ('魔改', '实验性', '家宽'):
-        if s in tag and s not in seen:
+    for s in ('魔改', '实验性', '家宽', 'base'):
+        if (s in tag or s.lower() in tag.lower()) and s not in seen:
             seen.add(s)
             out.append(s)
     if re.search(r'(?:US)?AI', tag) and 'AI' not in seen:
@@ -217,6 +217,9 @@ def main():
     if not a.apply:
         print('\n[预览] 未写回。确认无误后加 --apply')
         return
+
+    if 'JP_hy2_base' in mapping and 'JP_hy2' not in mapping:
+        mapping['JP_hy2'] = mapping['JP_hy2_base']
 
     for o in d['outbounds']:
         if o.get('outbounds'):
