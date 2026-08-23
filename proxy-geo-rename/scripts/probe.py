@@ -30,7 +30,7 @@ ensure_utf8_stdout()
 NODE_TYPES = {'hysteria', 'hysteria2', 'tuic', 'http', 'shadowsocks',
               'shadowsocksr', 'vless', 'trojan', 'vmess', 'anytls',
               'socks', 'ssh', 'wireguard', 'mieru'}
-STRIP_FIELDS = {'domain_resolver'}  # 新版配置字段，旧内核不识别，测试用不到
+STRIP_FIELDS = {'domain_resolver', 'tls_fragment'}  # 新版配置字段，旧内核不识别，测试用不到
 IPAPI_FIELDS = 'status,country,countryCode,regionName,city,query'
 
 
@@ -45,7 +45,11 @@ def kernel_version(singbox):
 def build_config(nodes, base_port, iface, new_dns):
     inbounds, rules, outs = [], [], []
     for i, n in enumerate(nodes):
-        outs.append({k: v for k, v in n.items() if k not in STRIP_FIELDS})
+        node_clean = {k: v for k, v in n.items() if k not in STRIP_FIELDS}
+        if 'tls' in node_clean and isinstance(node_clean['tls'], dict):
+            node_clean['tls'] = dict(node_clean['tls'])
+            node_clean['tls'].pop('tls_tricks', None)
+        outs.append(node_clean)
         inbounds.append({'type': 'mixed', 'tag': f'in-{i}',
                          'listen': '127.0.0.1', 'listen_port': base_port + i})
         rules.append({'inbound': [f'in-{i}'], 'outbound': n['tag']})
@@ -68,7 +72,7 @@ def build_config(nodes, base_port, iface, new_dns):
     return cfg
 
 
-def strip_unknown_fields(cfg, cfg_path, singbox, max_rounds=60):
+def strip_unknown_fields(cfg, cfg_path, singbox, max_rounds=500):
     """内核不认识的字段/取值按报错逐个修正（均为非连接必需项），直到校验通过。"""
     for _ in range(max_rounds):
         with open(cfg_path, 'w', encoding='utf-8') as f:

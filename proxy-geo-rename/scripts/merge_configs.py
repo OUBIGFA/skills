@@ -35,10 +35,13 @@ def sig(o):
     cred = (o.get('password') or o.get('uuid') or o.get('auth_str')
             or o.get('username') or o.get('private_key') or '')
     tr = o.get('transport') or {}
+    tr_type = tr.get('type', '') if isinstance(tr, dict) else str(tr)
+    tr_path = tr.get('path', '') if isinstance(tr, dict) else ''
     tls = o.get('tls') or {}
+    tls_sni = tls.get('server_name', '') if isinstance(tls, dict) else ''
     return (o.get('type'), str(o.get('server', '')).lower().rstrip('.'),
             o.get('server_port'), str(cred), o.get('method', ''),
-            tr.get('type', ''), tr.get('path', ''), tls.get('server_name', ''))
+            tr_type, tr_path, tls_sni)
 
 
 def load_nodes(path):

@@ -35,14 +35,25 @@ ZH2CC = {v: k for k, v in COUNTRY_ZH.items()}
 ZH_KEYS = sorted(ZH2CC, key=lambda x: (x == '中国', -len(x)))
 ISO_RE = re.compile(r'(?:^|[_\- ])([A-Z]{2})(?:[_\- ]|$)')
 FLAG_RE = re.compile(r'([\U0001F1E6-\U0001F1FF])([\U0001F1E6-\U0001F1FF])')
-# 需要原样保留的自定义标记：AI / USAI / ❇️ 及其组合、家宽、魔改、实验性、base 等
-SUFFIX_RE = re.compile(r'^(?:(?:US)?AI)?❇️?$|^(?:US)?AI$|^家宽$|^魔改$|^实验性$|^base$|^newsub$', re.I)
+# 需要原样保留的自定义标记：USAI / AI / ❇️ 及其组合(USAI❇️/AI❇️)、China、家宽、魔改、实验性、base 等
+SUFFIX_RE = re.compile(r'^(?:(?:US)?AI)?❇️?$|^(?:US)?AI$|^❇️$|^China$|^家宽$|^魔改$|^实验性$|^base$|^newsub$', re.I)
 CITY_VOCAB = sorted(set(CITY_ZH.values()), key=len, reverse=True)
-EN_CITY = {'sanjose': '圣何塞', 'newyork': '纽约', 'losangeles': '洛杉矶',
-           'frankfurt': '法兰克福', 'amsterdam': '阿姆斯特丹', 'singapore': '新加坡',
-           'tokyo': '东京', 'osaka': '大阪', 'seoul': '首尔', 'taipei': '台北',
-           'hongkong': '香港', 'chicago': '芝加哥', 'dallas': '达拉斯',
-           'seattle': '西雅图', 'miami': '迈阿密'}
+EN_CITY = {
+    'sanjose': '圣何塞', 'newyork': '纽约', 'losangeles': '洛杉矶',
+    'frankfurt': '法兰克福', 'amsterdam': '阿姆斯特丹', 'singapore': '新加坡',
+    'tokyo': '东京', 'osaka': '大阪', 'seoul': '首尔', 'taipei': '台北',
+    'hongkong': '香港', 'chicago': '芝加哥', 'dallas': '达拉斯',
+    'seattle': '西雅图', 'miami': '迈阿密',
+    'paris': '巴黎', 'london': '伦敦', 'madrid': '马德里', 'warsaw': '华沙',
+    'bucharest': '布加勒斯特', 'belgrade': '贝尔格莱德', 'montreal': '蒙特利尔',
+    'ankara': '安卡拉', 'taoyuan': '桃园', 'taichung': '台中', 'kaohsiung': '高雄',
+    'yokohama': '横滨', 'fukuoka': '福冈', 'nagoya': '名古屋', 'vienna': '维也纳',
+    'zurich': '苏黎世', 'geneva': '日内瓦', 'toronto': '多伦多', 'vancouver': '温哥华',
+    'sydney': '悉尼', 'melbourne': '墨尔本', 'helsinki': '赫尔辛基',
+    'stockholm': '斯德哥尔摩', 'oslo': '奥斯陆', 'copenhagen': '哥本哈根',
+    'dublin': '都柏林', 'milan': '米兰', 'rome': '罗马', 'berlin': '柏林',
+    'munich': '慕尼黑', 'hamburg': '汉堡', 'panamacity': '巴拿马城'
+}
 IATA_CITY = {
     'LAX': '洛杉矶', 'SJC': '圣何塞', 'MIA': '迈阿密', 'SFO': '旧金山',
     'JFK': '纽约', 'EWR': '纽约', 'ORD': '芝加哥', 'DFW': '达拉斯',
@@ -62,6 +73,9 @@ def parse_position(tag, cc):
     """取「具体位置」。优先按 CC_国家_位置... 的结构直接取位置段——订阅里这段
     通常是地理库查出来的真实地名（含省州等行政区），比城市词表覆盖得广得多；
     结构对不上再退回词表匹配。IP、纯序号、服务商名都不算位置。"""
+    tag = re.sub(r'#\d+', '', tag)
+    if cc in ('HK', 'MO', 'SG'):
+        return ''
     if '烏山' in tag or '乌山' in tag:
         return '乌山'
     for code, cname in IATA_CITY.items():
@@ -69,13 +83,23 @@ def parse_position(tag, cc):
             return cname
     czh = COUNTRY_ZH.get(cc, '')
     segs = [s.strip() for s in tag.split('_')]
+    if len(segs) >= 2 and czh and czh in segs[0]:
+        for s in segs[1:]:
+            if not s or s.isdigit() or IP_RE.match(s):
+                continue
+            if SUFFIX_RE.match(s) or PROVIDER_RE.search(s):
+                continue
+            pos = trim_admin(s)
+            return '' if pos == czh else pos
+        return ''
     if len(segs) >= 3 and segs[0].upper() == cc and czh and segs[1] == czh:
         for s in segs[2:]:
             if not s or s.isdigit() or IP_RE.match(s):
                 continue
             if SUFFIX_RE.match(s) or PROVIDER_RE.search(s):
                 continue
-            return trim_admin(s)
+            pos = trim_admin(s)
+            return '' if pos == czh else pos
         return ''
     segs_all = [s.strip() for s in re.split(r'[_\-\s]+', tag)]
     for s in segs_all:
@@ -85,7 +109,7 @@ def parse_position(tag, cc):
                 return c
     flat = re.sub(r'[^a-z]', '', tag.lower())
     for k, v in EN_CITY.items():
-        if k in flat:
+        if k in flat and v != czh:
             return v
     body = tag.replace(czh or '\x00', '\x00')
     for c in CITY_VOCAB:
@@ -96,6 +120,7 @@ def parse_position(tag, cc):
 
 def detect_cc(tag, node=None):
     """从节点名解析地区码。中文国名最可信（常见旗名不符，如 🇨🇳台湾）。"""
+    tag = re.sub(r'#\d+', '', tag)
     for name in ZH_KEYS:
         if name in tag:
             return ZH2CC[name]
@@ -127,6 +152,7 @@ def detect_cc(tag, node=None):
 
 def detect_city(tag, cc):
     """只认真实地名；认不出返回空。国名先挖掉，避免「香港」这类地区名被当城市。"""
+    tag = re.sub(r'#\d+', '', tag)
     flat = re.sub(r'[^a-z]', '', tag.lower())
     for k, v in EN_CITY.items():
         if k in flat:
@@ -138,17 +164,41 @@ def detect_city(tag, cc):
     return ''
 
 
-def detect_suffix(tag):
+def detect_suffix(tag, cc=None):
+    tag_clean = re.sub(r'#\d+', '', tag)
     seen, out = set(), []
     for s in ('魔改', '实验性', '家宽', 'base'):
-        if (s in tag or s.lower() in tag.lower()) and s not in seen:
+        if (s in tag_clean or s.lower() in tag_clean.lower()) and s not in seen:
             seen.add(s)
             out.append(s)
-    if re.search(r'(?:US)?AI', tag) and 'AI' not in seen:
+
+    # 优先检测组合及精准标记
+    if 'USAI❇️' in tag_clean:
+        for k in ('USAI❇️', 'AI❇️', 'USAI', 'AI', '❇️'):
+            seen.add(k)
+        out.append('USAI❇️')
+    elif 'AI❇️' in tag_clean:
+        for k in ('AI❇️', 'AI', '❇️'):
+            seen.add(k)
+        out.append('AI❇️')
+    elif re.search(r'(?:^|[_\-\s])USAI(?:[_\-\s]|$)', tag_clean, re.I):
+        for k in ('USAI', 'AI'):
+            seen.add(k)
+        out.append('USAI')
+    elif re.search(r'(?:^|[_\-\s])AI(?:[_\-\s]|$)', tag_clean):
         seen.add('AI')
         out.append('AI')
-    for seg in re.split(r'[_\s]+', tag):
-        if SUFFIX_RE.match(seg) and seg not in seen:
+    elif '❇️' in tag_clean and '❇️' not in seen:
+        seen.add('❇️')
+        out.append('❇️')
+
+    segs = [s.strip() for s in re.split(r'[_\s]+', tag_clean)]
+    for seg in segs:
+        if seg == 'China' and cc != 'CN':
+            if 'China' not in seen:
+                seen.add('China')
+                out.append('China')
+        elif SUFFIX_RE.match(seg) and seg not in seen:
             seen.add(seg)
             out.append(seg)
     return '_'.join(out)
@@ -181,7 +231,7 @@ def main():
             cc = fix
         plan.append({'i': i, 'tag': tag, 'cc': cc,
                      'city': pos,
-                     'suf': detect_suffix(tag)})
+                     'suf': detect_suffix(tag, cc)})
     plan.sort(key=lambda p: (region_rank(p['cc']), p['cc'] or '', p['city'], p['i']))
 
     mapping, rows, counters = {}, [], {}

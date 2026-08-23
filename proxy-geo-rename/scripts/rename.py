@@ -23,6 +23,7 @@ import time
 from common import ensure_utf8_stdout, load_session, pair_nodes, reorder_outbounds
 from geodata import flag, region_rank
 from probe import NODE_TYPES
+from sort_nodes import detect_suffix
 
 ensure_utf8_stdout()
 
@@ -73,11 +74,13 @@ def main():
         # 终裁按当前名或检测时的原名匹配均可
         ov = overrides.get(tag) or overrides.get(r.get('tag')) or {}
         note = '；'.join(filter(None, [auto_note(r), ov.get('note', '')]))
+        cc_target = ov.get('cc') or r.get('cc')
+        suf = detect_suffix(tag, cc_target)
         if ok and ov.get('cc'):
-            plan.append((idx, tag, r, ov['cc'], ov['country_zh'], ov['city_zh'], '终裁', note))
+            plan.append((idx, tag, r, ov['cc'], ov['country_zh'], ov['city_zh'], '终裁', note, suf))
         elif ok and r.get('conf') in ('high', 'medium'):
             plan.append((idx, tag, r, r['cc'], r['country_zh'], r['city_zh'],
-                         '高' if r['conf'] == 'high' else '中', note))
+                         '高' if r['conf'] == 'high' else '中', note, suf))
         else:
             keep.append({'old': tag, 'new': '（保留原名）', 'exit': r.get('exit_ip', ''),
                          'geo': '', 'votes': '', 'conf': ('离线' if not ok else '低置信'),
@@ -87,13 +90,19 @@ def main():
     if a.sort:
         plan.sort(key=lambda p: (region_rank(p[3]), p[3], p[5] or '', p[0]))
 
-    for idx, tag, r, cc, czh, city, conf, note in plan:
+    for idx, tag, r, cc, czh, city, conf, note, suf in plan:
         key = (cc, city)
         counters[key] = counters.get(key, 0) + 1
-        # 格式【国旗 国家_城市_编号】；国旗取不到时退回国家码前缀，保证仍能一眼看出地区
+        # 格式【国旗 国家_城市_编号[_后缀]】；国旗取不到时退回国家码前缀，保证仍能一眼看出地区
         em = flag(cc)
         prefix = f'{em} ' if em else f'{cc}_'
-        new = f'{prefix}{czh}_{city}_{counters[key]}'
+        parts = [f'{prefix}{czh}']
+        if city:
+            parts.append(city)
+        parts.append(str(counters[key]))
+        if suf:
+            parts.append(suf)
+        new = '_'.join(parts)
         mapping[tag] = new
         rows.append({'old': tag, 'new': new, 'exit': r.get('exit_ip', ''),
                      'geo': f'{czh}·{city}',
