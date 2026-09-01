@@ -12,7 +12,8 @@ House style, not a platform requirement — Netflix's Simplified Chinese guide i
 CJK/Latin spacing, but the space makes mixed lines noticeably easier to scan:
 
 - One half-width space between Chinese text and Latin words, numerals, software names,
-  abbreviations, and UI labels: `在 C4D 中设置 100%，亮度为 500nits`
+  abbreviations, and English UI labels: `在 C4D 中设置 100%，亮度为 500nits`
+- **中文词汇严禁前后留空格**：空格仅用于中英文/数字分界或意群间停顿，中文词汇之间绝不可因属于专有名词或 UI 术语而生硬留出前后空格（错误：`但 吸引 完全没有任何可视反馈`、`摩擦 还在 我先把 摩擦 关掉`）。此类词汇要么取消前后空格自然融入中文句式（`但吸引完全没有任何可视反馈`、`摩擦还在 我先把摩擦关掉`），要么直接保留英文原文并按中英混排规则留空格（建议保留英文原文：`但 Attractor 完全没有任何可视反馈`、`Friction 还在 我先把 Friction 关掉`）。
 - No space between a number and its unit symbol, and no space around punctuation
 - Use full-width Chinese punctuation inside the line. `，、？` are normal when the
   sentence needs them; use `：` only for a genuine explanation, label, or structural

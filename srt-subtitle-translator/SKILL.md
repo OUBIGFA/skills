@@ -362,7 +362,7 @@ gives defaults, not substitutions: context decides between an on-screen label an
 phrasing, and between the several target words one source term can map to. Prefer plain descriptive wording over insider shorthand for concepts, keep verbatim what
 the viewer watches being typed on screen, and repair
 obvious ASR mishearings from context rather than translating the error. For Chinese
-targets: one half-width space between Chinese and Latin text or numerals, none between a
+targets: one half-width space between Chinese and Latin text or numerals (strictly forbidden around Chinese words/terms: never write `但 吸引 ...` or `把 摩擦 关掉` — either remove spaces to blend into Chinese or keep the original English term with spacing, e.g. `但 Attractor ...` or `把 Friction 关掉`, with English UI terms recommended), none between a
 number and its unit, and normally no sentence-final full stop at the end of a subtitle
 line — the cut in time already ends the thought. Exclamation marks (`！`/`!`) are strictly
 forbidden across all subtitles — express tone through natural phrasing or convert to
