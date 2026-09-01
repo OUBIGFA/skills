@@ -69,8 +69,8 @@ def main():
         if o.get('tag') in drop and not a.keep_dead:
             dropped.append(o['tag'])
             continue
-        # domain_resolver 指向的是快照内部的 DNS 标签，脱离快照即为悬空引用
-        nodes.append({k: v for k, v in o.items() if k != 'domain_resolver'})
+        # domain_resolver 指向的是快照内部的 DNS 标签，脱离快照即为悬空引用；detour 为链式前置，一并剔除
+        nodes.append({k: v for k, v in o.items() if k not in ('domain_resolver', 'detour')})
     if not nodes:
         print('未找到节点')
         sys.exit(1)

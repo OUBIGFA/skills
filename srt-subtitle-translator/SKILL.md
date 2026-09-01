@@ -1,7 +1,7 @@
 ---
 name: srt-subtitle-translator
-description: Hand-translate subtitle files — SRT, WebVTT (.vtt), and ASS/SSA (.ass) — into natural, professional subtitles in the requested target language, Simplified Chinese by default, with no machine-translation services involved. Natural target-language phrasing is the top priority; the skill repairs ASR-broken segmentation by default (orphan tails, split terms, stranded prepositions, flash blocks), translates whole sentences, then re-places boundaries on the timeline to fit the target language's word order and one-glance readability, while never crossing a real speech pause and never shifting where speech starts or stops. Use this skill whenever the user asks to translate subtitles or captions in any format or direction (into Chinese, English, Japanese, or any other language), review or fix subtitle segmentation, merge fragmented ASR blocks, clean up auto-generated captions, produce a bilingual subtitle file, or hands over an .srt, .vtt, or .ass file with any request at all — even a bare "translate this". Never route subtitle text through third-party translation APIs, browser translation, online translators, or local MT software.
-version: 4.3.0
+description: Hand-translate subtitle files — SRT, WebVTT (.vtt), and ASS/SSA (.ass) — into natural, professional subtitles in the requested target language (Simplified Chinese by default), with no machine-translation services. The skill repairs ASR-broken segmentation, translates whole sentences, and re-places block boundaries on the timeline for target-language word order and one-glance readability, without crossing real speech pauses. Use this whenever the user asks to translate subtitles or captions in any format or direction, review or fix subtitle segmentation, merge fragmented ASR blocks, clean up auto-generated captions, produce bilingual subtitles, or hands over an .srt/.vtt/.ass file with any request at all — even a bare "translate this". Never route subtitle text through third-party translation APIs, browser translation, online translators, or local MT software.
+version: 4.5.0
 ---
 
 # SRT Subtitle Translator
@@ -11,6 +11,26 @@ noisy — into a subtitle file in the target language that reads as if it had be
 in that language, and that a viewer can read at speed without pausing the video. The
 target language is whatever the user asks for; when they don't say, it is Simplified
 Chinese.
+
+## When to Use This Skill
+
+- The user asks to translate subtitles or captions in any format or direction — into
+  Chinese, English, Japanese, or any other language.
+- The user wants to review or fix subtitle segmentation, merge fragmented ASR blocks, or
+  clean up auto-generated captions.
+- The user wants a bilingual subtitle file.
+- The user hands over an `.srt`, `.vtt`, or `.ass` file with any request at all — even a
+  bare "translate this".
+
+## Scope and hard limits
+
+- Natural target-language expression is the top priority. Repair ASR-broken segmentation
+  by default: orphan tails, split terms, stranded prepositions, flash blocks.
+- Translate whole sentences, then re-place boundaries on the timeline to fit the target
+  language's word order and one-glance readability — never crossing a real speech pause,
+  never shifting where speech starts or stops.
+- Never route subtitle text through third-party translation APIs, browser translation,
+  online translators, or local MT software. The translation is done by hand, here.
 
 Three things decide whether the result is good, in this order:
 
@@ -77,6 +97,10 @@ So the working order is always: **repair the segmentation, then translate, then 
    one block spanning the sentence's speech. If it is too long to read naturally, split
    *the translation* at the target language's own phrase boundaries and distribute the
    pieces across the sentence's time span, proportionally to the speech.
+4. **Enforce Semantic Closure & Universal Thought-Unit Boundaries:**
+   - **Law of Semantic Closure**: Every block must be an intact, self-contained thought unit. Never leave governing verbs that take a clausal complement (e.g. "看看", "试图", "准备", "想要") stranded at the tail of a block.
+   - **Law of Clausal Introducer Head-Attachment**: Connectives and prepositions (因为/所以/如果/但是/然后/关于/为了/把/让/由) syntactically lead their clause; they MUST belong to the **start of the continuation block**, never trailing the prior block.
+   - **Two-Pass Auditing**: Always run the *Forward Suspension Test* (does reading Block A feel cut off in mid-air?) and *Isolated Meaning Test* (can Block B stand as a natural spoken phrase?) across all continuous speech block pairs.
 
 Never reverse this order. Boundaries exist to serve the translation; the translation
 never bends to serve a boundary.
@@ -187,19 +211,36 @@ blocks, validating structure, comparing timestamps, formatting output.
    explain why they stand. Pass `--strict` only when the user required an untouched
    timeline.
 
-5. **Report briefly**: file path, what was repaired and re-placed (with block counts
-   before → after), what needs a human eye. Not the subtitle text itself.
+5. **Recycle every intermediate artifact** — once, and only once, the checker reports
+   zero errors. Part files, the temp directory holding them, source dumps, span and
+   glossary scratch files: all of it goes, leaving only the source and the delivered
+   translation. **To the recycle bin, never a permanent delete** — no `rm`, no `del`, no
+   `Remove-Item`. The Windows/macOS/Linux commands are in `references/edge-cases.md`.
+   Recycle only what you created in this task, and never ask permission to clean up your
+   own scratch — just do it before replying.
+
+6. **Report briefly**: file path, what was repaired and re-placed (with block counts
+   before → after), what needs a human eye, and one clause confirming the intermediates
+   were recycled. Not the subtitle text itself.
 
 ## Delivery
 
 Under ~60 blocks: inline in one code block is fine.
 
 Above that: **write a file**, named source name + target language code + original
-extension — `tutorial.srt` → `tutorial.zh.srt`, `talk.vtt` → `talk.en.vtt` — UTF-8, in
+extension — Chinese uses a hyphenated suffix, `tutorial.srt` → `tutorial-zh.srt`; other
+language examples retain their code style, such as `talk.vtt` → `talk.en.vtt` — UTF-8, in
 the source's directory. A 300-block file pasted into a reply risks silent truncation, and
 a subtitle that stops at block 240 with no warning is worse than no subtitle. For long
 files, build parts in a temp directory and concatenate — details and the encoding, tag,
 and bilingual rules are in `references/edge-cases.md`.
+
+**The directory you leave behind holds the source and the translation, nothing else.**
+Part files, temp directories, source dumps, and scratch notes are yours to clean up, and
+cleanup is not optional or negotiable — recycle them after the checker passes, without
+asking. Recycle bin only: never `rm`, `del`, or `Remove-Item`, so a wrong path stays
+recoverable. Commands per platform, and the two safety rules, are in
+`references/edge-cases.md`.
 
 Never mix an explanation into the subtitle file. Never emit citation markers, translator
 notes, or commentary inside subtitle text.
@@ -322,11 +363,25 @@ phrasing, and between the several target words one source term can map to. Prefe
 the viewer watches being typed on screen, and repair
 obvious ASR mishearings from context rather than translating the error. For Chinese
 targets: one half-width space between Chinese and Latin text or numerals, none between a
-number and its unit, and no sentence-final punctuation at the end of a subtitle line — the
-cut in time already ends the thought. Language-independent rules:
+number and its unit, and normally no sentence-final full stop at the end of a subtitle
+line — the cut in time already ends the thought. Exclamation marks (`！`/`!`) are strictly
+forbidden across all subtitles — express tone through natural phrasing or convert to
+declarative sentences. A genuine `？` may remain when its question tone matters. Language-independent rules:
 `references/style-common.md`. Chinese typography and punctuation:
 `references/style-zh.md`. Term defaults for 3D and motion-graphics videos:
 `references/glossary-3d-zh.md`.
+
+For Chinese targets, apply the single-thought rule: one subtitle block should carry one
+complete thought. An internal full stop `。` or semicolon `；` normally means the block
+contains two completed or separately divided thought units; split them into separate
+subtitle blocks and place the pieces on the timeline. Commas `，`, enumeration commas
+`、`, and question marks `？` are normal punctuation inside one
+thought and must not trigger a split by themselves (exclamation marks `！`/`!` are
+prohibited throughout). Use a colon `：` only when a genuine
+explanation, label, or structural introduction needs it, but do not treat it as an
+automatic split signal. Structural speaker labels, UI labels, menu paths, code, and text
+the viewer sees typed stay faithful to the source. Judge the thought structure rather
+than banning punctuation wholesale.
 
 ## Files in this skill
 

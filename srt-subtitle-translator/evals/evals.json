@@ -34,7 +34,7 @@
     {
       "id": 6,
       "prompt": "把这份 300 多块的 20 分钟教程字幕翻成中文",
-      "expected_output": "结果写入源文件同目录的 .zh.srt 文件（UTF-8），不把完整字幕塞进聊天回复导致截断；回复中给出文件路径、修复说明与校验结果。默认修复真正的 ASR 断句缺陷（孤词拖尾、拆散术语等）并按中文自然意群安排时间轴内边界，但不跨越真实停顿、不做无缺陷依据的大规模合并。",
+      "expected_output": "结果写入源文件同目录、采用 -zh.srt 后缀的文件（UTF-8），不把完整字幕塞进聊天回复导致截断；回复中给出文件路径、修复说明与校验结果。默认修复真正的 ASR 断句缺陷（孤词拖尾、拆散术语等）并按中文自然意群安排时间轴内边界，但不跨越真实停顿、不做无缺陷依据的大规模合并。",
       "files": []
     },
     {
@@ -64,13 +64,13 @@
     {
       "id": 11,
       "prompt": "把这份网页课程的 .vtt 字幕翻成中文，里面有 WEBVTT 头、NOTE 注释块和带 position/align 设置的 cue",
-      "expected_output": "输出仍为 .vtt（.zh.vtt），WEBVTT 头、NOTE 块、cue 标识符与 position/align 设置原样保留，时间戳保持点号毫秒格式不变，不转成 SRT；用 check_subtitle.py 校验。",
+      "expected_output": "输出仍为 .vtt，文件名采用 -zh.vtt 后缀；WEBVTT 头、NOTE 块、cue 标识符与 position/align 设置原样保留，时间戳保持点号毫秒格式不变，不转成 SRT；用 check_subtitle.py 校验。",
       "files": []
     },
     {
       "id": 12,
       "prompt": "翻译这份 .ass 字幕，Events 里有 {\\pos(...)} 特效标签、\\N 换行和多个 Style，还有和对话同时出现的注释性 sign 事件",
-      "expected_output": "只翻译 Dialogue 行的 Text 字段；[Script Info]、样式区、字段顺序、{\\...} 标签与既有 \\N 位置原样保留；不新增 \\N；sign 与对话的重叠不视为错误；输出 .zh.ass，不转格式。",
+      "expected_output": "只翻译 Dialogue 行的 Text 字段；[Script Info]、样式区、字段顺序、{\\...} 标签与既有 \\N 位置原样保留；不新增 \\N；sign 与对话的重叠不视为错误；输出采用 -zh.ass 后缀，不转格式。",
       "files": []
     },
     {
@@ -131,6 +131,18 @@
       "id": 22,
       "prompt": "翻译这份渲染教程字幕：一处说 'add a noise to the roughness'，一处说 'the render is still too noisy'，还有一处说 'the light bounces off the wall twice'",
       "expected_output": "同一批多义词按子领域区分：材质里的 noise 是“噪波”，渲染画面里的 noisy 是“噪点”（不能说“噪波还很多”）；bounces 的主语是物理光线，译为“光线打到墙上反弹两次”，绝不译成“灯光反弹”。用错子领域词义会让句子变得不知所云，属于严重错误。",
+      "files": []
+    },
+    {
+      "id": 23,
+      "prompt": "翻译成简体中文，重点检查同一条字幕内部的标点：'First, select the object; then open the Settings panel.'、'The reason is simple: we need more geometry.'、'Select the object and move it up.'",
+      "expected_output": "第一句中的分号把两个动作分成了两个意群，应拆为两个字幕块并按语音时间铺开，不能只把分号换成逗号来掩盖边界。第二句的冒号确实引出解释，可以保留；冒号不作为自动拆块信号，但无实际解释、标签或结构引入需求时应自然改写。第三句是单一意群，不必添加标点。结构性的说话人标签、UI 文本和菜单路径保持原样。",
+      "files": []
+    },
+    {
+      "id": 24,
+      "prompt": "翻译成简体中文并严格按单块单意群处理：一条字幕包含 'Select the object. Then open the panel.'，另一条包含 'Select the object, then open the panel.'，还有一条是说话人标签 'JOHN: open the panel.'",
+      "expected_output": "第一条中的句号表示两个完整句子，应拆成两个字幕块并按语音时间铺开；第二条的逗号可正常保留，只要整条仍是一个连续意群，不能仅因逗号机械拆块。普通中文字幕行末不加句号。JOHN：属于结构性说话人标签，可以保留。",
       "files": []
     }
   ]

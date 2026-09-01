@@ -9,15 +9,16 @@ the user then has a file that stops at block 240 with no warning.
 Rule of thumb: **under ~60 blocks, inline is fine; above that, write a file.**
 
 Write it next to the source, named source name + target language code + original
-extension: `tutorial.srt` → `tutorial.zh.srt`, `talk.vtt` → `talk.en.vtt`,
-`episode.ass` → `episode.zh.ass`. Then report the path plus what you changed.
+extension. Chinese uses a hyphenated suffix: `tutorial.srt` → `tutorial-zh.srt` and
+`episode.ass` → `episode-zh.ass`; other language examples retain their code style, such
+as `talk.vtt` → `talk.en.vtt`. Then report the path plus what you changed.
 For bilingual output use `.bi.` in place of the language code.
 
 When the file is long enough that one write would be unwieldy, build it in numbered parts
 in a temp directory and concatenate:
 
 ```bash
-cat part1.srt part2.srt part3.srt > "/path/to/name.zh.srt"
+cat part1.srt part2.srt part3.srt > "/path/to/name-zh.srt"
 ```
 
 Each part must start and end on a block boundary with a trailing blank line, so
@@ -25,6 +26,38 @@ concatenation cannot fuse two blocks. For VTT, only part 1 carries the `WEBVTT` 
 for ASS, only part 1 carries the sections above `[Events]`. After concatenating, run
 `scripts/check_subtitle.py <output> --source <input>` — it will catch a lost or
 duplicated block immediately.
+
+## Clean up every intermediate artifact — to the recycle bin
+
+Everything you created that is not the delivered subtitle file is an intermediate
+artifact: numbered part files, the temp directory holding them, source text dumps,
+timing/span scratch files, glossary drafts, any `_tmp*` / `_spans*` / `_dump*` helper.
+**Delete all of them once the checker reports zero errors** — never leave them next to
+the user's media for them to clean up, and never ask whether to clean up. The only
+survivors are the source file and the translated output.
+
+**Move them to the recycle bin, never permanently delete.** Do not use `rm`, `del`, or
+`Remove-Item` — those bypass the recycle bin and a mistake is unrecoverable. On Windows,
+recycle with:
+
+```bash
+powershell -NoProfile -Command "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory('<abs-path>','OnlyErrorDialogs','SendToRecycleBin')"
+```
+
+Use `DeleteFile` with the same last two arguments for a single file. Paths must be
+absolute; quote them. On macOS use `trash` (or AppleScript `tell application "Finder" to
+delete`); on Linux use `gio trash` / `trash-put`.
+
+Order matters: concatenate → verify with `check_subtitle.py` → **then** recycle. If the
+checker reports an error you still need the parts to fix and rebuild. Do the cleanup
+before writing the reply, and state in one clause that the intermediates went to the
+recycle bin — do not list them.
+
+Two safety rules, without exception:
+
+- Recycle only paths **you** created during this task. Never touch a pre-existing file,
+  even one that looks like leftover scratch from an earlier run, without asking first.
+- Confirm the delivered output exists and passes the checker before recycling anything.
 
 ## Encoding
 
@@ -55,7 +88,8 @@ Preserve, do not translate:
 - Music/sound annotations: `[music]` → translate the word, keep the bracket marker
   (`[音乐]` for Chinese); `♪` stays
 - Speaker labels: `- ` dashes for two speakers stay at line start; `JOHN:` → `John：`
-  (or the target language's convention)
+  (or the target language's convention). This is a legitimate structural use of a colon,
+  not a signal that the subtitle must be split.
 
 VTT voice/class/karaoke tags and ASS override tags have their own rules — see
 `references/formats.md`.
@@ -101,5 +135,7 @@ The final reply is not the subtitle file — it is a short account of what happe
 - Anything the user should look at: unrecoverable ASR passages, source timing anomalies,
   terminology choices that could reasonably have gone another way
 - The verification result from `check_subtitle.py`
+- One clause confirming the intermediates went to the recycle bin — no list, no offer to
+  clean up, because cleanup already happened
 
 Keep it to a few lines. The user wants to know it is safe to use, not to read a report.

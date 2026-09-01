@@ -190,6 +190,38 @@ Chinese breathes — the timestamps 25,380 and 33,700 anchor the span, and the i
 point moves to wherever the Chinese phrase boundary wants it. Collapsing all three
 blocks into one 15-second block would be the opposite error.
 
+## Universal Laws of Thought-Unit Segmentation (意群切分三大公理)
+
+Never rely on word-for-word translation or mechanical cut-and-paste. When translating and subdividing spoken language, every block boundary must obey three fundamental linguistic principles:
+
+### 1. The Law of Semantic & Syntactic Closure (语义与句法闭合律)
+Every subtitle block must be a standalone **Thought Unit (意群)** or **Breath Group (气口)**.
+- A native viewer reading the block must feel a complete semantic impression — never left "hanging in mid-air" waiting for an essential verb argument, clausal complement, or head noun.
+- **Governing Verbs (支配动词)** that take a full clausal object (e.g. "看看", "看看能否", "试图", "准备", "想要") MUST NOT be stranded at the end of a block if the governed clause only arrives in the next block.
+
+### 2. The Law of Clausal Introducer Head-Attachment (关联与引导成分前置律)
+Clausal connectives, conjunctions, relative markers, and prepositions are syntactic heads of the clause they introduce — they belong to the **beginning of the continuation unit**, never the tail of the preceding unit.
+- **Connectives & Transitions**: (因为/所以/如果/但是/然后/而且/以及/也就是说/换句话说) must lead the following clause.
+- **Prepositions & Case Markers**: (关于/对于/为了/把/让/给/向/从/由) must stay with their nominal/verbal object.
+
+### 3. The Law of Modification & Argument Integrity (修饰与论元完整律)
+Never place a boundary between tightly-bound syntactic pairs:
+- **Structural / Aspectual Particles**: (的/地/得/着/了/过) must attach to their governing phrase; never let "的/地/得" or suffixes (之类/等等/一样) start a continuation block.
+- **Specifiers & Classifiers**: (一个/某种/某份) must remain attached to their head noun.
+- **Verb & Direct Object**: A transitive verb must not be severed from its core direct object unless the verb has self-contained action meaning.
+
+---
+
+## Two-Pass Auditing Protocol (双向顺读自检协议)
+
+Before delivering any subtitle segment, run this two-pass cognitive test on every pair of adjacent blocks in continuous speech:
+
+1. **Forward Suspension Test (顺读悬空感测试)**:
+   Read Block A aloud. Does it leave the listener expecting an immediate complement that was cut off? (e.g. "做一只完全动态的鸟会很有趣 看看" -> "看看什么？"). If yes, the boundary is broken. Move the dangling connector/verb to Block B ("...很有趣" | "看看能做些什么").
+
+2. **Isolated Meaning Test (孤立可懂度测试)**:
+   Cover Block A and read Block B alone. Can Block B be understood as a spoken phrase on its own, or does it start with a broken tail/particle (e.g. "能做些什么" vs "看看能做些什么")? A healthy subtitle block always carries an intact internal structure.
+
 ## Self-check before writing the output
 
 - Speech-span edges and every audible pause from the source survive untouched; no block

@@ -23,7 +23,7 @@ import time
 from common import ensure_utf8_stdout, load_session, pair_nodes, reorder_outbounds
 from geodata import flag, region_rank
 from probe import NODE_TYPES
-from sort_nodes import detect_suffix
+from sort_nodes import detect_suffix, format_tag, parse_standard_tag
 
 ensure_utf8_stdout()
 
@@ -75,12 +75,18 @@ def main():
         ov = overrides.get(tag) or overrides.get(r.get('tag')) or {}
         note = '；'.join(filter(None, [auto_note(r), ov.get('note', '')]))
         cc_target = ov.get('cc') or r.get('cc')
-        suf = detect_suffix(tag, cc_target)
+        std = parse_standard_tag(tag)
+        if std and std['content']:
+            suf = std['content']
+            sep = std['sep']
+        else:
+            suf = detect_suffix(tag, cc_target)
+            sep = '_'
         if ok and ov.get('cc'):
-            plan.append((idx, tag, r, ov['cc'], ov['country_zh'], ov['city_zh'], '终裁', note, suf))
+            plan.append((idx, tag, r, ov['cc'], ov['country_zh'], ov['city_zh'], '终裁', note, suf, sep))
         elif ok and r.get('conf') in ('high', 'medium'):
             plan.append((idx, tag, r, r['cc'], r['country_zh'], r['city_zh'],
-                         '高' if r['conf'] == 'high' else '中', note, suf))
+                         '高' if r['conf'] == 'high' else '中', note, suf, sep))
         else:
             keep.append({'old': tag, 'new': '（保留原名）', 'exit': r.get('exit_ip', ''),
                          'geo': '', 'votes': '', 'conf': ('离线' if not ok else '低置信'),
@@ -90,19 +96,10 @@ def main():
     if a.sort:
         plan.sort(key=lambda p: (region_rank(p[3]), p[3], p[5] or '', p[0]))
 
-    for idx, tag, r, cc, czh, city, conf, note, suf in plan:
+    for idx, tag, r, cc, czh, city, conf, note, suf, sep in plan:
         key = (cc, city)
         counters[key] = counters.get(key, 0) + 1
-        # 格式【国旗 国家_城市_编号[_后缀]】；国旗取不到时退回国家码前缀，保证仍能一眼看出地区
-        em = flag(cc)
-        prefix = f'{em} ' if em else f'{cc}_'
-        parts = [f'{prefix}{czh}']
-        if city:
-            parts.append(city)
-        parts.append(str(counters[key]))
-        if suf:
-            parts.append(suf)
-        new = '_'.join(parts)
+        new = format_tag(cc, czh, city, counters[key], suf, sep)
         mapping[tag] = new
         rows.append({'old': tag, 'new': new, 'exit': r.get('exit_ip', ''),
                      'geo': f'{czh}·{city}',
@@ -134,12 +131,16 @@ def main():
               '低置信节点如需命名，先经延迟仲裁写 overrides.json')
         return
 
-    # 同步全部引用
+    # 同步全部引用，并移除代理节点的链式前置
     for o in d['outbounds']:
         if o.get('type') in ('selector', 'urltest'):
             o['outbounds'] = [mapping.get(t, t) for t in o.get('outbounds', [])]
             if o.get('default') in mapping:
                 o['default'] = mapping[o['default']]
+        elif o.get('type') in NODE_TYPES:
+            o.pop('detour', None)  # 移除链式代理（前置代理），全部降级为直接连接
+            if o.get('tag') in mapping:
+                o['tag'] = mapping[o['tag']]
         else:
             if o.get('detour') in mapping:
                 o['detour'] = mapping[o['detour']]

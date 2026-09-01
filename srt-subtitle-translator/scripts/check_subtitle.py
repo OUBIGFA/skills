@@ -6,8 +6,8 @@ Supports SRT (.srt), WebVTT (.vtt), and ASS/SSA (.ass/.ssa). The format is detec
 from the file extension; the output and the --source file must share one format —
 silent format conversion is itself an error.
 
-    python check_subtitle.py out.zh.srt                     # check one file
-    python check_subtitle.py out.zh.srt --source in.srt     # also diff against the source
+    python check_subtitle.py out-zh.srt                     # check one file
+    python check_subtitle.py out-zh.srt --source in.srt     # also diff against the source
     python check_subtitle.py out.en.srt --lang en           # non-Chinese target language
 
 Checks performed on the output file:
@@ -18,7 +18,11 @@ Checks performed on the output file:
     target language's reading-speed anchor (--lang, default zh)
   - per-line scan width beyond the one-glance comfort zone (split or condense)
   - one line per block — wrapping is not allowed; ASS \\N breaks count as lines
-  - sentence-final punctuation at end of a line (CJK targets only)
+  - disallowed trailing punctuation at end of a line (CJK targets only; question
+    marks remain valid, exclamation marks are forbidden)
+  - forbidden exclamation marks in subtitle text ('！' and '!')
+  - internal full stops and semicolons that may indicate two thought units were
+    placed in one Chinese subtitle block
   - missing space between CJK and Latin/digits (zh target only; reported, not fatal)
 
 Extra checks when --source is given:
@@ -76,17 +80,69 @@ DEFAULTS = {
     "min_split_piece": 1.0,   # seconds; a readability-split piece must not flash by
 }
 LANG_PROFILES = {
-    "zh":      {"max_cps": 9.0,  "max_width": 25, "counting": "cjk", "final_punct": True,  "spacing": True},
-    "zh-hant": {"max_cps": 9.0,  "max_width": 25, "counting": "cjk", "final_punct": True,  "spacing": True},
-    "ja":      {"max_cps": 4.0,  "max_width": 25, "counting": "cjk", "final_punct": True,  "spacing": False},
-    "ko":      {"max_cps": 12.0, "max_width": 25, "counting": "cjk", "final_punct": False, "spacing": False},
-    "en":      {"max_cps": 20.0, "max_width": 42, "counting": "raw", "final_punct": False, "spacing": False},
-    "default": {"max_cps": 17.0, "max_width": 42, "counting": "raw", "final_punct": False, "spacing": False},
+    "zh":      {"max_cps": 9.0,  "max_width": 25, "counting": "cjk", "final_punct": True,  "spacing": True,  "ban_exclamation": True},
+    "zh-hant": {"max_cps": 9.0,  "max_width": 25, "counting": "cjk", "final_punct": True,  "spacing": True,  "ban_exclamation": True},
+    "ja":      {"max_cps": 4.0,  "max_width": 25, "counting": "cjk", "final_punct": True,  "spacing": False, "ban_exclamation": True},
+    "ko":      {"max_cps": 12.0, "max_width": 25, "counting": "cjk", "final_punct": False, "spacing": False, "ban_exclamation": False},
+    "en":      {"max_cps": 20.0, "max_width": 42, "counting": "raw", "final_punct": False, "spacing": False, "ban_exclamation": False},
+    "default": {"max_cps": 17.0, "max_width": 42, "counting": "raw", "final_punct": False, "spacing": False, "ban_exclamation": False},
 }
 
-SENT_FINAL = "。．.!！?？;；:：、,，"
+DISALLOWED_TRAILING_PUNCT = "。．.;；:：、,，！!"
 CJK_RE = re.compile(r"[㐀-䶿一-鿿豈-﫿぀-ヿ]")
 LATIN_RE = re.compile(r"[A-Za-z0-9]")
+INTERNAL_SEGMENTATION_MARKS = ("。", "；")
+# ==============================================================================
+# Syntactic Boundary & Thought-Unit Cohesion Engine (ZH/CJK)
+# ==============================================================================
+# A robust subtitle block must be a self-contained "thought unit" / "breath group".
+# Rather than static string matching, boundaries in continuous speech are validated
+# against universal functional grammatical categories to detect broken dependencies:
+#
+# 1. Clausal Connectives & Transitionals (must introduce the next clause, not hang at tail)
+# 2. Prepositions & Case Markers (must precede their object in the next block)
+# 3. Governing / Serial Introductory Verbs (verbs that take a clausal/VP complement)
+# 4. Structural & Aspectual Particles (must attach to their head, never stranded at head)
+# 5. Demonstratives & Classifiers (must not be separated from their head noun)
+# ==============================================================================
+
+GRAMMAR_CATEGORIES_ZH = {
+    # 关联/转折/因果/假设等从句引导范畴（连词必须前置于分句）
+    "clausal_connectives": (
+        "因为", "所以", "如果", "要是", "假如", "假若", "倘若", "虽然", "尽管", "哪怕", "即使",
+        "但是", "但", "然而", "可是", "不过", "然后", "接着", "而且", "并且", "以及", "此外",
+        "无论是", "无论", "不管", "不仅是", "不仅", "也就是说", "其实就是", "换句话说", "由于",
+    ),
+    # 介词与格标记范畴（介宾结构禁止跨块切断）
+    "prepositions": (
+        "关于", "对于", "至于", "包括", "比如像", "就像", "比如", "类似于", "根据", "按照",
+        "通过", "为了", "以便", "把", "让", "给", "被", "由", "向", "往", "朝", "从",
+    ),
+    # 支配性引入动词/连动式引导动词（带从句/谓词性宾语的动词，必须归入后一从句或与前句整句闭合）
+    "governing_verbs": (
+        "看看这个", "看看能不能", "看看能否", "去看看", "去看", "试试看", "来看看", "来看", "看看", "看",
+        "试试", "准备去", "准备", "想要", "希望", "打算", "负责", "用来做", "用来进行", "用来",
+        "试图", "开始", "尝试", "负责", "旨在", "意味着", "导致", "造成", "使得",
+        "回到", "归到", "变成", "设成", "叫做", "弄成", "转成",
+    ),
+    # 指示代词与量词修饰范畴（定中结构禁止分离）
+    "specifiers_and_classifiers": (
+        "一种", "一条", "一份", "一段", "一位", "一个", "一些", "某种", "某位", "某个",
+    ),
+}
+
+# 组合所有句尾悬空禁止词族（编译为高效的正则表达式）
+ALL_TAIL_DANGLING_ZH = (
+    GRAMMAR_CATEGORIES_ZH["clausal_connectives"]
+    + GRAMMAR_CATEGORIES_ZH["prepositions"]
+    + GRAMMAR_CATEGORIES_ZH["governing_verbs"]
+    + GRAMMAR_CATEGORIES_ZH["specifiers_and_classifiers"]
+)
+
+# 句首悬空助词/附着标记范畴（禁止孤立出现在下句开头）
+DANGLING_HEAD_PARTICLES_ZH = (
+    "的", "地", "得", "之类", "等等", "一样", "一般", "似的", "左右", "上下", "前后"
+)
 PUNCT_CATEGORIES = {"P", "S", "Z", "C"}
 
 EXT_FORMATS = {".srt": "srt", ".vtt": "vtt", ".ass": "ass", ".ssa": "ass"}
@@ -298,13 +354,72 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
         if cfg["final_punct"]:
             for ln in b["lines"]:
                 stripped = MARKUP_RE.sub("", ln).rstrip()
-                if stripped and stripped[-1] in SENT_FINAL:
+                if stripped and stripped[-1] in DISALLOWED_TRAILING_PUNCT:
                     warnings.append("%s: line ends with '%s'" % (pos, stripped[-1]))
+        if cfg.get("ban_exclamation"):
+            for ln in b["lines"]:
+                plain = MARKUP_RE.sub("", ln).strip()
+                if not plain:
+                    continue
+                if "！" in plain or "!" in plain:
+                    warnings.append(
+                        "%s: contains exclamation mark ('！'/'!') — forbidden in subtitles; rewrite or remove"
+                        % pos
+                    )
+        if cfg["lang"] in ("zh", "zh-hant"):
+            for ln in b["lines"]:
+                plain = MARKUP_RE.sub("", ln).strip()
+                if not plain:
+                    continue
+                for mark in INTERNAL_SEGMENTATION_MARKS:
+                    start = 0
+                    while True:
+                        at = plain.find(mark, start)
+                        if at < 0:
+                            break
+                        is_line_end = at == len(plain) - 1
+                        if not is_line_end:
+                            warnings.append(
+                                "%s: internal '%s' — review whether a rephrase or split reads better"
+                                % (pos, mark)
+                            )
+                        start = at + 1
         if cfg["spacing"]:
             for m in re.finditer(r"(?:%s)(?:%s)|(?:%s)(?:%s)"
                                  % (CJK_RE.pattern, LATIN_RE.pattern,
                                     LATIN_RE.pattern, CJK_RE.pattern), text):
                 notes.append("%s: missing space at '%s'" % (pos, m.group(0)))
+
+        if cfg["lang"] in ("zh", "zh-hant") and i + 1 < len(blocks):
+            nxt_b = blocks[i + 1]
+            gap = nxt_b["start"] - b["end"]
+            # In continuous speech (gap < 0.6s), check for fractured thought units
+            if gap < 0.6:
+                clean_text = MARKUP_RE.sub("", text).rstrip(" 。．,.;；：、，！？! ")
+                
+                # Check for dangling clausal connectives, prepositions, or governing verbs at tail
+                for w in ALL_TAIL_DANGLING_ZH:
+                    if (clean_text.endswith(w) or clean_text.endswith(" " + w)) and clean_text != w:
+                        warnings.append(
+                            "%s: thought-unit boundary broken — ends on dangling %s '%s' before #%d; "
+                            "move '%s' to the start of the next block or merge"
+                            % (pos, "connector/verb", w, i + 2, w)
+                        )
+                        break
+                
+                # Check for stranded dependent particles at head of continuation block
+                nxt_text = " ".join(nxt_b["lines"]).strip()
+                nxt_clean = MARKUP_RE.sub("", nxt_text).lstrip()
+                for p in DANGLING_HEAD_PARTICLES_ZH:
+                    if nxt_clean.startswith(p):
+                        if len(nxt_clean) > len(p) and not nxt_clean[len(p)].isspace():
+                            next_pos = "#%d %s" % (i + 2, nxt_b["time_line"])
+                            warnings.append(
+                                "%s: thought-unit boundary broken — starts with stranded particle '%s' from #%d; "
+                                "attach to preceding phrase or rebalance"
+                                % (next_pos, p, i + 1)
+                            )
+                            break
 
     if src_path:
         if src_fmt != fmt:
@@ -411,6 +526,7 @@ def main():
         "max_width": args.max_width if args.max_width else profile["max_width"],
         "counting": profile["counting"],
         "final_punct": profile["final_punct"],
+        "ban_exclamation": profile.get("ban_exclamation", False),
         "spacing": profile["spacing"],
         "strict": args.strict,
         "min_duration": args.min_duration,

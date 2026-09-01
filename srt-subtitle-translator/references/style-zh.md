@@ -14,26 +14,64 @@ CJK/Latin spacing, but the space makes mixed lines noticeably easier to scan:
 - One half-width space between Chinese text and Latin words, numerals, software names,
   abbreviations, and UI labels: `在 C4D 中设置 100%，亮度为 500nits`
 - No space between a number and its unit symbol, and no space around punctuation
-- Use full-width Chinese punctuation inside the line（`，、：；`）and half-width numerals
-  (`1, 2, 3`, never `１２３`)
+- Use full-width Chinese punctuation inside the line. `，、？` are normal when the
+  sentence needs them; use `：` only for a genuine explanation, label, or structural
+  introduction. Exclamation marks (`！` and `!`) are strictly forbidden across all
+  subtitles — never use exclamation marks in subtitle translation; express enthusiasm or
+  urgency through natural vocabulary, or convert to plain declarative sentences.
+  A translation-created `；` normally calls for a block split instead.
+  Use half-width numerals (`1, 2, 3`, never `１２３`).
 
 Wrong: `在C4D中设置100%,亮度为500nits`
+
+## Single-thought blocks and segmentation marks
+
+One Chinese subtitle block carries one complete thought. An internal full stop `。` or
+semicolon `；` is a strong signal that the line contains two completed or separately
+divided thought units. Split those units into separate blocks at a natural Chinese
+boundary and distribute them across the speech span.
+
+This is not a general punctuation ban. Commas `，`, enumeration commas `、`, and
+question marks `？` are normal within one thought and do not justify a split by themselves.
+(Exclamation marks `！`/`!` are forbidden throughout and must not appear in any block.)
+A colon `：` is valid when a genuine explanation, label, or structural introduction needs
+it; otherwise prefer a natural rewrite. Meaning decides the boundary, but internal `。`
+and `；`, as well as any exclamation marks `！`/`!`, receive automatic mechanical warnings.
+
+Structural speaker labels, UI labels, menu paths, code, and strings the viewer sees typed
+are exceptions and remain faithful to the source. A punctuation mark that belongs to
+such a string is not a translation-created segmentation mark.
+
+Examples:
+
+- `首先选择对象；然后打开 Settings 面板` → split into `先选择对象` / `再打开 Settings 面板`
+- `原因很简单：我们需要更多几何体` → keep the colon when the explanation reads as one thought
+- `选择对象。然后打开面板` → split into two blocks rather than keeping an internal `。`
+- `先选择对象，再打开面板` → keep the comma when it remains one thought (no exclamation mark)
+- `位置、旋转和缩放都能调整` → keep the enumeration comma
+- `John：请打开面板` keeps the structural speaker label
 
 ## Punctuation at line ends
 
 Subtitles are timed, not typeset — the cut in time already ends the thought, so a trailing
 full stop adds a character and no information. Do not end a subtitle text line with
-`。．.` `!！` `?？` `;；` `:：` `，,` `、`.
+`。．.` `;；` `:：` `，,` `、` `！!`. A genuine question may end with `？`; this mark
+carries question tone and is not treated like a full stop.
 
-Punctuation *inside* a line is fine and often necessary for parsing:
-`把子步数降到 10，这样反而更稳定`.
+Exclamation marks (`！` and `!`) are completely banned from subtitles, both at line ends
+and within lines. Even if the speaker sounds excited or urgent, translate using natural
+spoken vocabulary without adding exclamation marks.
+
+Punctuation inside a line is not a substitute for a subtitle boundary. Split when the
+meaning contains two thought units, especially when `。` or `；` makes the separation
+explicit. Do not split merely because a normal comma, enumeration comma, or question mark
+appears.
 
 A sentence that runs into the next block gets no ellipsis, no dash, no trailing comma —
 the timeline carries the continuation. Reserve `⋯`(U+2026) for a pause of two seconds or
 more, or an interruption.
 
-Keep a question's force through wording rather than a question mark: `这样是不是更好`.
-When a real question would be ambiguous without it, a full-width `？` is allowed.
+Use full-width `？` for genuine questions when their tone matters. Never use `！` or `!`.
 
 No emoji, no citation markers, no translator notes, no bracketed commentary.
 

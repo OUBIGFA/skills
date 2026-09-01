@@ -52,15 +52,14 @@ def load_nodes(path):
     return d, [o for o in d['outbounds'] if o.get('type') in NODE_TYPES]
 
 
-def sanitize(node, base_dns_tags, merged_tags):
-    """摘掉指向源配置内部、在底库里不存在的引用，避免合并后出现悬空引用。"""
+def sanitize(node, base_dns_tags, merged_tags=None):
+    """摘掉私有 DNS 与链式代理前置引用，保证节点独立且直接连接。"""
     n = dict(node)
     dr = n.get('domain_resolver')
     tag = dr.get('server') if isinstance(dr, dict) else dr
     if tag and tag not in base_dns_tags:
         n.pop('domain_resolver', None)
-    if n.get('detour') and n['detour'] not in merged_tags:
-        n.pop('detour', None)      # 链式代理的前置不在合并范围内，降级为直接连接
+    n.pop('detour', None)      # 移除链式代理（前置代理），一律降级为直接连接
     return n
 
 
@@ -153,7 +152,10 @@ def main():
             if sv.get('detour') in drop:
                 sv['detour'] = drop[sv['detour']]
 
-    # 新节点接在最后一个节点之后，各分组同步追加成员
+    # 新节点接在最后一个节点之后，各分组同步追加成员，并确保所有代理节点无链式前置
+    for o in base['outbounds']:
+        if o.get('type') in NODE_TYPES:
+            o.pop('detour', None)
     idx = [i for i, o in enumerate(base['outbounds']) if o.get('type') in NODE_TYPES]
     base['outbounds'][idx[-1] + 1:idx[-1] + 1] = added
     for o in base['outbounds']:
