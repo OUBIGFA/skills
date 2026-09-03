@@ -53,7 +53,7 @@ The wrong way — translate each block in place to "preserve the timeline":
 ```
 
 `使用 MoGraph` trails the sentence it belongs inside. Chinese puts the means *before*
-the action — `用 MoGraph 创建随机变化` — so no placement of these two blocks can ever
+the action — `用 MoGraph 做出变化` — so no placement of these two blocks can ever
 read naturally. The boundary itself makes natural Chinese impossible.
 
 The right way — merge the defect, translate the sentence whole, then fit the result to
@@ -62,30 +62,51 @@ the speech span:
 ```srt
 4
 00:00:03,985 --> 00:00:12,445
-来看看用 MoGraph 创建随机变化的其中一种方法
+来看看用 MoGraph 做出各种变化的其中一种方法
 ```
 
-Nineteen characters, one glance, natural word order. It spans 8.5 s — longer than the
-7 s comfort anchor — but the speech simply lasts that long and the line is short;
-explain the checker's duration warning rather than forcing a split with no natural seam.
+Twenty characters, one glance, natural word order — and nothing in it that the audio did
+not have: no `我们`, no `接下来`, and `variations` is not upgraded into `随机变化`, a word
+the speaker never said (`of stuff` drops out because it is a vague filler noun, not
+payload). It spans 8.5 s — longer than the 7 s comfort anchor — but the speech simply
+lasts that long and the line is short; explain the checker's duration warning rather than
+forcing a split with no natural seam.
 
-Had the natural Chinese come out long — say 35 characters — the sentence would instead
+Had the faithful Chinese come out long — say 35 characters — the sentence would instead
 be split at a *Chinese* phrase boundary and distributed across the same span,
 proportionally to the speech:
 
 ```srt
 4
 00:00:03,985 --> 00:00:08,500
-我们来看看其中一种方法
+来看看其中一种方法
 
 5
 00:00:08,500 --> 00:00:12,445
-用 MoGraph 为物体创建随机变化
+用 MoGraph 做出各种变化
 ```
 
-Note the split point is not where English cut it — it is where the *Chinese* breathes.
-That is always the test: every output block must be a phrase a native speaker of the
-target language would say in one breath.
+Note two things. The split point is not where English cut it — it is where the *Chinese*
+breathes; that is always the test, every output block being a phrase a native speaker of
+the target language would say in one breath. And splitting did not make the text longer:
+neither piece gained a subject or a connective to look self-sufficient.
+
+## Splits and merges must not change the text's length
+
+A repair is a boundary operation, not a licence to rewrite. Two failures show up
+specifically at seams, and both are invisible once you stop comparing with the source:
+
+- **Merging invites padding.** Reuniting two blocks into one sentence tempts you to add a
+  connective or a subject to bridge them (`然后`, `我们`) — words the audio never had. The
+  merged sentence should read as the speaker's one sentence, not as two sentences glued.
+- **Splitting invites inflation.** Distributing one sentence across two blocks tempts you
+  to make each piece "complete" by repeating the subject or restating the object. Each
+  piece should be a phrase the speaker's own sentence contained, nothing more.
+
+The test is arithmetic: the sum of the pieces should say what the source span said, in
+about the length the rest of the file uses for that much speech. `check_subtitle.py
+--source` reports the file's own median output-to-source length ratio and flags the spans
+that stray from it in either direction.
 
 ## Auditing the source: the two tests
 
@@ -228,6 +249,8 @@ Before delivering any subtitle segment, run this two-pass cognitive test on ever
   crosses a real pause; within each span the blocks tile it exactly
 - Every block is a single line and reads as a natural, self-contained target-language
   phrase — nothing in the file exists only because the source happened to cut there
+- No word in the output answers to nothing in the audio — merges added no bridging
+  connectives, splits added no repeated subjects, and no line was padded to fill its window
 - No block ends on a stranded connector; no block is a bare completion tail or a
   trailing modifier the target language wants inside the sentence
 - No named term, UI label, or number+unit pair is split across a boundary
@@ -239,6 +262,6 @@ Before delivering any subtitle segment, run this two-pass cognitive test on ever
 
 `check_subtitle.py` mechanically proves the audio claims (speech coverage, pauses
 preserved, exact tiling, no overlap) and flags wrapped blocks, heavy merges, blocks
-that exceed the reading-speed budget or the scan-comfort zone, and a suspiciously low
-retention ratio. It cannot judge whether a boundary is natural in the target language —
-that stays your job.
+that exceed the reading-speed budget or the scan-comfort zone, spans whose translated
+length strays from the file's own norm, and a suspiciously low retention ratio. It cannot
+judge whether a boundary is natural in the target language — that stays your job.

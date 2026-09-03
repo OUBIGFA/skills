@@ -144,6 +144,30 @@
       "prompt": "翻译成简体中文并严格按单块单意群处理：一条字幕包含 'Select the object. Then open the panel.'，另一条包含 'Select the object, then open the panel.'，还有一条是说话人标签 'JOHN: open the panel.'",
       "expected_output": "第一条中的句号表示两个完整句子，应拆成两个字幕块并按语音时间铺开；第二条的逗号可正常保留，只要整条仍是一个连续意群，不能仅因逗号机械拆块。普通中文字幕行末不加句号。JOHN：属于结构性说话人标签，可以保留。",
       "files": []
+    },
+    {
+      "id": 25,
+      "prompt": "翻译成简体中文：'Move it up a bit.' / 'Now add a bevel.' / 'That's it.' / 'Set it to 20.' / 'It looks better.' 每句各占一块，时长都在 1.5 秒左右",
+      "expected_output": "译文长度与原文相当，忠实且极简，例如「往上挪一点 / 加个倒角 / 就这样 / 设成 20 / 这样好看些」。严禁扩写成「我们把它稍微向上移动一点距离」「接下来我们需要为它添加一个倒角效果」「以上就是本次教程的全部内容了」「把这个数值设置为 20 就可以了」这类原文没有的内容：不得凭空添加主语（我们/你）、衔接词（接下来/那么）、范畴名词（效果/操作/距离/数值）、必要性或许可词（需要/可以）、收尾语（就可以了），也不得把 a bit 之类的程度词升级成「很多」。",
+      "files": []
+    },
+    {
+      "id": 26,
+      "prompt": "翻译这段字幕：讲师语速很快、句子很短，比如 'okay so' / 'yeah just drag it' / 'like this' / 'cool' / 'and then, um, we bake it'，每块 0.8~1.5 秒",
+      "expected_output": "填充词（okay/yeah/um/like/cool 等）作为噪声清除或整块并入相邻语义块，但清除填充词不等于可以改写扩写：保留下来的内容仍只说原话，如「拖过去就行 / 像这样 / 然后烘焙」。不得把两个词的口语扩写成完整书面句，也不得为了填满时间窗而加字；口语随意的语域必须保留，不得升级为书面语。",
+      "files": []
+    },
+    {
+      "id": 27,
+      "prompt": "翻译这份技术讲解字幕，其中一句信息密度很高：'if you push the substeps above 20 the sim gets stable but the cache size roughly triples, so only do that for the final pass'，时长 7 秒",
+      "expected_output": "所有信息必须保留：条件（超过 20）、正面结果（稳定）、代价（缓存大约变成三倍）、限定建议（只在最终渲染时这么做）。不得为了简短删掉因果关系、代价或限定条件；roughly 这类不确定语气词要保留（大约/差不多）。若整句中文过长一眼读不完，应在中文意群边界拆成两块并按语音比例分配时间，而不是删信息换舒适度。",
+      "files": []
+    },
+    {
+      "id": 28,
+      "prompt": "把这份 60 块左右的教程字幕翻成中文，然后用 check_subtitle.py 带 --source 校验，把校验结果一并说明",
+      "expected_output": "校验命令带上 --source 与 --lang，读懂并处理 length fidelity 警告：出现 check for padding 时回去删掉原文没有的字词，出现 check for dropped payload 时补回被概括掉的操作、数值或语气；不能只把警告原样贴给用户或宣称无需处理。最终回复给出文件路径、修复类别与校验结论。",
+      "files": []
     }
   ]
 }

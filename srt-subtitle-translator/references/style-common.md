@@ -1,10 +1,66 @@
 # Style Reference — every target language
 
 Everything here serves one goal: a viewer reads the subtitle once, at speed, and gets the
-meaning without re-reading. These rules are language-independent. On top of them, apply
-the target language's own conventions — for Chinese, `references/style-zh.md`; for other
-targets, that language's standard subtitle practice (English keeps normal sentence
-punctuation, for example).
+meaning the speaker actually expressed, without re-reading. These rules are
+language-independent. On top of them, apply the target language's own conventions — for
+Chinese, `references/style-zh.md`; for other targets, that language's standard subtitle
+practice (English keeps normal sentence punctuation, for example).
+
+## Fidelity first, then economy
+
+Two operations look similar and are opposites. Getting them straight is most of what
+separates a professional subtitle from a plausible one.
+
+- **Removing noise** — filler, hesitation, self-repair, repetition. Always right: those
+  tokens cost the viewer characters and carry nothing.
+- **Adding smoothness** — subjects the speaker omitted, connectives that make two blocks
+  flow, category nouns, politeness, explanation of a term just named. Always wrong, even
+  though it reads better in isolation: it puts words in the speaker's mouth and spends the
+  viewer's reading budget on nothing.
+
+So the working rule is: **the shortest wording that still says everything the source
+said.** Not shorter — a summary is not a subtitle. Not longer — a subtitle is read in a
+glance while the viewer is also watching the screen.
+
+Each of these padded lines reads pleasantly and is still a fidelity failure:
+
+| Source | Padded (wrong) | Lean (right) | What went wrong |
+|---|---|---|---|
+| `Move it up a bit` | `我们把它稍微向上移动一点距离` | `往上挪一点` | `我们`, `距离` and the formal verb are all invented |
+| `That's it` | `以上就是本次教程的全部内容了` | `就这样` | a whole sentence built from two words |
+| `Now add a bevel` | `接下来我们需要为它添加一个倒角效果` | `加个倒角` | `需要`, `效果` and the framing are not in the audio |
+| `It looks better` | `这样看起来会好很多，效果更自然` | `这样好看些` | second clause invented; `很多` overstates |
+| `Set it to 20` | `把这个数值设置为 20 就可以了` | `设成 20` | `就可以了` adds a judgement the speaker didn't make |
+
+**Padding patterns to hunt for, in any target language:**
+
+- Subjects the source left out (`我们`/`你`)
+- Stock connectives inserted between blocks to make them flow (`接下来`/`那么`/`然后`)
+- Category nouns glued onto verbs and adjectives (`效果`/`操作`/`方式`/`情况`/`部分`/`距离`)
+- Politeness, necessity and permission the speaker never used
+  (`我们需要`/`可以尝试`/`就可以了`)
+- Degree words upgraded — `a bit` is not `很多`
+- Glossing: explaining a term the speaker had just named
+- Formal verb compounds standing in for plain actions (`进行移动` for `挪`)
+
+Three habits that keep a file lean:
+
+- **Trace every word back to the audio.** If a word in your line answers to nothing in
+  the source, it is padding — delete it and re-read the line. It will almost always still
+  be complete.
+- **Let length track the source.** A two-word remark becomes a two-word subtitle. When
+  your line runs much longer than the speech it covers, suspect padding before you suspect
+  the timing. Much shorter, and suspect that something was summarized away.
+- **Keep the speaker's register.** Casual speech stays casual; a formal lecture stays
+  formal. Do not promote a plain-spoken tutorial into written prose, and do not flatten a
+  precise explanation into breeziness.
+
+**What may never be cut**, however tight the window: operations, parameter values, object
+and menu names, numbers and units, visual judgements, warnings, causal links (`because…`,
+`otherwise…`), negation, and hedges that change how certain the claim is (`probably`,
+`about`, `I think`, `roughly`). Those are the payload — if a block is still over-dense
+after honest de-padding, split it or accept the density. Never buy reading comfort with
+meaning.
 
 ## Noise filtering
 
@@ -30,8 +86,13 @@ Condense fragmented self-talk instead of transcribing it:
   this — looks fine"
 - `I mean, like, maybe just move this over here` → "move this over here"
 
+Note what condensing is *not*: it does not license rebuilding the sentence bigger. The
+condensed line keeps the speaker's own claim and nothing more — `maybe this is okay`
+becomes "looks fine", not "效果看起来已经相当不错了".
+
 Never remove: operations, parameter values, object or menu names, visual judgements,
-warnings, causal explanations ("because…", "otherwise…"). Those are the payload.
+warnings, causal explanations ("because…", "otherwise…"), negation, and hedges that change
+how certain the claim is. Those are the payload.
 
 ## Symbols and numbers
 

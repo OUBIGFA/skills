@@ -1,0 +1,71 @@
+{
+  "codeg_version": "0.30.1",
+  "installed_at": "2026-09-03T03:44:47.724341300+00:00",
+  "science": {
+    "citation-management": {
+      "hash": "605269ee2158c5f4a35abf0d1a316d31b601f012882c02a1175130161fd477c3",
+      "installed_at": "2026-09-02T02:31:36.325487500+00:00",
+      "pending_user_review": false
+    },
+    "experimental-design": {
+      "hash": "79b4237df029ddbe8d0c7d3c0d16704d4cffe7418fce5bf048969a24c7d49534",
+      "installed_at": "2026-09-02T02:31:36.301211600+00:00",
+      "pending_user_review": false
+    },
+    "exploratory-data-analysis": {
+      "hash": "7e586d4cff4ed6b61b813f0c4e486900b0a62e218ae80ba922c492801134f9b1",
+      "installed_at": "2026-09-02T02:31:36.310047700+00:00",
+      "pending_user_review": false
+    },
+    "hypothesis-generation": {
+      "hash": "222ef7c82cf6ef075dc469d24b1a56c17346e68607ce4307ee00735c035eb4d0",
+      "installed_at": "2026-09-02T02:31:36.297905400+00:00",
+      "pending_user_review": false
+    },
+    "paper-lookup": {
+      "hash": "410751adf301d59d749015c073c094e01202ef9191dec22f366acc6d9a4eeb86",
+      "installed_at": "2026-09-02T02:31:36.318719900+00:00",
+      "pending_user_review": false
+    },
+    "peer-review": {
+      "hash": "1324c79881f45aa17d21f096d2f4116a31ae102c4623d754862b626fdcf0be9d",
+      "installed_at": "2026-09-02T02:31:36.320222500+00:00",
+      "pending_user_review": false
+    },
+    "scholar-evaluation": {
+      "hash": "86bb93835cff0b996b2a1544ad624b8e9912c55f09a0a57660dd31c33cb7d6ff",
+      "installed_at": "2026-09-02T02:31:36.327189100+00:00",
+      "pending_user_review": false
+    },
+    "scientific-brainstorming": {
+      "hash": "77eb072c4a38045605b6095a71959a566e12fa51411b05ca05526471e0e9fa67",
+      "installed_at": "2026-09-02T02:31:36.293877500+00:00",
+      "pending_user_review": false
+    },
+    "scientific-critical-thinking": {
+      "hash": "7c86d773ea42457dd10d7c69f75a8f4b7a052dcecc68601dfdea05eb6f1c6cba",
+      "installed_at": "2026-09-02T02:31:36.315626800+00:00",
+      "pending_user_review": false
+    },
+    "scientific-schematics": {
+      "hash": "84c19d256047b060879cafb07edd90dc0e1656fe60e405a723849928530b947a",
+      "installed_at": "2026-09-02T02:31:36.329310800+00:00",
+      "pending_user_review": false
+    },
+    "scientific-visualization": {
+      "hash": "32edc5be6ca27b0293c95dce6b0664a6074994546c08b1e0e19429214f3b0ea7",
+      "installed_at": "2026-09-02T02:31:36.313369500+00:00",
+      "pending_user_review": false
+    },
+    "statistical-analysis": {
+      "hash": "d35a6f950f6136325fb259dae47c3e220d903a58a6149e9ea973ce1fe16a9f5b",
+      "installed_at": "2026-09-02T02:31:36.307185700+00:00",
+      "pending_user_review": false
+    },
+    "statistical-power": {
+      "hash": "39a6eb4c5cae42e17761f653d5c6c5ab9d2301d999ad5a4842cbb9101eb114f3",
+      "installed_at": "2026-09-02T02:31:36.304120200+00:00",
+      "pending_user_review": false
+    }
+  }
+}

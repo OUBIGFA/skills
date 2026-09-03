@@ -32,6 +32,8 @@ Extra checks when --source is given:
   - every speech span is fully covered: pieces tile it from start to end with no
     uncovered speech; boundaries inside a span may be re-placed (merges and
     target-language re-splits are legal and reported as notes)
+  - length fidelity: how much text each speech span carries compared with the
+    source, to surface padding (words the audio never had) and dropped payload
   - pass --strict to additionally require every block edge to pre-exist in the
     source (timeline byte-for-byte untouched)
   - block-count delta and the merge factor of each output block
@@ -43,6 +45,7 @@ import argparse
 import json
 import os
 import re
+import statistics
 import sys
 import unicodedata
 
@@ -79,6 +82,20 @@ DEFAULTS = {
     "max_lines": 1,           # bilingual and multi-speaker output may raise this
     "min_split_piece": 1.0,   # seconds; a readability-split piece must not flash by
 }
+
+# Length-fidelity calibration. Padding (words the audio never had) and dropped
+# payload both show up as one speech span carrying far more or far less text than
+# the rest of the file does for the same amount of source text. The comparison is
+# made against the file's own median ratio, so it self-calibrates to the language
+# pair, the speaker's density, and bilingual output — no per-language constant.
+FIDELITY = {
+    "min_span_cost": 6.0,   # source text volume below this is too small to judge
+    "min_spans": 8,         # fewer usable spans than this: no reliable median
+    "pad_factor": 1.6,      # ratio above median * this: suspect padding
+    "drop_factor": 0.6,     # ratio below median * this: suspect dropped content
+    "max_reports": 12,      # worst offenders only — a wall of warnings gets ignored
+}
+
 LANG_PROFILES = {
     "zh":      {"max_cps": 9.0,  "max_width": 25, "counting": "cjk", "final_punct": True,  "spacing": True,  "ban_exclamation": True},
     "zh-hant": {"max_cps": 9.0,  "max_width": 25, "counting": "cjk", "final_punct": True,  "spacing": True,  "ban_exclamation": True},
@@ -302,6 +319,68 @@ def display_width(text, counting):
     return total
 
 
+def block_text(block):
+    return " ".join(block["lines"]).strip()
+
+
+def text_volume(text):
+    """Language-agnostic text volume, used to compare source and output length.
+
+    Always the 'cjk' cost model so one number is comparable across scripts: a
+    full-width char costs 1, a Latin letter/digit 0.5, punctuation nothing.
+    """
+    return display_width(text, "cjk")
+
+
+def length_fidelity(segs, src_blocks, seg_pieces, cfg):
+    """Flag speech spans whose translation is far longer or shorter than the file's norm.
+
+    Padding — subjects, connectives and category nouns the audio never had — and
+    dropped payload are both invisible to structural checks: the file still tiles
+    the timeline perfectly. What gives them away is the ratio of translated text
+    volume to source text volume drifting away from the ratio the rest of the file
+    holds. Comparing each span against the file's own median makes this
+    self-calibrating: it needs no constant per language pair, and bilingual output
+    (which doubles every span) shifts the median rather than the verdict.
+    """
+    warnings, notes = [], []
+    ratios = []
+    for j, (ss, se) in enumerate(segs):
+        src_cost = sum(text_volume(block_text(b)) for b in src_blocks
+                       if b["start"] >= ss - 1e-6 and b["end"] <= se + 1e-6)
+        out_cost = sum(text_volume(block_text(b)) for b in seg_pieces[j])
+        if src_cost >= cfg["min_span_cost"] and out_cost > 0:
+            ratios.append((out_cost / src_cost, j, src_cost, out_cost))
+    if len(ratios) < cfg["min_spans"]:
+        return warnings, notes  # too little material for a meaningful median
+
+    median = statistics.median(r[0] for r in ratios)
+    notes.append("length fidelity: median %.2f output chars per source char, "
+                 "over %d speech spans" % (median, len(ratios)))
+    pad_at, drop_at = median * cfg["pad_factor"], median * cfg["drop_factor"]
+    flagged = []
+    for ratio, j, src_cost, out_cost in ratios:
+        if ratio > pad_at:
+            flagged.append((ratio / median, j, ratio, out_cost, src_cost, "pad"))
+        elif ratio < drop_at:
+            flagged.append((median / ratio, j, ratio, out_cost, src_cost, "drop"))
+    flagged.sort(reverse=True)
+    for _, j, ratio, out_cost, src_cost, kind in flagged[:cfg["max_reports"]]:
+        span = "%s --> %s" % (fmt_time(segs[j][0]), fmt_time(segs[j][1]))
+        first = block_text(seg_pieces[j][0])[:30] if seg_pieces[j] else ""
+        if kind == "pad":
+            warnings.append(
+                "speech span %s: %.0f output chars for %.0f source chars (%.1fx the "
+                "file's %.2f norm) — check for padding the audio never had — %s"
+                % (span, out_cost, src_cost, ratio / median, median, first))
+        else:
+            warnings.append(
+                "speech span %s: only %.0f output chars for %.0f source chars (%.0f%% of "
+                "the file's %.2f norm) — check for dropped payload — %s"
+                % (span, out_cost, src_cost, 100.0 * ratio / median, median, first))
+    return warnings, notes
+
+
 def check(out_path, src_path, fmt, src_fmt, cfg):
     errors, warnings, notes = [], [], []
     blocks, parse_errors = parse_file(out_path, fmt)
@@ -438,7 +517,7 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
         # fit target-language phrasing, as long as the pieces tile the span.
         SMALL_GAP = 0.3
         segs = []
-        for s0, e0 in sorted((b["start"], b["end"]) for b in src):
+        for s0, e0 in sorted((b["start"], b["end"]) for b in src if b["end"] > b["start"]):
             if segs and s0 <= segs[-1][1] + SMALL_GAP:
                 segs[-1][1] = max(segs[-1][1], e0)
             else:
@@ -486,6 +565,9 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
                                   % (span, b2["start"] - a["end"], b2["time_line"]))
         if new_edges:
             notes.append("%d block edges re-placed to fit target-language phrasing" % new_edges)
+        fid_warnings, fid_notes = length_fidelity(segs, src, seg_pieces, cfg)
+        warnings.extend(fid_warnings)
+        notes.extend(fid_notes)
         kept = 100.0 * len(blocks) / max(len(src), 1)
         notes.append("blocks: %d source -> %d output (%.0f%% kept)" % (len(src), len(blocks), kept))
         if kept < 70:
@@ -514,6 +596,12 @@ def main():
     ap.add_argument("--max-duration", type=float, default=DEFAULTS["max_duration"])
     ap.add_argument("--max-lines", type=int, default=DEFAULTS["max_lines"],
                     help="lines allowed per block; 1 by default, raise to 2 for bilingual output")
+    ap.add_argument("--pad-factor", type=float, default=FIDELITY["pad_factor"],
+                    help="flag a speech span whose output/source length ratio exceeds the "
+                         "file's median ratio by this factor (padding check)")
+    ap.add_argument("--drop-factor", type=float, default=FIDELITY["drop_factor"],
+                    help="flag a speech span whose output/source length ratio falls below "
+                         "this fraction of the file's median ratio (dropped-content check)")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument("--quiet", action="store_true", help="only print errors and the summary")
     args = ap.parse_args()
@@ -533,6 +621,11 @@ def main():
         "max_duration": args.max_duration,
         "max_lines": args.max_lines,
         "min_split_piece": DEFAULTS["min_split_piece"],
+        "min_span_cost": FIDELITY["min_span_cost"],
+        "min_spans": FIDELITY["min_spans"],
+        "pad_factor": args.pad_factor,
+        "drop_factor": args.drop_factor,
+        "max_reports": FIDELITY["max_reports"],
     }
     fmt = detect_format(args.output, args.format)
     src_fmt = detect_format(args.source, args.format) if args.source else None

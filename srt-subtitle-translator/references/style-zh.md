@@ -6,6 +6,38 @@ Rules that apply when the target language is Chinese, on top of
 and Chinese carries more meaning per character than English, so a faithful translation
 is usually too long until condensed.
 
+## Lean Chinese: the padding checklist
+
+Chinese lets you write a grammatical, pleasant-sounding line that says noticeably more
+than the speaker did, and the extra words are hard to notice because each one is idiomatic
+on its own. This list is what to hunt for when re-reading a finished batch. Every item is
+deletable without touching the meaning — if deleting it *does* change the meaning, the
+word was payload and stays.
+
+| Padding pattern | Example (padded → lean) |
+|---|---|
+| Subjects the source omitted | `我们把它往上挪一点` → `往上挪一点` |
+| Stock connectives inserted between blocks | `接下来我们加个倒角` → `加个倒角` |
+| Category nouns glued to verbs/adjectives (`效果`/`操作`/`方式`/`情况`/`部分`/`距离`/`数值`) | `添加一个倒角效果` → `加个倒角`；`移动一点距离` → `挪一点` |
+| Invented necessity or permission (`需要`/`可以`/`应该`) | `我们需要打开面板` → `打开面板` |
+| Closers the speaker never said (`就可以了`/`即可`/`了` piled on) | `设置为 20 就可以了` → `设成 20` |
+| Formal verb compounds for plain actions (`进行`/`予以`+ verb) | `进行移动` → `挪`；`执行切割` → `切一刀` |
+| Upgraded degree words | `a bit` → `很多`／`大幅` (wrong) → `一点` |
+| Glossing a term the speaker just named | `倒角，也就是把边缘磨圆` when the audio said only `bevel` |
+| Doubling a word with its own synonym | `修改调整一下` → `调一下` |
+
+Two Chinese-specific temptations worth naming:
+
+- **Four-character-idiom polish.** `效果非常自然流畅` when the speaker said `looks
+  nice` — the idiom is good Chinese and a bad subtitle.
+- **Restoring what spoken Chinese normally drops.** Written Chinese wants subjects,
+  measure words and connectives that speech leaves out; a subtitle is speech. `把这个对象
+  往上移动一点` is written; `往上挪一点` is what the line should be.
+
+Cutting stops at the payload line: operations, values, names, numbers, negation, causal
+links and hedges stay, even when the block is dense. Compress the wording, never the
+content.
+
 ## Chinese-English typography
 
 House style, not a platform requirement — Netflix's Simplified Chinese guide is silent on
@@ -78,9 +110,12 @@ No emoji, no citation markers, no translator notes, no bracketed commentary.
 
 ## Natural spoken phrasing
 
-A subtitle line must be something a native speaker would say out loud. Three failure
-patterns from real deliveries — check every finished batch for them before writing:
+A subtitle line must be something a native speaker would say out loud — and only what this
+speaker did say. Four failure patterns from real deliveries — check every finished batch
+for them before writing:
 
+- **Padding.** The line reads well and says more than the audio did. This is the most
+  common defect of all, and the checklist at the top of this file is the fix.
 - **Impossible verb–object pairings.** `搭建角色的大型` ("build the character's
   large-ness") — the noun is spoken shorthand that cannot take 搭建. Rewrite the idea
   with a real collocation: `搭建角色的基础形体`. If no natural collocation exists, the
@@ -94,7 +129,8 @@ patterns from real deliveries — check every finished batch for them before wri
 
 Also prefer the verbs practitioners actually speak — `切一刀`, `拉出一条边`, `把点拨一下`
 — over bookish variants (`进行切割`, `执行边的拉出`). Reading each finished batch aloud
-in your head is the cheapest full-coverage naturalness check there is.
+in your head is the cheapest full-coverage naturalness check there is: it catches both the
+lines nobody would say and the lines that say too much.
 
 ### Streaming-platform variant
 

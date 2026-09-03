@@ -134,7 +134,9 @@ The final reply is not the subtitle file — it is a short account of what happe
   concrete examples rather than an exhaustive list
 - Anything the user should look at: unrecoverable ASR passages, source timing anomalies,
   terminology choices that could reasonably have gone another way
-- The verification result from `check_subtitle.py`
+- The verification result from `check_subtitle.py`, including how any length-fidelity
+  warning was resolved — a span flagged for padding or for dropped payload is either fixed
+  or explained, never passed through silently
 - One clause confirming the intermediates went to the recycle bin — no list, no offer to
   clean up, because cleanup already happened
 
