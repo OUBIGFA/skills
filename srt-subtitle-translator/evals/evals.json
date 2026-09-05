@@ -5,49 +5,49 @@
       "id": 1,
       "prompt": "审查并重分段这段 SRT，然后翻译成简体中文。相邻块分别以 'we are' / 'going to show you', 'to' / 'show more', 'great' / 'material', 'the' / 'viewport' 断开。",
       "expected_output": "四处机械断句全部修复；后一个块不得继续作为孤立的句尾补全片段。合并块使用前块开始时间和后块结束时间。",
-      "files": []
+      "files": ["evals/fixtures/segmentation_orphans.srt"]
     },
     {
       "id": 2,
       "prompt": "先检查是否需要合并，再翻译字幕。某句被切成 'We can also add some' 和 'turbulence.' 两块。",
       "expected_output": "将仅用于补全前句的 'turbulence' 判定为孤词拖尾并修复，不能保留为独立字幕块。",
-      "files": []
+      "files": ["evals/fixtures/segmentation_orphans.srt"]
     },
     {
       "id": 3,
       "prompt": "先检查断句再翻译。第一块是完整句 'In this video, I will compare the old UV editor.'，下一块是完整句 'Then we will build a new workflow step by step.'",
       "expected_output": "两个块都是完整、自然且可独立阅读的句子，不应因为相邻或主题连续而合并。",
-      "files": []
+      "files": ["evals/fixtures/complete_sentences.srt"]
     },
     {
       "id": 4,
       "prompt": "先审查是否需要重新断句，再翻译这份教程字幕。一个较长句子已经按 6 个自然短语和从句分成 6 块，只有最后的 'simulations.' 被单独切成第 7 块。",
       "expected_output": "保留前 6 块中的所有自然短语和从句边界，只修复最后的孤立句尾。不得因为 7 块属于同一个语法句子而将它们链式合并成一两个长块。",
-      "files": []
+      "files": ["evals/fixtures/long_sentence.srt"]
     },
     {
       "id": 5,
       "prompt": "翻译一份 250 块的 SRT，并先检查是否需要合并。绝大多数块都能独立阅读，只有少量介词与宾语、UI 名称和单词尾巴被机械切开。",
       "expected_output": "以保留原边界为默认，只对明确失败的边界进行重新分配或最小合并。输出块数不应大幅下降；每个被移除的边界都必须对应具体的孤词、介词宾语、术语拆分或句尾补全问题。",
-      "files": []
+      "files": ["evals/fixtures/long_tutorial_sample.srt"]
     },
     {
       "id": 6,
       "prompt": "把这份 300 多块的 20 分钟教程字幕翻成中文",
       "expected_output": "结果写入源文件同目录、采用 -zh.srt 后缀的文件（UTF-8），不把完整字幕塞进聊天回复导致截断；回复中给出文件路径、修复说明与校验结果。默认修复真正的 ASR 断句缺陷（孤词拖尾、拆散术语等）并按中文自然意群安排时间轴内边界，但不跨越真实停顿、不做无缺陷依据的大规模合并。",
-      "files": []
+      "files": ["evals/fixtures/long_tutorial_sample.srt"]
     },
     {
       "id": 7,
       "prompt": "翻译这份字幕，里面有 <i>斜体</i> 标签、{\\an8} 定位标签、[music] 标注和 '- ' 开头的双人对话行",
       "expected_output": "标签与定位符原样保留在对应位置，[music] 译为 [音乐]，双人对话的破折号行结构保持不变，不被合并成一行。",
-      "files": []
+      "files": ["evals/fixtures/markup_dialogue.srt"]
     },
     {
       "id": 8,
       "prompt": "这份字幕有几个块只有 0.3 秒，内容是 'Right.' 'Okay.' 之类的口头语，帮我检查断句后翻译",
       "expected_output": "识别为闪现块（flash block）+ 纯填充词，合并进语义所属的相邻块；填充词在译文中被清除，合并后的块获得可读的时间窗口。",
-      "files": []
+      "files": ["evals/fixtures/flash_fillers.srt"]
     },
     {
       "id": 9,
@@ -59,115 +59,139 @@
       "id": 10,
       "prompt": "帮我把这份字幕翻译成中英双语的",
       "expected_output": "同一个块内中文在上、原文在下，无空行；因密度翻倍而控制中文行长；输出为 .bi.srt 文件。",
-      "files": []
+      "files": ["evals/fixtures/bilingual_sample.srt"]
     },
     {
       "id": 11,
       "prompt": "把这份网页课程的 .vtt 字幕翻成中文，里面有 WEBVTT 头、NOTE 注释块和带 position/align 设置的 cue",
       "expected_output": "输出仍为 .vtt，文件名采用 -zh.vtt 后缀；WEBVTT 头、NOTE 块、cue 标识符与 position/align 设置原样保留，时间戳保持点号毫秒格式不变，不转成 SRT；用 check_subtitle.py 校验。",
-      "files": []
+      "files": ["evals/fixtures/structure.vtt"]
     },
     {
       "id": 12,
       "prompt": "翻译这份 .ass 字幕，Events 里有 {\\pos(...)} 特效标签、\\N 换行和多个 Style，还有和对话同时出现的注释性 sign 事件",
       "expected_output": "只翻译 Dialogue 行的 Text 字段；[Script Info]、样式区、字段顺序、{\\...} 标签与既有 \\N 位置原样保留；不新增 \\N；sign 与对话的重叠不视为错误；输出采用 -zh.ass 后缀，不转格式。",
-      "files": []
+      "files": ["evals/fixtures/structure.ass"]
     },
     {
       "id": 13,
       "prompt": "把这份中文教程字幕翻译成英文",
       "expected_output": "手工译为英文而非机器翻译；阅读负荷按英文标准（约 20 字符/秒，含空格）评估；英文遵循常规句末标点习惯，不套用中文的去句末标点规则；输出 .en.srt，校验时使用 --lang en。",
-      "files": []
+      "files": ["evals/fixtures/chinese_to_english.srt"]
     },
     {
       "id": 14,
       "prompt": "把这个 .vtt 转成 .srt 再翻译成中文",
       "expected_output": "转换属于用户显式请求，可以执行，但必须先说明损失（cue 设置、标识符、NOTE/STYLE 块会丢失，点号毫秒变逗号）；不存在未经请求的静默格式转换。",
-      "files": []
+      "files": ["evals/fixtures/structure.vtt"]
     },
     {
       "id": 15,
       "prompt": "检查断句后翻译：其中两块之间有 1.2 秒的静音间隙，前后各自都是完整可独立阅读的句子",
-      "expected_output": "明显静音间隙（约 0.3 秒以上）是讲话者真实停顿，且该边界通过完整性与独立性两项测试，必须保留，不得为了句子连贯而跨停顿合并。",
-      "files": []
+      "expected_output": "字幕间隔达到配置的停顿代理阈值时，不能仅凭语法跨越合并；该边界通过完整性与独立性测试后必须保留，并在没有音频时避免声称它证明了真实静音。",
+      "files": ["evals/fixtures/timing_gap.srt"]
     },
     {
       "id": 16,
       "prompt": "把这份字幕翻成中文。其中一块长约 8 秒，源文本含两个独立分句，如实翻译后中文接近 40 字",
       "expected_output": "整句翻译后按中文意群拆成两条各自可独立阅读的字幕，内部新时间点按语音比例分配，语音段首尾时间不变，两片精确铺满语音段且每片不短于 1 秒；不得整块保留成一眼读不完的长行，也不得按字数硬切或删减有效信息。",
-      "files": []
+      "files": ["evals/fixtures/long_sentence.srt"]
     },
     {
       "id": 17,
       "prompt": "翻译成中文：块 4 是 'we are going to take a look at one of many methods on how to create variations of stuff'（3.985→10.760），块 5 是 'using MoGraph.'（10.760→12.445），两块间无停顿",
-      "expected_output": "默认（无需用户要求）识别 'using MoGraph.' 为孤立尾部修饰语并合并两块（3.985→12.445），整句翻成语序自然的中文，如'来看看用 MoGraph 创建随机变化的其中一种方法'——'用 MoGraph' 必须置于动词前。严禁逐块直译产出'介绍一种创建随机变化的方法 / 使用 MoGraph'这类被源语言断句绑架、违反中文语序的译文。译文若过长，则在中文意群边界重新拆分并按语音比例分配时间。",
-      "files": []
+      "expected_output": "默认（无需用户要求）识别 'using MoGraph.' 为孤立尾部修饰语并合并两块（3.985→12.445），整句翻成语序自然的中文，如'来看看用 MoGraph 做出各种变化的其中一种方法'——'用 MoGraph' 必须置于动词前。严禁逐块直译产出'介绍一种创建变化的方法 / 使用 MoGraph'这类被源语言断句绑架、违反中文语序的译文。不得无依据把 variations 升级成随机变化；译文若过长，则在中文意群边界重新拆分并按语音比例分配时间。",
+      "files": ["evals/fixtures/segmentation_orphans.srt"]
     },
     {
       "id": 18,
       "prompt": "翻译这份 C4D 教程字幕，讲的是先 inner extrude 一圈再倒角，后面调关键帧的 interpolation，并提到 viewport 里看不清、渲染出来 noise 很多",
       "expected_output": "inner extrude 译为“内部挤压”，绝不出现“内插”“内插面”；interpolation 译为“插值”，绝不出现“内插”；viewport 译为“视窗”，不译“视口”；渲染语境下的 noise 译为“噪点”而非“噪波”。全文每个概念只用一种译法。",
-      "files": []
+      "files": ["evals/fixtures/c4d_terms.srt"]
     },
     {
       "id": 19,
       "prompt": "把这份 Blender 建模教程字幕翻成中文，里面反复出现 inset faces、extrude、geometry nodes 和 grease pencil",
       "expected_output": "跨软件对齐 C4D 大陆简体中文：inset faces 译为“内部挤压”而不是 Blender 官方简中的“内插面”，extrude 译为“挤压”而不是“挤出”。geometry nodes、grease pencil 属于 Blender 专有功能，按其自身名称处理（几何节点 / 蜡笔或保留原文），不强行套 C4D 词汇。",
-      "files": []
+      "files": ["evals/fixtures/blender_terms.srt"]
     },
     {
       "id": 20,
       "prompt": "翻译这份 Maya 教程字幕，涉及 extrude、bevel、subdivision surface、ambient occlusion、keyframe",
       "expected_output": "依次为“挤压”（不用 Maya 简中的“挤出”）、“倒角”、“细分曲面”（不用“细分表面”）、“环境吸收”（不用“环境光遮蔽”）、“关键帧”。软件名 Maya 保留原文，AO 等缩写保留。",
-      "files": []
+      "files": ["evals/fixtures/maya_terms.srt"]
     },
     {
       "id": 21,
       "prompt": "翻译这份 C4D 字幕：一处是讲师说 'create a null and drop everything inside'，另一处是他指着菜单说 'it's under Create > Null'，还有一处 XPresso 节点里 'if the value is null'",
       "expected_output": "同一个 null 按语境给出不同译法：口头叙述动作时用中文母语说法“新建一个空对象，把东西都放进去”，绝不僵硬地说“新建一个空白”；指菜单路径时保留界面词“空白”，因为观众要在菜单里找到它；XPresso 里的 null 是“空值”。体现术语表是默认值而非查找替换表。",
-      "files": []
+      "files": ["evals/fixtures/c4d_context_terms.srt"]
     },
     {
       "id": 22,
       "prompt": "翻译这份渲染教程字幕：一处说 'add a noise to the roughness'，一处说 'the render is still too noisy'，还有一处说 'the light bounces off the wall twice'",
       "expected_output": "同一批多义词按子领域区分：材质里的 noise 是“噪波”，渲染画面里的 noisy 是“噪点”（不能说“噪波还很多”）；bounces 的主语是物理光线，译为“光线打到墙上反弹两次”，绝不译成“灯光反弹”。用错子领域词义会让句子变得不知所云，属于严重错误。",
-      "files": []
+      "files": ["evals/fixtures/render_terms.srt"]
     },
     {
       "id": 23,
       "prompt": "翻译成简体中文，重点检查同一条字幕内部的标点：'First, select the object; then open the Settings panel.'、'The reason is simple: we need more geometry.'、'Select the object and move it up.'",
       "expected_output": "第一句中的分号把两个动作分成了两个意群，应拆为两个字幕块并按语音时间铺开，不能只把分号换成逗号来掩盖边界。第二句的冒号确实引出解释，可以保留；冒号不作为自动拆块信号，但无实际解释、标签或结构引入需求时应自然改写。第三句是单一意群，不必添加标点。结构性的说话人标签、UI 文本和菜单路径保持原样。",
-      "files": []
+      "files": ["evals/fixtures/punctuation.srt"]
     },
     {
       "id": 24,
       "prompt": "翻译成简体中文并严格按单块单意群处理：一条字幕包含 'Select the object. Then open the panel.'，另一条包含 'Select the object, then open the panel.'，还有一条是说话人标签 'JOHN: open the panel.'",
       "expected_output": "第一条中的句号表示两个完整句子，应拆成两个字幕块并按语音时间铺开；第二条的逗号可正常保留，只要整条仍是一个连续意群，不能仅因逗号机械拆块。普通中文字幕行末不加句号。JOHN：属于结构性说话人标签，可以保留。",
-      "files": []
+      "files": ["evals/fixtures/punctuation.srt"]
     },
     {
       "id": 25,
       "prompt": "翻译成简体中文：'Move it up a bit.' / 'Now add a bevel.' / 'That's it.' / 'Set it to 20.' / 'It looks better.' 每句各占一块，时长都在 1.5 秒左右",
       "expected_output": "译文长度与原文相当，忠实且极简，例如「往上挪一点 / 加个倒角 / 就这样 / 设成 20 / 这样好看些」。严禁扩写成「我们把它稍微向上移动一点距离」「接下来我们需要为它添加一个倒角效果」「以上就是本次教程的全部内容了」「把这个数值设置为 20 就可以了」这类原文没有的内容：不得凭空添加主语（我们/你）、衔接词（接下来/那么）、范畴名词（效果/操作/距离/数值）、必要性或许可词（需要/可以）、收尾语（就可以了），也不得把 a bit 之类的程度词升级成「很多」。",
-      "files": []
+      "files": ["evals/fixtures/lean_lines.srt"]
     },
     {
       "id": 26,
       "prompt": "翻译这段字幕：讲师语速很快、句子很短，比如 'okay so' / 'yeah just drag it' / 'like this' / 'cool' / 'and then, um, we bake it'，每块 0.8~1.5 秒",
       "expected_output": "填充词（okay/yeah/um/like/cool 等）作为噪声清除或整块并入相邻语义块，但清除填充词不等于可以改写扩写：保留下来的内容仍只说原话，如「拖过去就行 / 像这样 / 然后烘焙」。不得把两个词的口语扩写成完整书面句，也不得为了填满时间窗而加字；口语随意的语域必须保留，不得升级为书面语。",
-      "files": []
+      "files": ["evals/fixtures/filler_lines.srt"]
     },
     {
       "id": 27,
       "prompt": "翻译这份技术讲解字幕，其中一句信息密度很高：'if you push the substeps above 20 the sim gets stable but the cache size roughly triples, so only do that for the final pass'，时长 7 秒",
       "expected_output": "所有信息必须保留：条件（超过 20）、正面结果（稳定）、代价（缓存大约变成三倍）、限定建议（只在最终渲染时这么做）。不得为了简短删掉因果关系、代价或限定条件；roughly 这类不确定语气词要保留（大约/差不多）。若整句中文过长一眼读不完，应在中文意群边界拆成两块并按语音比例分配时间，而不是删信息换舒适度。",
-      "files": []
+      "files": ["evals/fixtures/dense_technical.srt"]
     },
     {
       "id": 28,
       "prompt": "把这份 60 块左右的教程字幕翻成中文，然后用 check_subtitle.py 带 --source 校验，把校验结果一并说明",
       "expected_output": "校验命令带上 --source 与 --lang，读懂并处理 length fidelity 警告：出现 check for padding 时回去删掉原文没有的字词，出现 check for dropped payload 时补回被概括掉的操作、数值或语气；不能只把警告原样贴给用户或宣称无需处理。最终回复给出文件路径、修复类别与校验结论。",
+      "files": ["evals/fixtures/long_tutorial_sample.srt"]
+    },
+    {
+      "id": 29,
+      "prompt": "只检查这份 SRT 的时间戳、编号和块之间是否有空档，不翻译、不改文件。",
+      "expected_output": "不进入翻译流程；只执行时间轴检查并报告发现。",
+      "files": ["evals/fixtures/long_tutorial_sample.srt"]
+    },
+    {
+      "id": 30,
+      "prompt": "把这个 VTT 转成 SRT，不要翻译字幕内容。",
+      "expected_output": "不调用本翻译技能的翻译流程；如果执行转换，先说明 cue 设置、NOTE/STYLE/REGION 和标识符等损失。",
+      "files": ["evals/fixtures/structure.vtt"]
+    },
+    {
+      "id": 31,
+      "prompt": "把视频里的字幕压制到 MP4 中。",
+      "expected_output": "不把任务误判为字幕翻译；转入视频处理流程或说明当前技能不负责压制字幕。",
       "files": []
+    },
+    {
+      "id": 32,
+      "prompt": "提取这个字幕文件的纯文本，保留阅读顺序。",
+      "expected_output": "不翻译、不重分段，只提取文本或转入文本提取流程。",
+      "files": ["evals/fixtures/long_tutorial_sample.srt"]
     }
   ]
 }

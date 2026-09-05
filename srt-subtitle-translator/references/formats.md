@@ -1,89 +1,62 @@
 # Format Reference — SRT, WebVTT, ASS/SSA
 
-The rule behind everything here: **only the dialogue text is yours; everything else is
-structure and must survive byte-for-byte.** The output format is always the input format.
-Converting between formats loses information (cue settings, styles, positioning) and
-happens only on an explicit user request, with the losses stated.
-
-`scripts/check_subtitle.py` parses all three formats and verifies the timeline claims;
-pass `--format` only when the file extension lies.
+Only dialogue wording may change. Timestamps, format structure, metadata, identifiers,
+settings, non-text event fields, and protected markup are part of the file contract.
+`scripts/check_subtitle.py` checks this contract when `--source` is supplied.
 
 ## SRT
 
-The baseline format; the rules in `SKILL.md` are written against it.
+- Keep the `HH:MM:SS,mmm` timestamp shape and use UTF-8 for the output.
+- Renumber indices sequentially from 1 only when ordinary-mode boundaries change.
+- Preserve formatting and positioning tags such as `<i>`, `<b>`, `<font>`, and `{an8}`.
+- Keep one subtitle line unless the user requests bilingual or multi-speaker output.
 
-- Block = index line, timestamp line, text line(s), blank-line separator
-- Timestamps `HH:MM:SS,mmm` with a **comma** before the milliseconds
-- CRLF line endings in the source are common; write `\n` and stay consistent
-- Formatting tags `<i> <b> <u> <font>` and positioning tags like `{\an8}` pass through
-  around/before the translated span (see `references/edge-cases.md`)
-- When boundaries change: renumber sequentially from 1
+In strict mode, the number, order, index, timestamp line, and protected markup of every
+block must match the source. Only the dialogue wording can differ.
 
-## WebVTT (.vtt)
+## WebVTT
 
-Superset of SRT in spirit; the differences are exactly the things easiest to destroy.
+Preserve exactly after normalizing line endings:
 
-Preserve unchanged:
+- the `WEBVTT` header and its metadata;
+- every `NOTE`, `STYLE`, and `REGION` block;
+- cue identifiers and cue settings such as `position:50% align:center`;
+- HTML/VTT tags, ruby, karaoke timestamps, and escaped entities.
 
-- The `WEBVTT` header line, including anything after it on the same line, plus any
-  header metadata lines before the first blank line
-- `NOTE` blocks (comments), `STYLE` blocks (CSS), `REGION` definitions — never translate
-  their contents
-- **Cue identifiers**: the optional line above a timestamp. Keep each cue's identifier
-  exactly as it was; when merging, a merged cue keeps the first cue's identifier,
-  and purely numeric identifiers may be renumbered sequentially like SRT indices
-- **Cue settings** after the timestamps (`position:50% line:0 align:center`): copy them
-  with their timestamp line. When merging cues whose settings differ, keep the first
-  cue's settings and mention it in the report
-- Inline tags: voice `<v Name>`, class `<c.classname>`, ruby, and karaoke timestamps
-  `<00:01:02.500>` wrap or punctuate the text — keep them positioned around the
-  equivalent translated span. Karaoke-timed text is sung/timed per word; translating it
-  breaks the timing, so flag it instead of translating word-by-word timing
+Ordinary mode may merge or split cues inside a continuous source span. A merged cue
+keeps the first cue's identifier and settings; if settings differ, retain the first and
+report the choice. Do not duplicate a cue identifier. Karaoke-timed text cannot safely
+be translated word by word; flag it for a separate timing-aware treatment.
 
-Differences from SRT:
+VTT timestamps use a dot before milliseconds and may omit the hour. Keep the source
+shape. `NOTE`/`STYLE`/`REGION` blocks are not subtitle cues and do not count as blocks.
 
-- Timestamps use a **dot** before the milliseconds (`00:01:02.500`), and the hour part is
-  optional — do not add or remove the hour field; write times in the same shape the
-  source used
-- Text may legally contain `-->`-free blank-line-separated blocks that are not cues
-  (NOTE/STYLE); do not count them as subtitle blocks
-- Escapes `&amp; &lt; &gt;` stay escaped
+## ASS/SSA
 
-## ASS/SSA (.ass, .ssa)
+Parse the `[Events]` `Format:` line to locate fields; the Text field can contain commas.
+Modify only the Text field of `Dialogue:` events. Preserve:
 
-A whole document, not a list of blocks. Sections: `[Script Info]`, `[V4+ Styles]`
-(or `[V4 Styles]` for SSA), `[Events]`, sometimes `[Fonts]`/`[Graphics]`.
+- all sections, section order, script metadata, styles, and field layout;
+- `Comment:`, `Picture:`, `Sound:`, and other non-Dialogue events;
+- Layer, Start, End, Style, Name, margins, Effect, and every other non-Text field;
+- override tags such as `{\pos(...)}`, `{\k...}`, colors, fades, and existing `\N`,
+  `\n`, and `\h` markers.
 
-Touch **only the Text field of `Dialogue:` lines in `[Events]`**. Everything else —
-script info, resolution, styles, `Comment:` events, field order — is copied verbatim.
-
-- The `Format:` line in `[Events]` defines the field order; `Text` is last and may itself
-  contain commas, so split on at most `len(fields)-1` commas
-- Timestamps `H:MM:SS.cc` — **centiseconds**, single-digit hour. Same shape out as in
-- Override tags `{\...}` (position, color, karaoke, fades) stay exactly where they are
-  relative to the text they affect. `{\k...}` karaoke tags time individual syllables —
-  translating karaoke lines word-by-word breaks them; flag instead
-- `\N` (hard) and `\n` (soft) line breaks: existing ones stay; **adding one is wrapping**
-  and is not allowed. `\h` is a hard space — keep it
-- Style names referenced by Dialogue lines must not be renamed
-- Overlapping events are often intentional (a positioned sign over dialogue, layered
-  effects) — the checker reports overlap as a warning for ASS, not an error. Do not
-  "fix" it
-- Boundary changes: merge only Dialogue events that share the same Style and Layer; a
-  merged event spans the first start and last end, keeps the first event's other fields.
-  Never merge a sign/effect event with dialogue
+Do not add line breaks. Do not merge a sign/effect event with dialogue. Overlap between
+layered ASS events is allowed and is reported as a warning rather than an error.
+Strict mode compares each event's non-Text fields and timestamp line exactly.
 
 ## Timing-less input
 
-A plain transcript with no timestamps is not a subtitle file. Translate the text, return
-the same shape (paragraphs in, paragraphs out), and say that no timeline work was
-possible.
+A transcript without timestamps is not a subtitle file. Translate its paragraphs in the
+same shape and state that no timeline work was possible.
 
-## Conversion (explicit request only)
+## Explicit conversion only
 
-State the losses before doing it: SRT cannot hold VTT cue settings, NOTE/STYLE blocks, or
-ASS styles/positioning/karaoke — that styling disappears. VTT→SRT: dots become commas,
-cue identifiers and settings drop. ASS→SRT/VTT: override tags drop, `\N` becomes a real
-line break (which then violates one-block-one-line — re-audit those blocks). After
-converting, `--source` verification no longer applies across the boundary; verify the
-converted file on its own and say so in the report.
+Explain losses before conversion:
+
+- VTT → SRT loses cue settings, NOTE/STYLE/REGION blocks, and may lose cue identifiers.
+- ASS/SSA → SRT/VTT loses styles, positioning, layer information, karaoke timing, and
+  override tags; `\N` becomes a real line break and needs re-auditing.
+- After conversion, `--source` comparison across formats is not valid. Validate the
+  converted file independently and report the loss.

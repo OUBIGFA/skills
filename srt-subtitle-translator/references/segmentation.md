@@ -146,17 +146,18 @@ All of these mean: translate the sentence as one unit. A flash block of pure fil
 (`Okay`, `Right`) disappears in translation anyway; the merge gives the surviving text a
 usable time window.
 
-## The silence gap as evidence
+## The subtitle gap as evidence
 
-The gap between one block's end and the next block's start is physical evidence:
+The gap between one block's end and the next block's start is timing evidence, not proof
+of what the audio sounds like:
 
 - A **near-zero gap** is the signature of a mechanical ASR cut — the speaker did not
   pause there. Boundaries like this are freely re-placed to fit the translation.
-- A **clear, audible silence** is a pause the speaker actually made — a
-  breath, a topic shift, a beat before the next point. It is an audio anchor: no output
-  block may span across it, whatever the grammar suggests. If a sentence genuinely
-  straddles a long pause, each side gets its own block and the translation is
-  distributed so that each side stands alone as target-language text.
+- A **clear gap in the source subtitles** is only a pause proxy. Without audio, do not
+  call it an audible silence; use the configured threshold mechanically and flag the
+  uncertainty when it matters. An output block may not cross a source gap at or above
+  that threshold. If a sentence appears to straddle such a gap, distribute the
+  translation so each side stands alone as target-language text.
 
 ## Placing boundaries in the translation
 
@@ -174,7 +175,7 @@ carries two or more independent statements:
   consequence, between topic and comment. Each piece must be something a native speaker
   would say in one breath — the two tests above, applied to the target text.
 - Place interior time points proportionally to the spoken material, snapped to source
-  punctuation or an audible pause where the source shows one. The first piece starts
+  punctuation or an existing source pause proxy. The first piece starts
   where the speech starts, the last ends where it ends, and the pieces tile the span
   exactly.
 - Each piece must be readable in its window — a piece that flashes by too fast to read
@@ -245,8 +246,9 @@ Before delivering any subtitle segment, run this two-pass cognitive test on ever
 
 ## Self-check before writing the output
 
-- Speech-span edges and every audible pause from the source survive untouched; no block
-  crosses a real pause; within each span the blocks tile it exactly
+- Speech-span edges and every source pause proxy survive untouched; no block crosses a
+  source gap at or above the configured threshold; within each span the blocks tile it
+  exactly
 - Every block is a single line and reads as a natural, self-contained target-language
   phrase — nothing in the file exists only because the source happened to cut there
 - No word in the output answers to nothing in the audio — merges added no bridging

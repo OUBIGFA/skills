@@ -26,8 +26,8 @@ Checks performed on the output file:
   - missing space between CJK and Latin/digits (zh target only; reported, not fatal)
 
 Extra checks when --source is given:
-  - the audio is treated as the contract: source gaps >= 0.3s are real pauses;
-    source blocks bridged by smaller gaps form continuous speech spans
+  - source gaps at or above the configured pause proxy form separate speech spans;
+    smaller gaps may be preserved or re-placed
   - no output block crosses a real pause or lies outside source speech
   - every speech span is fully covered: pieces tile it from start to end with no
     uncovered speech; boundaries inside a span may be re-placed (merges and
@@ -42,8 +42,10 @@ Exit code 0 = no errors (warnings may still be printed), 1 = errors found.
 """
 
 import argparse
+from collections import Counter
 import json
 import os
+from pathlib import Path
 import re
 import statistics
 import sys
@@ -57,10 +59,10 @@ for stream in (sys.stdout, sys.stderr):
         pass
 
 SRT_TIME_RE = re.compile(
-    r"^(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})"
+    r"^(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})$"
 )
 VTT_TIME_RE = re.compile(
-    r"^(?:(\d{1,2}):)?(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(?:(\d{1,2}):)?(\d{2}):(\d{2})\.(\d{3})(.*)$"
+    r"^(?:(\d{1,2}):)?(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(?:(\d{1,2}):)?(\d{2}):(\d{2})\.(\d{3})(?:\s+.*)?$"
 )
 ASS_TIME_RE = re.compile(r"^(\d+):(\d{2}):(\d{2})\.(\d{2})$")
 
@@ -81,6 +83,7 @@ DEFAULTS = {
     "max_duration": 7.0,      # seconds; longer blocks feel stuck on screen
     "max_lines": 1,           # bilingual and multi-speaker output may raise this
     "min_split_piece": 1.0,   # seconds; a readability-split piece must not flash by
+    "pause_gap": 0.3,         # seconds; source subtitle gap used as a pause proxy
 }
 
 # Length-fidelity calibration. Padding (words the audio never had) and dropped
@@ -96,14 +99,57 @@ FIDELITY = {
     "max_reports": 12,      # worst offenders only — a wall of warnings gets ignored
 }
 
-LANG_PROFILES = {
-    "zh":      {"max_cps": 9.0,  "max_width": 25, "counting": "cjk", "final_punct": True,  "spacing": True,  "ban_exclamation": True},
-    "zh-hant": {"max_cps": 9.0,  "max_width": 25, "counting": "cjk", "final_punct": True,  "spacing": True,  "ban_exclamation": True},
-    "ja":      {"max_cps": 4.0,  "max_width": 25, "counting": "cjk", "final_punct": True,  "spacing": False, "ban_exclamation": True},
-    "ko":      {"max_cps": 12.0, "max_width": 25, "counting": "cjk", "final_punct": False, "spacing": False, "ban_exclamation": False},
-    "en":      {"max_cps": 20.0, "max_width": 42, "counting": "raw", "final_punct": False, "spacing": False, "ban_exclamation": False},
-    "default": {"max_cps": 17.0, "max_width": 42, "counting": "raw", "final_punct": False, "spacing": False, "ban_exclamation": False},
-}
+DEFAULT_LANGUAGE_CONFIG = str(
+    Path(__file__).resolve().parents[1] / "config" / "language_profiles.json"
+)
+
+
+def load_language_profiles(path):
+    """Load and validate language-specific reading and punctuation settings."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            profiles = json.load(fh)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("cannot load language configuration %s: %s" % (path, exc)) from exc
+
+    required = {"target_language", "counting", "final_punctuation", "max_cps", "max_width"}
+    if not isinstance(profiles, dict) or "default" not in profiles:
+        raise ValueError("language configuration must be an object with a default profile")
+    for code, profile in profiles.items():
+        if not isinstance(profile, dict) or not required.issubset(profile):
+            raise ValueError("language profile %s is missing required fields" % code)
+        if profile["counting"] not in ("cjk", "raw"):
+            raise ValueError("language profile %s has unsupported counting mode" % code)
+        if profile["final_punctuation"] not in ("none", "standard"):
+            raise ValueError("language profile %s has unsupported final punctuation mode" % code)
+        if float(profile["max_cps"]) <= 0 or float(profile["max_width"]) <= 0:
+            raise ValueError("language profile %s has non-positive reading limits" % code)
+    return profiles
+
+
+def get_language_profile(lang, profiles=None):
+    """Resolve an exact or regional language code, then fall back explicitly."""
+    profiles = profiles or LANG_PROFILES
+    normalized = (lang or "default").lower().replace("_", "-")
+    if normalized in profiles:
+        return profiles[normalized]
+    base = normalized.split("-", 1)[0]
+    return profiles.get(base, profiles["default"])
+
+
+def language_profile_resolution(lang, profiles=None):
+    """Return the profile and the code that supplied it."""
+    profiles = profiles or LANG_PROFILES
+    normalized = (lang or "default").lower().replace("_", "-")
+    if normalized in profiles:
+        return profiles[normalized], normalized
+    base = normalized.split("-", 1)[0]
+    if base in profiles:
+        return profiles[base], base
+    return profiles["default"], "default"
+
+
+LANG_PROFILES = load_language_profiles(DEFAULT_LANGUAGE_CONFIG)
 
 DISALLOWED_TRAILING_PUNCT = "。．.;；:：、,，！!"
 CJK_RE = re.compile(r"[㐀-䶿一-鿿豈-﫿぀-ヿ]")
@@ -174,18 +220,34 @@ def detect_format(path, override):
     return fmt
 
 
-def read_text(path):
+def read_text(path, require_utf8=False):
     with open(path, "rb") as fh:
         raw = fh.read()
-    for enc in ("utf-8-sig", "utf-8", "gb18030", "utf-16"):
+    if require_utf8:
+        try:
+            return raw.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+        except UnicodeDecodeError as exc:
+            raise ValueError("%s must be UTF-8 (UTF-8 BOM is allowed)" % path) from exc
+
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        encodings = ("utf-16", "utf-16-le", "utf-16-be")
+    elif b"\x00" in raw:
+        encodings = ("utf-16-le", "utf-16-be", "utf-8-sig", "utf-8", "gb18030")
+    else:
+        encodings = ("utf-8-sig", "utf-8", "gb18030", "utf-16")
+    for enc in encodings:
         try:
             text = raw.decode(enc)
             break
         except UnicodeDecodeError:
             continue
     else:
-        raise SystemExit("cannot decode %s as utf-8/gb18030/utf-16" % path)
+        raise ValueError("cannot decode %s as utf-8/gb18030/utf-16" % path)
     return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def valid_clock(h, m, s):
+    return 0 <= int(m) < 60 and 0 <= int(s) < 60
 
 
 def to_seconds(h, m, s, frac, frac_unit=1000.0):
@@ -200,9 +262,11 @@ def fmt_time(t):
     return "%02d:%02d:%02d,%03d" % (h, m, s, ms)
 
 
-def make_block(index, start, end, time_line, lines):
-    return {"index": index, "start": start, "end": end,
-            "time_line": time_line, "lines": lines}
+def make_block(index, start, end, time_line, lines, **metadata):
+    block = {"index": index, "start": start, "end": end,
+             "time_line": time_line, "lines": lines}
+    block.update(metadata)
+    return block
 
 
 def parse_srt(text):
@@ -213,13 +277,20 @@ def parse_srt(text):
             continue
         idx_line, time_pos = None, 0
         if SRT_TIME_RE.match(lines[0]):
+            errors.append("SRT block is missing a sequential index near: %s" % lines[0][:60])
             time_pos = 0
         elif len(lines) > 1 and SRT_TIME_RE.match(lines[1]):
             idx_line, time_pos = lines[0].strip(), 1
+            if not idx_line.isdigit():
+                errors.append("invalid SRT index near: %s" % lines[0][:60])
         else:
             errors.append("unparseable block near: %s" % lines[0][:60])
             continue
         m = SRT_TIME_RE.match(lines[time_pos])
+        if not valid_clock(m.group(1), m.group(2), m.group(3)):
+            errors.append("invalid SRT timestamp near: %s" % lines[time_pos][:60])
+        if not valid_clock(m.group(5), m.group(6), m.group(7)):
+            errors.append("invalid SRT timestamp near: %s" % lines[time_pos][:60])
         blocks.append(make_block(
             int(idx_line) if idx_line and idx_line.isdigit() else None,
             to_seconds(m.group(1), m.group(2), m.group(3), m.group(4)),
@@ -240,18 +311,25 @@ def parse_vtt(text):
         if not lines:
             continue
         # NOTE/STYLE/REGION blocks are structure, not cues — preserved, not checked.
-        if lines[0].split()[0] in ("NOTE", "STYLE", "REGION"):
+        if lines[0].split()[0].upper() in ("NOTE", "STYLE", "REGION"):
             continue
         time_pos = 0 if "-->" in lines[0] else 1
         if time_pos >= len(lines) or not VTT_TIME_RE.match(lines[time_pos]):
             errors.append("unparseable cue near: %s" % lines[0][:60])
             continue
         m = VTT_TIME_RE.match(lines[time_pos])
+        if not valid_clock(m.group(1), m.group(2), m.group(3)):
+            errors.append("invalid VTT timestamp near: %s" % lines[time_pos][:60])
+        if not valid_clock(m.group(5), m.group(6), m.group(7)):
+            errors.append("invalid VTT timestamp near: %s" % lines[time_pos][:60])
+        settings = lines[time_pos][m.end(8):].strip() if m.end(8) < len(lines[time_pos]) else ""
         blocks.append(make_block(
             None,
             to_seconds(m.group(1), m.group(2), m.group(3), m.group(4)),
             to_seconds(m.group(5), m.group(6), m.group(7), m.group(8)),
-            lines[time_pos].strip(), lines[time_pos + 1:]))
+            lines[time_pos].strip(), lines[time_pos + 1:],
+            cue_id=lines[0].strip() if time_pos == 1 else None,
+            cue_settings=settings))
     return blocks, errors
 
 
@@ -282,6 +360,10 @@ def parse_ass(text):
         if not ms or not me:
             errors.append("bad ASS timestamp in: %s" % line[:60])
             continue
+        if not valid_clock(ms.group(1), ms.group(2), ms.group(3)):
+            errors.append("invalid ASS timestamp in: %s" % line[:60])
+        if not valid_clock(me.group(1), me.group(2), me.group(3)):
+            errors.append("invalid ASS timestamp in: %s" % line[:60])
         start = to_seconds(ms.group(1), ms.group(2), ms.group(3), ms.group(4), 100.0)
         end = to_seconds(me.group(1), me.group(2), me.group(3), me.group(4), 100.0)
         text_field = parts[fields.index("text")]
@@ -289,7 +371,10 @@ def parse_ass(text):
             None, start, end,
             "%s --> %s" % (parts[fields.index("start")].strip(),
                            parts[fields.index("end")].strip()),
-            re.split(r"\\[Nn]", text_field)))
+            re.split(r"\\[Nn]", text_field),
+            ass_fields=dict(zip(fields, parts)),
+            ass_non_text=tuple(parts[i] for i, field in enumerate(fields)
+                               if field not in ("start", "end", "text"))))
     if not blocks and not errors:
         errors.append("no Dialogue lines found in the [Events] section")
     return blocks, errors
@@ -298,8 +383,124 @@ def parse_ass(text):
 PARSERS = {"srt": parse_srt, "vtt": parse_vtt, "ass": parse_ass}
 
 
-def parse_file(path, fmt):
-    return PARSERS[fmt](read_text(path))
+def parse_file(path, fmt, require_utf8=False):
+    return PARSERS[fmt](read_text(path, require_utf8=require_utf8))
+
+
+PROTECTED_MARKUP_RE = re.compile(r"<[^>]*>|\{\\[^}]*\}|\\[NnHh]")
+
+
+def protected_markup_signature(text):
+    return Counter(PROTECTED_MARKUP_RE.findall(text))
+
+
+def vtt_structure(text):
+    chunks = re.split(r"\n\s*\n", text.strip())
+    header = chunks[0].strip() if chunks else ""
+    static = []
+    for chunk in chunks[1:]:
+        lines = [ln for ln in chunk.split("\n") if ln.strip()]
+        if lines and lines[0].split()[0].upper() in ("NOTE", "STYLE", "REGION"):
+            static.append(chunk.strip())
+    return header, tuple(static)
+
+
+def ass_structure(text):
+    static = []
+    for line in text.split("\n"):
+        if not line.lstrip().lower().startswith("dialogue:"):
+            static.append(line)
+    return tuple(static)
+
+
+def overlapping_source_blocks(source_blocks, output_block):
+    """Return source events touched by an output interval, in source order."""
+    tolerance = 0.002
+    return [
+        source for source in sorted(source_blocks, key=lambda block: block["start"])
+        if source["end"] > output_block["start"] + tolerance
+        and source["start"] < output_block["end"] - tolerance
+    ]
+
+
+def compare_structure(source_text, output_text, fmt, source_blocks, output_blocks, strict):
+    """Check non-dialogue structure and protected markup without judging translation wording."""
+    errors = []
+    if fmt == "vtt":
+        source_header, source_static = vtt_structure(source_text)
+        output_header, output_static = vtt_structure(output_text)
+        if source_header != output_header:
+            errors.append("VTT header metadata changed")
+        if source_static != output_static:
+            errors.append("VTT NOTE/STYLE/REGION structure changed")
+        source_ids = [b.get("cue_id") for b in source_blocks if b.get("cue_id")]
+        output_ids = [b.get("cue_id") for b in output_blocks if b.get("cue_id")]
+        source_settings = [b.get("cue_settings", "") for b in source_blocks if b.get("cue_settings")]
+        output_settings = [b.get("cue_settings", "") for b in output_blocks if b.get("cue_settings")]
+        if source_ids and not output_ids:
+            errors.append("VTT cue identifiers were removed")
+        if len(output_ids) != len(set(output_ids)):
+            errors.append("VTT cue identifier is duplicated")
+        if any(identifier not in source_ids for identifier in output_ids):
+            errors.append("VTT cue identifier changed")
+        if source_settings and not output_settings:
+            errors.append("VTT cue settings were removed")
+        if any(settings not in source_settings for settings in output_settings):
+            errors.append("VTT cue settings changed")
+        for position, output in enumerate(output_blocks, 1):
+            covered = overlapping_source_blocks(source_blocks, output)
+            if not covered:
+                continue
+            first = covered[0]
+            if output.get("cue_id") != first.get("cue_id"):
+                errors.append(
+                    "VTT cue #%d identifier does not match the first covered source cue"
+                    % position
+                )
+            if output.get("cue_settings", "") != first.get("cue_settings", ""):
+                errors.append(
+                    "VTT cue #%d settings do not match the first covered source cue"
+                    % position
+                )
+    elif fmt == "ass":
+        if ass_structure(source_text) != ass_structure(output_text):
+            errors.append("ASS non-Dialogue structure changed")
+        source_non_text = Counter(b.get("ass_non_text", ()) for b in source_blocks)
+        output_non_text = Counter(b.get("ass_non_text", ()) for b in output_blocks)
+        if any(output_non_text[key] > source_non_text[key] for key in output_non_text):
+            errors.append("ASS non-Text Dialogue fields changed")
+        for position, output in enumerate(output_blocks, 1):
+            covered = overlapping_source_blocks(source_blocks, output)
+            if not covered:
+                continue
+            if output.get("ass_non_text") != covered[0].get("ass_non_text"):
+                errors.append(
+                    "ASS event #%d non-Text fields do not match the first covered source event"
+                    % position
+                )
+
+    source_markup = protected_markup_signature(source_text)
+    output_markup = protected_markup_signature(output_text)
+    if source_markup != output_markup:
+        errors.append("protected subtitle markup changed")
+
+    if strict:
+        if len(source_blocks) != len(output_blocks):
+            errors.append("strict mode requires the source and output block counts to match")
+        else:
+            for index, (source, output) in enumerate(zip(source_blocks, output_blocks), 1):
+                if source.get("time_line") != output.get("time_line"):
+                    errors.append("strict block #%d changed its timestamp line" % index)
+                if fmt == "srt" and source.get("index") != output.get("index"):
+                    errors.append("strict block #%d changed its index" % index)
+                if fmt == "vtt" and (
+                    source.get("cue_id") != output.get("cue_id")
+                    or source.get("cue_settings", "") != output.get("cue_settings", "")
+                ):
+                    errors.append("strict VTT cue #%d changed its identifier or settings" % index)
+                if fmt == "ass" and source.get("ass_non_text") != output.get("ass_non_text"):
+                    errors.append("strict ASS event #%d changed a non-Text field" % index)
+    return errors
 
 
 def display_width(text, counting):
@@ -383,7 +584,11 @@ def length_fidelity(segs, src_blocks, seg_pieces, cfg):
 
 def check(out_path, src_path, fmt, src_fmt, cfg):
     errors, warnings, notes = [], [], []
-    blocks, parse_errors = parse_file(out_path, fmt)
+    try:
+        out_text = read_text(out_path, require_utf8=True)
+        blocks, parse_errors = PARSERS[fmt](out_text)
+    except (OSError, ValueError) as exc:
+        return [], [str(exc)], warnings, notes
     errors.extend(parse_errors)
     if not blocks:
         errors.append("no subtitle blocks found in %s" % out_path)
@@ -391,8 +596,10 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
 
     for i, b in enumerate(blocks):
         pos = "#%d %s" % (i + 1, b["time_line"])
-        if fmt == "srt" and b["index"] is not None and b["index"] != i + 1:
+        if fmt == "srt" and b["index"] != i + 1:
             errors.append("%s: index is %s, expected %d" % (pos, b["index"], i + 1))
+        if i > 0 and b["start"] < blocks[i - 1]["start"] - 1e-6:
+            errors.append("%s: block is out of chronological order" % pos)
         text = " ".join(b["lines"]).strip()
         if not MARKUP_RE.sub("", text).strip():
             errors.append("%s: empty subtitle text" % pos)
@@ -445,7 +652,7 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
                         "%s: contains exclamation mark ('！'/'!') — forbidden in subtitles; rewrite or remove"
                         % pos
                     )
-        if cfg["lang"] in ("zh", "zh-hant"):
+        if cfg.get("profile_code", cfg["lang"]) in ("zh", "zh-hant"):
             for ln in b["lines"]:
                 plain = MARKUP_RE.sub("", ln).strip()
                 if not plain:
@@ -469,11 +676,11 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
                                     LATIN_RE.pattern, CJK_RE.pattern), text):
                 notes.append("%s: missing space at '%s'" % (pos, m.group(0)))
 
-        if cfg["lang"] in ("zh", "zh-hant") and i + 1 < len(blocks):
+        if cfg.get("profile_code", cfg["lang"]) in ("zh", "zh-hant") and i + 1 < len(blocks):
             nxt_b = blocks[i + 1]
             gap = nxt_b["start"] - b["end"]
-            # In continuous speech (gap < 0.6s), check for fractured thought units
-            if gap < 0.6:
+            # In a continuous subtitle span, check for fractured thought units.
+            if gap < cfg["pause_gap"]:
                 clean_text = MARKUP_RE.sub("", text).rstrip(" 。．,.;；：、，！？! ")
                 
                 # Check for dangling clausal connectives, prepositions, or governing verbs at tail
@@ -507,18 +714,28 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
                 "requires an explicit user request and cannot be verified here"
                 % (src_fmt, fmt))
             return blocks, errors, warnings, notes
-        src, src_parse_errors = parse_file(src_path, src_fmt)
+        try:
+            src_text = read_text(src_path)
+            src, src_parse_errors = PARSERS[src_fmt](src_text)
+        except (OSError, ValueError) as exc:
+            errors.append("source: " + str(exc))
+            return blocks, errors, warnings, notes
         errors.extend("source: " + e for e in src_parse_errors)
+        errors.extend(compare_structure(src_text, out_text, fmt, src, blocks, cfg["strict"]))
+        if cfg["strict"] and len(src) == len(blocks):
+            for index, (source_block, output_block) in enumerate(zip(src, blocks), 1):
+                if (abs(source_block["start"] - output_block["start"]) > 0.001
+                        or abs(source_block["end"] - output_block["end"]) > 0.001):
+                    errors.append("strict block #%d changed its time boundary" % index)
         src_starts = {round(b["start"], 3) for b in src}
         src_ends = {round(b["end"], 3) for b in src}
         TOL = 0.002
-        # The audio is the contract: gaps >= SMALL_GAP are real pauses that must
-        # survive; boundaries inside a continuous speech span may be re-placed to
-        # fit target-language phrasing, as long as the pieces tile the span.
-        SMALL_GAP = 0.3
+        # A source subtitle gap is only a pause proxy. Gaps at or above the configured
+        # threshold create separate spans; smaller gaps may be preserved or re-placed.
+        SMALL_GAP = cfg["pause_gap"]
         segs = []
         for s0, e0 in sorted((b["start"], b["end"]) for b in src if b["end"] > b["start"]):
-            if segs and s0 <= segs[-1][1] + SMALL_GAP:
+            if segs and s0 < segs[-1][1] + SMALL_GAP:
                 segs[-1][1] = max(segs[-1][1], e0)
             else:
                 segs.append([s0, e0])
@@ -559,10 +776,25 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
                 errors.append("speech span %s: speech at the start is uncovered" % span)
             if pieces[-1]["end"] < se - TOL:
                 errors.append("speech span %s: speech at the end is uncovered" % span)
+            source_gaps = []
+            source_in_span = sorted(
+                (b for b in src if b["start"] >= ss - TOL and b["end"] <= se + TOL),
+                key=lambda b: b["start"],
+            )
+            for source_before, source_after in zip(source_in_span, source_in_span[1:]):
+                gap_start, gap_end = source_before["end"], source_after["start"]
+                if TOL < gap_end - gap_start < cfg["pause_gap"]:
+                    source_gaps.append((gap_start, gap_end))
             for a, b2 in zip(pieces, pieces[1:]):
-                if b2["start"] - a["end"] > SMALL_GAP + TOL:
+                gap_start, gap_end = a["end"], b2["start"]
+                gap = gap_end - gap_start
+                if gap > TOL and not any(
+                    abs(gap_start - allowed_start) <= TOL
+                    and abs(gap_end - allowed_end) <= TOL
+                    for allowed_start, allowed_end in source_gaps
+                ):
                     errors.append("speech span %s: %.2fs of speech uncovered before %s"
-                                  % (span, b2["start"] - a["end"], b2["time_line"]))
+                                  % (span, gap, b2["time_line"]))
         if new_edges:
             notes.append("%d block edges re-placed to fit target-language phrasing" % new_edges)
         fid_warnings, fid_notes = length_fidelity(segs, src, seg_pieces, cfg)
@@ -583,8 +815,10 @@ def main():
     ap.add_argument("--source", help="original subtitle file to compare against")
     ap.add_argument("--lang", default="zh",
                     help="target language code for reading-speed and punctuation rules: "
-                         "%s; anything else uses the Latin-script default"
+                         "%s; regional codes use their base language and unknown codes use the explicit default profile"
                          % "/".join(k for k in LANG_PROFILES if k != "default"))
+    ap.add_argument("--lang-config", default=DEFAULT_LANGUAGE_CONFIG,
+                    help="JSON language profile file (default: %(default)s)")
     ap.add_argument("--format", choices=("srt", "vtt", "ass"),
                     help="override format detection for both files")
     ap.add_argument("--max-cps", type=float, help="override the language's reading-speed limit")
@@ -596,6 +830,8 @@ def main():
     ap.add_argument("--max-duration", type=float, default=DEFAULTS["max_duration"])
     ap.add_argument("--max-lines", type=int, default=DEFAULTS["max_lines"],
                     help="lines allowed per block; 1 by default, raise to 2 for bilingual output")
+    ap.add_argument("--pause-gap", type=float, default=DEFAULTS["pause_gap"],
+                    help="source subtitle gap used as the pause proxy, in seconds")
     ap.add_argument("--pad-factor", type=float, default=FIDELITY["pad_factor"],
                     help="flag a speech span whose output/source length ratio exceeds the "
                          "file's median ratio by this factor (padding check)")
@@ -607,19 +843,25 @@ def main():
     args = ap.parse_args()
 
     lang = args.lang.lower()
-    profile = LANG_PROFILES.get(lang, LANG_PROFILES["default"])
+    try:
+        profiles = load_language_profiles(args.lang_config)
+    except ValueError as exc:
+        ap.error(str(exc))
+    profile, profile_code = language_profile_resolution(lang, profiles)
     cfg = {
         "lang": lang,
+        "profile_code": profile_code,
         "max_cps": args.max_cps if args.max_cps else profile["max_cps"],
         "max_width": args.max_width if args.max_width else profile["max_width"],
         "counting": profile["counting"],
-        "final_punct": profile["final_punct"],
+        "final_punct": profile["final_punctuation"] == "none",
         "ban_exclamation": profile.get("ban_exclamation", False),
         "spacing": profile["spacing"],
         "strict": args.strict,
         "min_duration": args.min_duration,
         "max_duration": args.max_duration,
         "max_lines": args.max_lines,
+        "pause_gap": args.pause_gap,
         "min_split_piece": DEFAULTS["min_split_piece"],
         "min_span_cost": FIDELITY["min_span_cost"],
         "min_spans": FIDELITY["min_spans"],
@@ -630,6 +872,10 @@ def main():
     fmt = detect_format(args.output, args.format)
     src_fmt = detect_format(args.source, args.format) if args.source else None
     blocks, errors, warnings, notes = check(args.output, args.source, fmt, src_fmt, cfg)
+    if profile_code == "default" and lang not in ("default", ""):
+        notes.append("language %s is not configured; used the explicit default profile" % lang)
+    elif profile_code != lang:
+        notes.append("language %s uses the %s profile" % (lang, profile_code))
 
     if args.json:
         print(json.dumps(

@@ -12,13 +12,14 @@ SPEC.loader.exec_module(CHECKER)
 
 def make_cfg(lang="zh", **overrides):
     """The cfg dict main() builds, so tests exercise the same defaults as the CLI."""
-    profile = CHECKER.LANG_PROFILES.get(lang, CHECKER.LANG_PROFILES["default"])
+    profile = CHECKER.get_language_profile(lang)
     cfg = {
         "lang": lang,
+        "profile_code": CHECKER.language_profile_resolution(lang)[1],
         "max_cps": profile["max_cps"],
         "max_width": profile["max_width"],
         "counting": profile["counting"],
-        "final_punct": profile["final_punct"],
+        "final_punct": profile["final_punctuation"] == "none",
         "ban_exclamation": profile.get("ban_exclamation", False),
         "spacing": profile["spacing"],
         "strict": False,
@@ -26,6 +27,7 @@ def make_cfg(lang="zh", **overrides):
         "max_duration": CHECKER.DEFAULTS["max_duration"],
         "max_lines": CHECKER.DEFAULTS["max_lines"],
         "min_split_piece": CHECKER.DEFAULTS["min_split_piece"],
+        "pause_gap": CHECKER.DEFAULTS["pause_gap"],
         "min_span_cost": CHECKER.FIDELITY["min_span_cost"],
         "min_spans": CHECKER.FIDELITY["min_spans"],
         "pad_factor": CHECKER.FIDELITY["pad_factor"],
@@ -50,6 +52,40 @@ def run_check(output, source=None, lang="zh", **overrides):
             str(src_path) if src_path else None,
             "srt",
             "srt" if src_path else None,
+            make_cfg(lang, **overrides),
+        )
+
+
+def run_check_bytes(output, source=None, lang="zh", **overrides):
+    """Run the checker while controlling the output encoding."""
+    with tempfile.TemporaryDirectory() as tmp:
+        out_path = Path(tmp) / "out.srt"
+        out_path.write_bytes(output)
+        src_path = None
+        if source is not None:
+            src_path = Path(tmp) / "in.srt"
+            src_path.write_bytes(source)
+        return CHECKER.check(
+            str(out_path),
+            str(src_path) if src_path else None,
+            "srt",
+            "srt" if src_path else None,
+            make_cfg(lang, **overrides),
+        )
+
+
+def run_format_check(output, source, fmt, lang="zh", **overrides):
+    """Run the checker for a non-SRT fixture."""
+    with tempfile.TemporaryDirectory() as tmp:
+        out_path = Path(tmp) / ("out." + fmt)
+        src_path = Path(tmp) / ("in." + fmt)
+        out_path.write_text(output, encoding="utf-8")
+        src_path.write_text(source, encoding="utf-8")
+        return CHECKER.check(
+            str(out_path),
+            str(src_path),
+            fmt,
+            fmt,
             make_cfg(lang, **overrides),
         )
 
@@ -216,6 +252,151 @@ class LengthFidelityTests(unittest.TestCase):
         warnings, _ = self.run_fidelity(lines)
         self.assertFalse([w for w in warnings if "check for padding" in w],
                          "uniform doubling is a house style, not a fidelity defect")
+
+
+class LanguageProfileTests(unittest.TestCase):
+    def test_language_config_contains_required_fields(self):
+        profiles = CHECKER.load_language_profiles(CHECKER.DEFAULT_LANGUAGE_CONFIG)
+        required = {"target_language", "counting", "final_punctuation", "max_cps", "max_width"}
+        for code in ("zh", "zh-hant", "ja", "ko", "en", "es", "ru", "ar", "th", "vi"):
+            self.assertTrue(required.issubset(profiles[code]), code)
+
+    def test_language_region_code_resolves_to_base_profile(self):
+        profile = CHECKER.get_language_profile("en-US")
+        self.assertEqual("English", profile["target_language"])
+        self.assertEqual(20.0, profile["max_cps"])
+
+    def test_region_code_inherits_base_language_style_rules(self):
+        warnings = run_check(srt((0.0, 4.0, "设置完成！")), lang="zh-CN")[2]
+        self.assertTrue(any("exclamation mark" in warning for warning in warnings), warnings)
+
+    def test_unknown_language_uses_explicit_default_profile(self):
+        profile = CHECKER.get_language_profile("xx-unknown")
+        self.assertEqual("default", profile["target_language"])
+
+
+class StructuralContractTests(unittest.TestCase):
+    def test_non_utf8_output_is_rejected(self):
+        output = srt((0.0, 2.0, "你好")).encode("gb18030")
+        _, errors, _, _ = run_check_bytes(output)
+        self.assertTrue(any("UTF-8" in error for error in errors), errors)
+
+    def test_invalid_srt_index_is_rejected(self):
+        output = "x\n00:00:00,000 --> 00:00:02,000\nhello\n"
+        _, errors, _, _ = run_check(output)
+        self.assertTrue(any("index" in error for error in errors), errors)
+
+    def test_invalid_srt_clock_is_rejected(self):
+        output = "1\n00:60:00,000 --> 00:00:02,000\nhello\n"
+        _, errors, _, _ = run_check(output)
+        self.assertTrue(any("timestamp" in error for error in errors), errors)
+
+    def test_out_of_order_blocks_are_rejected(self):
+        output = srt((3.0, 4.0, "later"), (0.0, 1.0, "earlier"))
+        _, errors, _, _ = run_check(output)
+        self.assertTrue(any("order" in error for error in errors), errors)
+
+    def test_strict_mode_rejects_merging_blocks(self):
+        source = srt((0.0, 2.0, "a"), (2.0, 4.0, "b"))
+        output = srt((0.0, 4.0, "ab"))
+        _, errors, _, _ = run_check(output, source, strict=True)
+        self.assertTrue(any("strict" in error for error in errors), errors)
+
+    def test_strict_mode_rejects_changed_edges(self):
+        source = srt((0.0, 2.0, "a"), (2.0, 4.0, "b"))
+        output = srt((0.0, 1.5, "a"), (1.5, 4.0, "b"))
+        _, errors, _, _ = run_check(output, source, strict=True)
+        self.assertTrue(any("strict" in error for error in errors), errors)
+
+    def test_new_gap_inside_continuous_source_span_is_rejected(self):
+        source = srt((0.0, 2.0, "a"), (2.0, 4.0, "b"))
+        output = srt((0.0, 1.0, "a"), (1.2, 4.0, "b"))
+        _, errors, _, _ = run_check(output, source)
+        self.assertTrue(any("uncovered" in error for error in errors), errors)
+
+    def test_vtt_static_structure_and_settings_are_required(self):
+        source = (
+            "WEBVTT\n\n"
+            "NOTE keep this note\n\n"
+            "cue-1\n"
+            "00:00.000 --> 00:02.000 position:50% align:center\n"
+            "Hello\n"
+        )
+        output = "WEBVTT\n\ncue-1\n00:00.000 --> 00:02.000\n你好\n"
+        _, errors, _, _ = run_format_check(output, source, "vtt")
+        self.assertTrue(any("VTT" in error or "structure" in error for error in errors), errors)
+
+    def test_vtt_duplicate_cue_identifier_is_rejected(self):
+        source = (
+            "WEBVTT\n\n"
+            "cue-1\n00:00.000 --> 00:02.000\nHello\n\n"
+            "cue-2\n00:02.000 --> 00:04.000\nAgain\n"
+        )
+        output = (
+            "WEBVTT\n\n"
+            "cue-1\n00:00.000 --> 00:02.000\n你好\n\n"
+            "cue-1\n00:02.000 --> 00:04.000\n再来一次\n"
+        )
+        _, errors, _, _ = run_format_check(output, source, "vtt")
+        self.assertTrue(any("identifier" in error for error in errors), errors)
+
+    def test_vtt_merged_cue_must_keep_first_settings(self):
+        source = (
+            "WEBVTT\n\n"
+            "cue-1\n00:00.000 --> 00:02.000 position:10%\nFirst\n\n"
+            "cue-2\n00:02.000 --> 00:04.000 position:90%\nSecond\n"
+        )
+        output = "WEBVTT\n\ncue-1\n00:00.000 --> 00:04.000 position:90%\n合并\n"
+        _, errors, _, _ = run_format_check(output, source, "vtt")
+        self.assertTrue(any("settings" in error for error in errors), errors)
+
+    def test_ass_non_dialogue_structure_and_markup_are_required(self):
+        source = (
+            "[Script Info]\nScriptType: v4.00+\n\n"
+            "[V4+ Styles]\n"
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+            "Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1\n\n"
+            "[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+            "Dialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,{\\i1}Hello{\\i0}\n"
+        )
+        output = (
+            "[Script Info]\nScriptType: v4.00+\n\n"
+            "[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+            "Dialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,你好\n"
+        )
+        _, errors, _, _ = run_format_check(output, source, "ass")
+        self.assertTrue(any("ASS" in error or "structure" in error for error in errors), errors)
+
+    def test_ass_changed_non_text_field_is_rejected_in_normal_mode(self):
+        source = (
+            "[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+            "Dialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,Hello\n"
+        )
+        output = (
+            "[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+            "Dialogue: 0,0:00:00.00,0:00:02.00,Other,,0,0,0,,你好\n"
+        )
+        _, errors, _, _ = run_format_check(output, source, "ass")
+        self.assertTrue(any("non-Text" in error for error in errors), errors)
+
+    def test_ass_merged_event_must_keep_first_non_text_fields(self):
+        source = (
+            "[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+            "Dialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,First\n"
+            "Dialogue: 1,0:00:02.00,0:00:04.00,Other,,1,2,3,fx,Second\n"
+        )
+        output = (
+            "[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+            "Dialogue: 1,0:00:00.00,0:00:04.00,Other,,1,2,3,fx,合并\n"
+        )
+        _, errors, _, _ = run_format_check(output, source, "ass")
+        self.assertTrue(any("non-Text" in error for error in errors), errors)
 
 
 if __name__ == "__main__":

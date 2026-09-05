@@ -1,143 +1,79 @@
 # Edge Cases and Delivery
 
-## Long files: never translate straight into the reply
+## Long files
 
-A 20-minute tutorial is 300+ blocks and roughly 10–15k characters of translation. Pasting
-that into a chat reply risks hitting the response limit and silently truncating the tail —
-the user then has a file that stops at block 240 with no warning.
+For roughly 60 blocks or fewer, inline output is acceptable. Above that, write the
+translation beside the source using the original extension. Use `source-zh.srt` for
+Simplified Chinese, `source-zh-hant.srt` for Traditional Chinese, `source.en.srt` for
+English, and `.bi.` for bilingual output.
 
-Rule of thumb: **under ~60 blocks, inline is fine; above that, write a file.**
+When the translation is built in parts, use the local tool:
 
-Write it next to the source, named source name + target language code + original
-extension. Chinese uses a hyphenated suffix: `tutorial.srt` → `tutorial-zh.srt` and
-`episode.ass` → `episode-zh.ass`; other language examples retain their code style, such
-as `talk.vtt` → `talk.en.vtt`. Then report the path plus what you changed.
-For bilingual output use `.bi.` in place of the language code.
-
-When the file is long enough that one write would be unwieldy, build it in numbered parts
-in a temp directory and concatenate:
-
-```bash
-cat part1.srt part2.srt part3.srt > "/path/to/name-zh.srt"
+```text
+python scripts/assemble_subtitle.py output.srt parts\part1.srt parts\part2.srt
 ```
 
-Each part must start and end on a block boundary with a trailing blank line, so
-concatenation cannot fuse two blocks. For VTT, only part 1 carries the `WEBVTT` header;
-for ASS, only part 1 carries the sections above `[Events]`. After concatenating, run
-`scripts/check_subtitle.py <output> --source <input>` — it will catch a lost or
-duplicated block immediately.
+The tool writes UTF-8, keeps SRT blocks intact, emits one VTT header, and keeps the
+first ASS part's document header before adding later event lines. Validate the assembled
+file before cleaning the parts.
 
-## Clean up every intermediate artifact — to the recycle bin
+## Cleanup on Windows
 
-Everything you created that is not the delivered subtitle file is an intermediate
-artifact: numbered part files, the temp directory holding them, source text dumps,
-timing/span scratch files, glossary drafts, any `_tmp*` / `_spans*` / `_dump*` helper.
-**Delete all of them once the checker reports zero errors** — never leave them next to
-the user's media for them to clean up, and never ask whether to clean up. The only
-survivors are the source file and the translated output.
+Only recycle temporary files and folders created during the current task. Never touch a
+pre-existing scratch file. After the delivered output exists and the checker reports no
+errors, use the recycle bin rather than permanent deletion:
 
-**Move them to the recycle bin, never permanently delete.** Do not use `rm`, `del`, or
-`Remove-Item` — those bypass the recycle bin and a mistake is unrecoverable. On Windows,
-recycle with:
-
-```bash
-powershell -NoProfile -Command "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory('<abs-path>','OnlyErrorDialogs','SendToRecycleBin')"
+```powershell
+Add-Type -AssemblyName Microsoft.VisualBasic
+[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
+  '<absolute-file-path>', 'OnlyErrorDialogs', 'SendToRecycleBin')
 ```
 
-Use `DeleteFile` with the same last two arguments for a single file. Paths must be
-absolute; quote them. On macOS use `trash` (or AppleScript `tell application "Finder" to
-delete`); on Linux use `gio trash` / `trash-put`.
-
-Order matters: concatenate → verify with `check_subtitle.py` → **then** recycle. If the
-checker reports an error you still need the parts to fix and rebuild. Do the cleanup
-before writing the reply, and state in one clause that the intermediates went to the
-recycle bin — do not list them.
-
-Two safety rules, without exception:
-
-- Recycle only paths **you** created during this task. Never touch a pre-existing file,
-  even one that looks like leftover scratch from an earlier run, without asking first.
-- Confirm the delivered output exists and passes the checker before recycling anything.
+For a directory, use `DeleteDirectory` with the same final two arguments. Do not use
+`rm`, `del`, or `Remove-Item`. If validation fails, keep the parts so the translation can
+be corrected and assembled again.
 
 ## Encoding
 
-Always write UTF-8. Read defensively: source files show up as UTF-8, UTF-8 with BOM,
-GB18030, or UTF-16, and a wrong guess produces mojibake that then gets "translated".
-`check_subtitle.py` decodes all four. If the source itself contains mojibake
-(already-corrupted text), tell the user rather than translating the garbage.
+Read sources defensively as UTF-8, UTF-8 BOM, GB18030, or UTF-16. Always write the
+delivered subtitle as UTF-8. The checker accepts legacy source encodings but requires
+the output to be UTF-8. Console output may use a legacy code page; inspect the file or
+use the checker rather than trusting terminal glyphs.
 
-On Windows, a console in a legacy codepage will mangle CJK on stdout even when the file is
-correct — verify the file, not the terminal echo.
+If the source itself contains mojibake, report it and do not pretend that it was
+recovered. Do not silently repair unknown corruption.
 
-## Timing anomalies in the source
+## Timing anomalies
 
 | Symptom | Handling |
 |---|---|
-| Overlapping blocks (next start < current end) | Report it, and do not "fix" it by inventing times outside the speech span. In ASS, layered/positioned events overlap by design — leave them |
-| Zero-length or reversed block | Preserve the line, translate the text, flag it in the summary |
-| A gap between blocks | Normal — silence. Never stretch a block to fill it |
-| A single block far too dense or too long for one glance | Condense first; if it still fails a one-glance read, split at a natural target-language phrase boundary within the speech span (see `references/segmentation.md`). Never wrap it onto a second line |
+| Overlap | Report it; do not invent timestamps. ASS layered events may overlap. |
+| Zero or reversed duration | Preserve and flag the source anomaly. |
+| Source gap | Keep it; never stretch a cue to fill silence. |
+| Dense block | Remove padding, condense payload, then split at a natural target-language seam. |
+| New output gap | Reject it unless it matches a source gap inside the same continuous span. |
 
-## Markup inside subtitle text
+The checker uses one configurable subtitle-gap threshold as a pause proxy. It cannot
+prove an audible pause without the audio.
 
-Preserve, do not translate:
+## Markup and speakers
 
-- Formatting tags: `<i>`, `<b>`, `<u>`, `<font color=...>` — keep them wrapped around the
-  equivalent translated span
-- Positioning tags: `{\an8}`, `{\pos(...)}` — keep at the start of the line
-- Music/sound annotations: `[music]` → translate the word, keep the bracket marker
-  (`[音乐]` for Chinese); `♪` stays
-- Speaker labels: `- ` dashes for two speakers stay at line start; `JOHN:` → `John：`
-  (or the target language's convention). This is a legitimate structural use of a colon,
-  not a signal that the subtitle must be split.
+Keep formatting, positioning, voice/class, ruby, karaoke, and ASS override markers with
+the text they affect. Keep escaped entities escaped. Translate the word in a bracketed
+sound cue when appropriate (`[music]` → `[音乐]`) but retain the bracket shape and `♪`.
 
-VTT voice/class/karaoke tags and ASS override tags have their own rules — see
-`references/formats.md`.
-
-## Hearing-impaired and multi-speaker files
-
-Keep every dash-prefixed speaker line on its own line inside the block. Do not merge two
-speakers into one line — the dash structure is the only cue for who is talking. This is
-one of the two sanctioned exceptions to one-block-one-line; run `check_subtitle.py` with
-`--max-lines 2` on such a file.
+Keep each dash-prefixed speaker line on its own line. Keep structural speaker labels;
+their colon is not a segmentation signal. Use `--max-lines 2` for multi-speaker output.
 
 ## Bilingual output
 
-Only when asked. Target language on the first line, source on the second, one block, no
-blank line between them — the other sanctioned exception to one-block-one-line, so
-validate with `--max-lines 2`. Bilingual blocks are twice as dense, so the reading-speed
-budget effectively halves; keep the translated line short.
+Only produce bilingual subtitles when requested. Put the target language first and the
+source second in the same block, with no blank line between them. Because the reading
+load doubles, keep the translated line shorter and validate with `--max-lines 2`.
 
-```srt
-12
-00:01:02,300 --> 00:01:05,120
-把子步数降到 10
-Turn the substeps down to 10
-```
+## Reporting
 
-## Format handling
-
-`.srt`, `.vtt`, and `.ass`/`.ssa` are all handled natively — same format in, same format
-out, structure preserved; the format-specific rules are in `references/formats.md`. A
-transcript with no timing gets its text translated and handed back in the same shape,
-with a note that no timeline work was possible. Never silently convert between formats —
-cue settings and styling are not representable across them and would be lost; convert
-only on explicit request, stating the losses.
-
-## What to report back
-
-The final reply is not the subtitle file — it is a short account of what happened:
-
-- Where the output file is
-- Mode: structure preserved, or re-segmented (with the block count before → after)
-- The categories of repair made (orphan tails, split terms, flash blocks), with one or two
-  concrete examples rather than an exhaustive list
-- Anything the user should look at: unrecoverable ASR passages, source timing anomalies,
-  terminology choices that could reasonably have gone another way
-- The verification result from `check_subtitle.py`, including how any length-fidelity
-  warning was resolved — a span flagged for padding or for dropped payload is either fixed
-  or explained, never passed through silently
-- One clause confirming the intermediates went to the recycle bin — no list, no offer to
-  clean up, because cleanup already happened
-
-Keep it to a few lines. The user wants to know it is safe to use, not to read a report.
+Report the output path, ordinary or strict mode, block count before and after, concrete
+repair categories, unresolved ASR/timing/terminology issues, the checker result, and a
+brief statement that self-created intermediates were recycled. Do not put notes or
+explanations inside subtitle text.
