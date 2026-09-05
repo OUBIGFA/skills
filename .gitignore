@@ -4,7 +4,7 @@
 # 保留规则文件本身。
 !.gitignore
 
-# 仅同步基准版本中的 30 个 Skill 文件夹，以及 visual-design。
+# 仅同步基准版本中 Skill 文件夹
 !behavioral-modes/
 !behavioral-modes/**
 !brooks-audit/
