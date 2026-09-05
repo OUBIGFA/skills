@@ -12,12 +12,13 @@
                          [--exclude 节点A,节点B] [--keep-dead]
 """
 import argparse
+import copy
 import json
 import os
 import sys
 
-from common import ensure_utf8_stdout
-from probe import NODE_TYPES
+from common import (NODE_TYPES, deduplicate_nodes, ensure_utf8_stdout,
+                    validate_config, write_config)
 
 ensure_utf8_stdout()
 
@@ -41,6 +42,47 @@ def detect_dump(d):
     return hits
 
 
+def build_profile(source, exclude=None, keep_dead=False):
+    drop = set(exclude or [])
+    nodes = []
+    dropped = []
+    used_tags = set()
+    for outbound in source.get('outbounds', []):
+        if outbound.get('type') not in NODE_TYPES:
+            continue
+        if outbound.get('tag') in drop and not keep_dead:
+            dropped.append(outbound['tag'])
+            continue
+        node = copy.deepcopy(outbound)
+        node.pop('domain_resolver', None)
+        node.pop('detour', None)
+        base = node.get('tag') or 'node'
+        tag = base
+        index = 2
+        while tag in used_tags:
+            tag = f'{base}#{index}'
+            index += 1
+        node['tag'] = tag
+        used_tags.add(tag)
+        nodes.append(node)
+    if not nodes:
+        raise ValueError('未找到节点')
+
+    config = {'outbounds': nodes}
+    deduplicate_nodes(config)
+    tags = [node['tag'] for node in config['outbounds']]
+    config['outbounds'].extend([
+        {'type': 'urltest', 'tag': '♻️ 自动选择', 'outbounds': tags,
+         'url': 'https://www.gstatic.com/generate_204', 'interval': '10m',
+         'tolerance': 50},
+        {'type': 'selector', 'tag': '🚀 节点选择',
+         'outbounds': ['♻️ 自动选择'] + tags, 'default': '♻️ 自动选择'},
+    ])
+    config['route'] = {'final': '🚀 节点选择'}
+    validate_config(config)
+    return config, dropped
+
+
 def main():
     ap = argparse.ArgumentParser(description='提取干净的可导入配置')
     ap.add_argument('--config', required=True)
@@ -62,32 +104,17 @@ def main():
         print('直接导回客户端会冲突，本脚本将只保留节点本体。\n')
 
     drop = {x.strip() for x in a.exclude.split(',') if x.strip()}
-    nodes, dropped = [], []
-    for o in d.get('outbounds', []):
-        if o.get('type') not in NODE_TYPES:
-            continue
-        if o.get('tag') in drop and not a.keep_dead:
-            dropped.append(o['tag'])
-            continue
-        # domain_resolver 指向的是快照内部的 DNS 标签，脱离快照即为悬空引用；detour 为链式前置，一并剔除
-        nodes.append({k: v for k, v in o.items() if k not in ('domain_resolver', 'detour')})
-    if not nodes:
-        print('未找到节点')
+    try:
+        cfg, dropped = build_profile(d, drop, a.keep_dead)
+    except ValueError as error:
+        print(error)
         sys.exit(1)
-
-    tags = [n['tag'] for n in nodes]
-    cfg = {'outbounds': nodes + [
-        {'type': 'urltest', 'tag': '♻️ 自动选择', 'outbounds': tags,
-         'url': 'https://www.gstatic.com/generate_204', 'interval': '10m',
-         'tolerance': 50},
-        {'type': 'selector', 'tag': '🚀 节点选择',
-         'outbounds': ['♻️ 自动选择'] + tags, 'default': '♻️ 自动选择'},
-    ], 'route': {'final': '🚀 节点选择'}}
-
-    with open(out, 'w', encoding='utf-8') as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    changed, _ = write_config(out, cfg, style_from=src)
     print(f'已生成：{out}')
-    print(f'保留节点 {len(nodes)} 个' + (f'，剔除 {len(dropped)} 个：{dropped}' if dropped else ''))
+    node_count = sum(1 for item in cfg['outbounds'] if item.get('type') in NODE_TYPES)
+    print(f'保留节点 {node_count} 个' + (f'，剔除 {len(dropped)} 个：{dropped}' if dropped else ''))
+    if not changed:
+        print('输出内容无变化，未重写文件')
     print('说明：入站/DNS/路由/实验性配置一律不写入，由客户端自行生成，避免冲突。')
     print('注意：客户端定制字段（tls_tricks、tls_fragment 等）已原样保留——'
           '官方 sing-box 内核校验会报未知字段，属正常，导入定制客户端即可用。')

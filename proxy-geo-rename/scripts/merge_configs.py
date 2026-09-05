@@ -1,78 +1,138 @@
 # -*- coding: utf-8 -*-
 """
-合并多个订阅/配置到一个底库，按连接身份去重，并统一命名排序。
+合并多个订阅/配置到一个底库。
 
-去重看的是**连接身份**（协议+地址+端口+凭据+传输方式+SNI），不看名字——
-同一个节点在不同订阅里往往名字完全不同，按名字去重会漏；而同址同端口但凭据
-不同的是真的两个节点，按地址去重会误删。
-
-默认会顺带做统一命名与地区排序（合并后正是要做的事），只想合并就加 --no-rename。
+准则：
+- 默认主动去重：自动按连接身份指纹执行去重，确保底库无重复节点（加 --keep-dup 可保留重复）。
+- 默认主动剥离链式代理：自动移除代理节点上的 detour 属性，降级为直接连接（加 --keep-detour 可保留）。
+- 严格不主动重命名：节点原有 Tag 100% 原样保留，仅在显式传入 --rename 时才规范化命名。
+- 严格不主动排序：节点原有先后顺序 100% 原样保留，仅在显式传入 --sort 时才按地区排序。
 
 用法：
   python merge_configs.py --base <底库.json> --add <订阅1.json> <订阅2.json> [--apply]
-  python merge_configs.py --base <底库.json> --add *.json --out <新文件.json> --apply
-
-常用选项：
-  --out           合并结果写到新文件，底库保持不动
-  --no-rename     只合并去重，不改名不排序
-  --keep-base-dup 保留底库自身已有的重复节点（默认一并清理）
+  python merge_configs.py --base <底库.json> --add *.json --out <新文件.json> [--sort] [--rename] [--apply]
 """
 import argparse
+import copy
 import json
 import os
-import shutil
 import sys
-import time
 
-from common import ensure_utf8_stdout
-from probe import NODE_TYPES
+from common import (NODE_TYPES, deduplicate_nodes, ensure_utf8_stdout, sig,
+                    strip_node_detours, validate_config, write_config)
 
 ensure_utf8_stdout()
 
 
-def sig(o):
-    """节点的连接身份指纹。地址统一小写并去掉末尾的点（DNS 根点写法差异）。"""
-    cred = (o.get('password') or o.get('uuid') or o.get('auth_str')
-            or o.get('username') or o.get('private_key') or '')
-    tr = o.get('transport') or {}
-    tr_type = tr.get('type', '') if isinstance(tr, dict) else str(tr)
-    tr_path = tr.get('path', '') if isinstance(tr, dict) else ''
-    tls = o.get('tls') or {}
-    tls_sni = tls.get('server_name', '') if isinstance(tls, dict) else ''
-    return (o.get('type'), str(o.get('server', '')).lower().rstrip('.'),
-            o.get('server_port'), str(cred), o.get('method', ''),
-            tr_type, tr_path, tls_sni)
-
-
 def load_nodes(path):
-    d = json.load(open(path, encoding='utf-8'))
+    with open(path, encoding='utf-8-sig') as handle:
+        d = json.load(handle)
     if 'outbounds' not in d:
         print(f'{os.path.basename(path)}：不是 sing-box 配置（没有 outbounds），跳过')
         return d, []
     return d, [o for o in d['outbounds'] if o.get('type') in NODE_TYPES]
 
 
-def sanitize(node, base_dns_tags, merged_tags=None):
-    """摘掉私有 DNS 与链式代理前置引用，保证节点独立且直接连接。"""
+def sanitize(node, base_dns_tags, strip_detour=False):
+    """清洗私有 DNS 引用；仅在显式要求时剥离 detour。"""
     n = dict(node)
     dr = n.get('domain_resolver')
     tag = dr.get('server') if isinstance(dr, dict) else dr
     if tag and tag not in base_dns_tags:
         n.pop('domain_resolver', None)
-    n.pop('detour', None)      # 移除链式代理（前置代理），一律降级为直接连接
+    if strip_detour:
+        n.pop('detour', None)
     return n
 
 
+def _unique_tag(tag, tags):
+    candidate = tag or 'node'
+    base = candidate
+    index = 2
+    while candidate in tags:
+        candidate = f'{base}#{index}'
+        index += 1
+    return candidate
+
+
+def merge_config_data(base, additions, dedup=True, dedup_base=True,
+                      strip_detour=True, do_sort=False, do_rename=False):
+    removed = deduplicate_nodes(base) if dedup_base else []
+    base_nodes = [o for o in base.get('outbounds', []) if o.get('type') in NODE_TYPES]
+    if not base_nodes:
+        raise ValueError('底库里没有节点')
+
+    base_tags = {o['tag'] for o in base_nodes}
+    groups_to_extend = [
+        outbound for outbound in base.get('outbounds', [])
+        if isinstance(outbound.get('outbounds'), list)
+        and base_tags.issubset(set(outbound['outbounds']))
+    ]
+    dns_tags = {s.get('tag') for s in (base.get('dns') or {}).get('servers', [])}
+    tags = {o.get('tag') for o in base.get('outbounds', [])}
+    seen = {sig(o): o['tag'] for o in base_nodes}
+    added = []
+    skipped = []
+
+    for source in additions:
+        for original in source:
+            fingerprint = sig(original)
+            if dedup and fingerprint in seen:
+                skipped.append((original.get('tag'), seen[fingerprint]))
+                continue
+            node = sanitize(copy.deepcopy(original), dns_tags, strip_detour)
+            node['tag'] = _unique_tag(node.get('tag'), tags)
+            tags.add(node['tag'])
+            seen[fingerprint] = node['tag']
+            added.append(node)
+
+    if strip_detour:
+        strip_node_detours(base)
+    node_indexes = [
+        index for index, outbound in enumerate(base['outbounds'])
+        if outbound.get('type') in NODE_TYPES
+    ]
+    insert_at = node_indexes[-1] + 1
+    base['outbounds'][insert_at:insert_at] = added
+    added_tags = [node['tag'] for node in added]
+    for group in groups_to_extend:
+        group['outbounds'].extend(added_tags)
+
+    postprocess = None
+    if do_sort or do_rename:
+        from sort_nodes import process_config
+        postprocess = process_config(
+            base, do_sort=do_sort, do_rename=do_rename,
+            dedup=False, strip_detour=False,
+        )
+    validate_config(base)
+    return {
+        'removed': removed,
+        'skipped': skipped,
+        'added': added_tags,
+        'postprocess': postprocess,
+    }
+
+
 def main():
-    ap = argparse.ArgumentParser(description='合并多个订阅并按连接身份去重')
+    ap = argparse.ArgumentParser(description='合并多个订阅配置（默认自动去重与剥离 detour，严格不主动改名与排序）')
     ap.add_argument('--base', required=True, help='底库配置（结果以它的设置为准）')
     ap.add_argument('--add', nargs='+', required=True, help='要并入的配置，可多个')
     ap.add_argument('--out', default=None, help='结果写到新文件（默认就地更新底库）')
     ap.add_argument('--apply', action='store_true', help='实际写入（默认仅预览）')
-    ap.add_argument('--no-rename', dest='rename', action='store_false',
-                    help='只合并去重，不做统一命名与排序')
-    ap.add_argument('--keep-base-dup', action='store_true',
-                    help='保留底库自身的重复节点')
+    ap.add_argument('--no-dedup', '--keep-dup', dest='dedup', action='store_false',
+                    help='保留重复节点（默认自动按连接身份指纹去重）')
+    ap.add_argument('--dedup', dest='dedup', action='store_true',
+                    help='按连接身份指纹去重（默认即启用）')
+    ap.add_argument('--keep-base-dup', dest='dedup_base', action='store_false',
+                    help='保留底库原有的重复节点（默认一并清理）')
+    ap.add_argument('--keep-detour', dest='strip_detour', action='store_false',
+                    help='保留代理节点的 detour 链式代理（默认自动剥离降级直连）')
+    ap.add_argument('--strip-detour', dest='strip_detour', action='store_true',
+                    help='移除代理节点的 detour 链式前置（默认即启用）')
+    ap.add_argument('--sort', action='store_true', help='合并后按地区排序（默认保持原序，严格按需）')
+    ap.add_argument('--rename', action='store_true', help='合并后按地区规范化重命名（默认保持原名，严格按需）')
+    ap.set_defaults(dedup=True, dedup_base=True, strip_detour=True)
     a = ap.parse_args()
 
     base_path = os.path.abspath(a.base)
@@ -80,113 +140,45 @@ def main():
     if not nodes:
         print('底库里没有节点')
         sys.exit(1)
-    base_dns_tags = {s.get('tag') for s in base.get('dns', {}).get('servers', [])}
-
-    # 底库自身去重
-    seen, base_dup = {}, {}
-    for o in nodes:
-        s = sig(o)
-        if s in seen:
-            base_dup[o['tag']] = seen[s]
-        else:
-            seen[s] = o['tag']
     print(f'底库 {os.path.basename(base_path)}：{len(nodes)} 个节点')
-    if base_dup:
-        word = '保留' if a.keep_base_dup else '清理'
-        print(f'  自身重复 {len(base_dup)} 个（将{word}）：')
-        for k, v in base_dup.items():
-            print(f'    {k}  ≡  {v}')
-
-    tags = {o.get('tag') for o in base['outbounds']}
-    added, skipped = [], []
+    additions = []
     for path in a.add:
         p = os.path.abspath(path)
-        if os.path.samefile(p, base_path) if os.path.exists(p) else False:
+        if os.path.exists(p) and os.path.samefile(p, base_path):
             print(f'{os.path.basename(p)}：与底库是同一个文件，跳过')
             continue
         _, ns = load_nodes(p)
-        n0 = len(added)
-        for o in ns:
-            s = sig(o)
-            if s in seen:
-                skipped.append((os.path.basename(p), o['tag'], seen[s]))
-                continue
-            n = sanitize(o, base_dns_tags, tags)
-            t, i = n.get('tag', 'node'), 2
-            while t in tags:            # 先保证唯一，稍后统一改名
-                t = f"{n.get('tag', 'node')}#{i}"
-                i += 1
-            n['tag'] = t
-            tags.add(t)
-            seen[s] = t
-            added.append(n)
-        print(f'{os.path.basename(p)}：{len(ns)} 个节点 → 新增 {len(added) - n0} 个')
+        additions.append(ns)
+        print(f'{os.path.basename(p)}：读取 {len(ns)} 个节点')
 
-    if skipped:
-        print(f'\n去重跳过 {len(skipped)} 个（连接信息与已有节点完全相同）：')
-        for src, tag, hit in skipped:
-            print(f'  [{src}] {tag}  ≡  {hit}')
+    result = merge_config_data(
+        base, additions, dedup=a.dedup, dedup_base=a.dedup_base,
+        strip_detour=a.strip_detour, do_sort=a.sort, do_rename=a.rename,
+    )
+    if result['removed']:
+        print(f'\n[底库去重] 清理 {len(result["removed"])} 个重复节点：')
+        for old, kept in result['removed']:
+            print(f'  {old}  ≡  {kept}')
+    if result['skipped']:
+        print(f'\n[跨文件去重] 跳过 {len(result["skipped"])} 个重复节点：')
+        for old, kept in result['skipped']:
+            print(f'  {old}  ≡  {kept}')
+    total = len([o for o in base['outbounds'] if o.get('type') in NODE_TYPES])
+    print(f'\n合并结果：新增 {len(result["added"])} 个，共 {total} 个节点')
 
-    drop = {} if a.keep_base_dup else base_dup
-    total = len(nodes) - len(drop) + len(added)
-    print(f'\n合并结果：{len(nodes)} - {len(drop)} + {len(added)} = {total} 个节点')
     if not a.apply:
-        print('\n[预览] 未写入。确认无误后加 --apply')
+        print('\n[预览模式] 未写入。确认无误后加 --apply')
         return
 
-    if drop:  # 重复节点删掉，引用改指向保留的那个
-        base['outbounds'] = [o for o in base['outbounds'] if o.get('tag') not in drop]
-        for o in base['outbounds']:
-            if o.get('outbounds'):
-                o['outbounds'] = [t for t in o['outbounds'] if t not in drop]
-            for k in ('default', 'detour'):
-                if o.get(k) in drop:
-                    o[k] = drop[o[k]]
-        rt = base.get('route', {})
-        if rt.get('final') in drop:
-            rt['final'] = drop[rt['final']]
-        for ru in rt.get('rules', []):
-            if ru.get('outbound') in drop:
-                ru['outbound'] = drop[ru['outbound']]
-        for sv in base.get('dns', {}).get('servers', []):
-            if sv.get('detour') in drop:
-                sv['detour'] = drop[sv['detour']]
-
-    # 新节点接在最后一个节点之后，各分组同步追加成员，并确保所有代理节点无链式前置
-    for o in base['outbounds']:
-        if o.get('type') in NODE_TYPES:
-            o.pop('detour', None)
-    idx = [i for i, o in enumerate(base['outbounds']) if o.get('type') in NODE_TYPES]
-    base['outbounds'][idx[-1] + 1:idx[-1] + 1] = added
-    for o in base['outbounds']:
-        if o.get('type') in ('selector', 'urltest'):
-            o['outbounds'] = o.get('outbounds', []) + [n['tag'] for n in added]
-
     dst = os.path.abspath(a.out) if a.out else base_path
-    raw = open(base_path, 'rb').read()
-    if dst == base_path:
-        bak = base_path[:-5] + f'.backup.{time.strftime("%Y%m%d-%H%M%S")}.json'
-        shutil.copy2(base_path, bak)
-        print(f'\n已备份：{os.path.basename(bak)}')
-    out = json.dumps(base, ensure_ascii=False, indent=2)
-    if b'\r\n' in raw:
-        out = out.replace('\n', '\r\n')
-    open(dst, 'wb').write(out.encode('utf-8'))
-
-    d2 = json.load(open(dst, encoding='utf-8'))
-    at = [o['tag'] for o in d2['outbounds']]
-    assert len(at) == len(set(at)), '合并后存在重名'
-    ts = set(at)
-    for o in d2['outbounds']:
-        for t in o.get('outbounds', []):
-            assert t in ts, f'分组引用缺失: {t}'
-    print(f'合并完成并校验通过：{dst}')
-
-    if a.rename:
-        print('\n--- 统一命名与地区排序 ---')
-        sys.argv = ['sort_nodes.py', '--config', dst, '--apply']
-        import sort_nodes
-        sort_nodes.main()
+    changed, backup = write_config(
+        dst, base, backup=os.path.exists(dst), style_from=base_path,
+    )
+    if changed:
+        suffix = f'；备份: {os.path.basename(backup)}' if backup else ''
+        print(f'合并写入并校验通过：{dst}{suffix}')
+    else:
+        print('合并结果无变化，未写入，也未生成备份')
 
 
 if __name__ == '__main__':

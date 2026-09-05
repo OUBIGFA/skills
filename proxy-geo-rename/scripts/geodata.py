@@ -56,13 +56,15 @@ COUNTRY_ZH = {
 _CONT = {
     'AS': ['CN','HK','MO','TW','JP','KR','KP','MN','SG','MY','TH','VN','PH','ID','KH','LA','MM','BN',
            'IN','PK','BD','LK','NP','KZ','UZ','KG','TR','AE','SA','QA','KW','BH','OM','IL','JO','IR','IQ',
-           'GE','AM','AZ'],
+           'GE','AM','AZ','LB','SY','YE','AF','MV','BT','TJ','TM'],
     'EU': ['GB','DE','FR','IT','ES','PT','NL','BE','LU','IE','CH','AT','PL','CZ','SK','HU','RO','BG','GR',
-           'SE','NO','FI','DK','IS','EE','LV','LT','RU','UA','BY','MD','RS','HR','SI','BA','MK','AL','CY','MT'],
-    'NA': ['US','CA','MX'],
-    'SA': ['BR','AR','CL','CO','PE'],
-    'OC': ['AU','NZ'],
-    'AF': ['EG','ZA','NG','KE','MA'],
+           'SE','NO','FI','DK','IS','EE','LV','LT','RU','UA','BY','MD','RS','HR','SI','BA','MK','AL','CY','MT',
+           'ME','XK','LI','AD','MC','SM','FO','GI'],
+    'NA': ['US','CA','MX','CR','DO','JM','PA','GT','CU','PR','TT','BS'],
+    'SA': ['BR','AR','CL','CO','PE','EC','UY','PY','BO','VE'],
+    'OC': ['AU','NZ','FJ','PG','NC','GU'],
+    'AF': ['EG','ZA','NG','KE','MA','RE','YT','GH','TZ','UG','ET','DZ','TN','SN','CI',
+           'ZW','ZM','AO','MZ','SC','MU'],
 }
 CONTINENT = {cc: cont for cont, ccs in _CONT.items() for cc in ccs}
 
@@ -71,16 +73,17 @@ CITY_STATE = {'HK': '香港', 'MO': '澳门', 'SG': '新加坡'}
 
 # 常见城市英文名（小写）→ 中文
 CITY_ZH = {
-    'Yokohama': '横滨',
-    'Toyokawa': '丰川',
-    'Pyeongtaek': '平泽',
-    'Chuncheon': '春川',
+    'yokohama': '横滨',
+    'toyokawa': '丰川',
+    'pyeongtaek': '平泽',
+    'chuncheon': '春川',
     'tokyo': '东京', 'osaka': '大阪', 'nagoya': '名古屋', 'fukuoka': '福冈', 'sapporo': '札幌',
     'seoul': '首尔', 'busan': '釜山', 'incheon': '仁川',
     'taipei': '台北', 'new taipei': '新北', 'taichung': '台中', 'kaohsiung': '高雄', 'taoyuan': '桃园',
     'hong kong': '香港', 'macau': '澳门', 'singapore': '新加坡',
     'bangkok': '曼谷', 'hanoi': '河内', 'ho chi minh city': '胡志明市', 'kuala lumpur': '吉隆坡',
     'jakarta': '雅加达', 'manila': '马尼拉', 'phnom penh': '金边',
+    'hefei': '合肥', 'osan': '乌山', 'ankara': '安卡拉', 'panama city': '巴拿马城',
     'mumbai': '孟买', 'delhi': '新德里', 'new delhi': '新德里', 'chennai': '金奈', 'bangalore': '班加罗尔',
     'dubai': '迪拜', 'abu dhabi': '阿布扎比', 'istanbul': '伊斯坦布尔', 'tel aviv': '特拉维夫',
     'riyadh': '利雅得', 'doha': '多哈', 'almaty': '阿拉木图', 'tashkent': '塔什干',
@@ -95,6 +98,7 @@ CITY_ZH = {
     'london': '伦敦', 'manchester': '曼彻斯特', 'coventry': '考文垂', 'edinburgh': '爱丁堡',
     'frankfurt': '法兰克福', 'frankfurt am main': '法兰克福', 'berlin': '柏林', 'munich': '慕尼黑',
     'dusseldorf': '杜塞尔多夫', 'düsseldorf': '杜塞尔多夫', 'hamburg': '汉堡', 'nuremberg': '纽伦堡',
+    'nuernberg': '纽伦堡',
     'falkenstein': '法尔肯施泰因', 'limburg': '林堡', 'limburg an der lahn': '林堡',
     'paris': '巴黎', 'marseille': '马赛', 'strasbourg': '斯特拉斯堡', 'roubaix': '鲁贝', 'gravelines': '格拉沃利讷',
     'amsterdam': '阿姆斯特丹', 'rotterdam': '鹿特丹', 'the hague': '海牙', 'naaldwijk': '纳尔德韦克',

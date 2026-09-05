@@ -3,10 +3,19 @@
 避免每步重复传参。"""
 import json
 import os
+import re
 import socket
+import shutil
 import subprocess
 import sys
 import time
+
+
+NODE_TYPES = {
+    'hysteria', 'hysteria2', 'tuic', 'http', 'shadowsocks', 'shadowsocksr',
+    'trojan', 'vmess', 'vless', 'wireguard', 'socks', 'ssh', 'shadowtls',
+    'anytls', 'mieru',
+}
 
 
 def ensure_utf8_stdout():
@@ -25,6 +34,199 @@ def fp_of(node):
     if node.get('server'):
         return f"{node.get('type')}|{node['server']}|{node.get('server_port')}"
     return f"tag|{node.get('tag')}"
+
+
+def sig(o):
+    """完整连接身份指纹；忽略名称及整理时会移除的运行时引用。"""
+    identity = {
+        key: value for key, value in o.items()
+        if key not in {'tag', 'detour', 'domain_resolver'}
+    }
+    if 'server' in identity:
+        identity['server'] = str(identity['server']).lower().rstrip('.')
+    return json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+
+
+def _unique(items):
+    return list(dict.fromkeys(items))
+
+
+def _remap_rule_refs(rules, mapping):
+    for rule in rules or []:
+        if not isinstance(rule, dict):
+            continue
+        if rule.get('outbound') in mapping:
+            rule['outbound'] = mapping[rule['outbound']]
+        _remap_rule_refs(rule.get('rules'), mapping)
+
+
+def remap_refs(config, mapping):
+    """同步出站标签引用，并清除分组中重复的成员。"""
+    mapping = {old: new for old, new in mapping.items() if old != new}
+    for outbound in config.get('outbounds', []):
+        if isinstance(outbound.get('outbounds'), list):
+            outbound['outbounds'] = _unique(
+                mapping.get(tag, tag) for tag in outbound['outbounds']
+            )
+        for field in ('default', 'detour'):
+            if outbound.get(field) in mapping:
+                outbound[field] = mapping[outbound[field]]
+
+    route = config.get('route') or {}
+    if route.get('final') in mapping:
+        route['final'] = mapping[route['final']]
+    _remap_rule_refs(route.get('rules'), mapping)
+
+    for server in (config.get('dns') or {}).get('servers', []):
+        if server.get('detour') in mapping:
+            server['detour'] = mapping[server['detour']]
+
+
+def deduplicate_nodes(config, node_types=NODE_TYPES):
+    """按连接指纹保留首个节点，并按列表位置删除后续重复项。"""
+    seen = {}
+    removed_indexes = set()
+    mapping = {}
+    removed = []
+    for index, outbound in enumerate(config.get('outbounds', [])):
+        if outbound.get('type') not in node_types:
+            continue
+        fingerprint = sig(outbound)
+        if fingerprint not in seen:
+            seen[fingerprint] = (index, outbound.get('tag'))
+            continue
+        kept_tag = seen[fingerprint][1]
+        removed_tag = outbound.get('tag')
+        removed_indexes.add(index)
+        removed.append((removed_tag, kept_tag))
+        if removed_tag != kept_tag:
+            mapping[removed_tag] = kept_tag
+
+    if not removed_indexes:
+        return []
+
+    config['outbounds'] = [
+        outbound for index, outbound in enumerate(config.get('outbounds', []))
+        if index not in removed_indexes
+    ]
+    remap_refs(config, mapping)
+    return removed
+
+
+def strip_node_detours(config, node_types=NODE_TYPES):
+    count = 0
+    for outbound in config.get('outbounds', []):
+        if outbound.get('type') in node_types and 'detour' in outbound:
+            outbound.pop('detour')
+            count += 1
+    return count
+
+
+def _validate_ref(tag, tags, label):
+    if tag and tag not in tags:
+        raise ValueError(f'{label} 引用缺失: {tag}')
+
+
+def _validate_rule_refs(rules, tags):
+    for rule in rules or []:
+        if not isinstance(rule, dict):
+            continue
+        _validate_ref(rule.get('outbound'), tags, '路由规则 outbound')
+        _validate_rule_refs(rule.get('rules'), tags)
+
+
+def validate_config(config):
+    """校验所有已维护的出站标签和引用。"""
+    outbounds = config.get('outbounds')
+    if not isinstance(outbounds, list):
+        raise ValueError('配置缺少 outbounds 列表')
+    tags = [outbound.get('tag') for outbound in outbounds]
+    if any(not tag for tag in tags):
+        raise ValueError('存在缺少 tag 的出站')
+    duplicates = _unique(tag for tag in tags if tags.count(tag) > 1)
+    if duplicates:
+        raise ValueError(f'存在重名 tag: {duplicates}')
+    tagset = set(tags)
+
+    for outbound in outbounds:
+        members = outbound.get('outbounds')
+        if members is not None:
+            if not isinstance(members, list):
+                raise ValueError(f'{outbound["tag"]} 的 outbounds 不是列表')
+            for member in members:
+                _validate_ref(member, tagset, f'{outbound["tag"]} 分组成员')
+        default = outbound.get('default')
+        _validate_ref(default, tagset, f'{outbound["tag"]} default')
+        if default and isinstance(members, list) and default not in members:
+            raise ValueError(f'{outbound["tag"]} default 不是分组成员: {default}')
+        _validate_ref(outbound.get('detour'), tagset, f'{outbound["tag"]} detour')
+
+    route = config.get('route') or {}
+    _validate_ref(route.get('final'), tagset, 'route.final')
+    _validate_rule_refs(route.get('rules'), tagset)
+    for server in (config.get('dns') or {}).get('servers', []):
+        _validate_ref(server.get('detour'), tagset, f'DNS {server.get("tag", "server")} detour')
+
+
+def _json_style(raw):
+    text = raw.decode('utf-8-sig') if raw else ''
+    match = re.search(r'\r?\n([ \t]+)"', text)
+    whitespace = match.group(1) if match else '  '
+    indent = '\t' if whitespace.startswith('\t') else len(whitespace)
+    newline = '\r\n' if '\r\n' in text else '\n'
+    trailing_newline = text.endswith(('\n', '\r'))
+    bom = raw.startswith(b'\xef\xbb\xbf') if raw else False
+    return indent, newline, trailing_newline, bom
+
+
+def _backup_path(path):
+    stem = path[:-5] if path.lower().endswith('.json') else path
+    timestamp = time.strftime('%Y%m%d-%H%M%S')
+    candidate = f'{stem}.backup.{timestamp}.json'
+    suffix = 2
+    while os.path.exists(candidate):
+        candidate = f'{stem}.backup.{timestamp}.{suffix}.json'
+        suffix += 1
+    return candidate
+
+
+def write_config(path, config, backup=False, style_from=None):
+    """校验并写入 JSON；内容无变化时不写文件，也不生成备份。"""
+    validate_config(config)
+    path = os.path.abspath(path)
+    if os.path.exists(path):
+        with open(path, 'rb') as handle:
+            current = handle.read()
+    else:
+        current = b''
+    if current:
+        current_data = json.loads(current.decode('utf-8-sig'))
+        if current_data == config:
+            return False, None
+
+    style_path = path if current else style_from
+    if style_path and os.path.exists(style_path):
+        with open(style_path, 'rb') as handle:
+            style_raw = handle.read()
+    else:
+        style_raw = b''
+    indent, newline, trailing_newline, bom = _json_style(style_raw)
+    output = json.dumps(config, ensure_ascii=False, indent=indent)
+    if newline != '\n':
+        output = output.replace('\n', newline)
+    if trailing_newline:
+        output += newline
+    encoded = output.encode('utf-8')
+    if bom:
+        encoded = b'\xef\xbb\xbf' + encoded
+
+    backup_path = None
+    if backup and current:
+        backup_path = _backup_path(path)
+        shutil.copy2(path, backup_path)
+    with open(path, 'wb') as handle:
+        handle.write(encoded)
+    return True, backup_path
 
 
 def pair_nodes(recs, nodes):

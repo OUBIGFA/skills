@@ -4,7 +4,7 @@ sources 中 key 以 'ref:' 开头的为参考信息（如 RIR 注册国），不
 import re
 from collections import Counter
 
-from geodata import COUNTRY_ZH, CITY_ZH, COLO, CONTINENT, CITY_STATE
+from geodata import COUNTRY_ZH, CITY_ZH, COLO, CONTINENT, CITY_STATE, trim_admin
 
 CJK = re.compile(r'[一-鿿]')
 
@@ -15,13 +15,7 @@ def norm_city(name):
     if not n:
         return ''
     if CJK.search(n):
-        for suf in ('特别行政区', '特别市', '广域市', '直辖市', '自治州', '自治区'):
-            if len(n) > len(suf) and n.endswith(suf):
-                n = n[:-len(suf)]
-                break
-        if len(n) > 2 and n[-1] in '市县都府州區区':
-            n = n[:-1]
-        return n
+        return trim_admin(n)
     return n.lower()
 
 

@@ -14,9 +14,9 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from common import (ensure_utf8_stdout, find_local_proxies, load_session,
+from common import (NODE_TYPES, ensure_utf8_stdout, find_local_proxies, load_session,
                     pair_nodes, start_kernel)
-from probe import (NODE_TYPES, STRIP_FIELDS, fetch, kernel_version, p_cf,
+from probe import (STRIP_FIELDS, fetch, kernel_version, p_cf,
                    probe_node, strip_unknown_fields)
 from verdict import vote
 

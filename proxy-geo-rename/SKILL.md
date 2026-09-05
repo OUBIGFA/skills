@@ -1,109 +1,121 @@
 ---
 name: proxy-geo-rename
-description: 代理配置文件（sing-box JSON）节点统一重命名、按地区排序、合并订阅去重、自动移除链式代理（前置代理 detour 降级直连）与真实出口测绘。核心准则：凡涉及节点合并、追加、导入或跨文件转移，默认必须自动按连接身份指纹执行去重（无需用户在指令中重复强调去重），且一律自动剥离节点上的链式代理（detour），确保所有节点均为独立直连底库。默认采用快速本地模式（sort_nodes.py / merge_configs.py）：按【国旗 地区_具体位置_编号_自定义后缀】格式快速规范化重命名、按使用习惯地区排序、连接身份去重，通用识别标准命名格式并完整保留编号后的全部手动标记（如 🟩、🔴、USAI、AI、❇️、base、-专线 等，零硬编码），毫秒级完成且无需网络探测；仅在用户明确要求“检测真实出口/真实落地/多源测绘/查伪装地区”时，才调用本机 sing-box 内核进行多源出口测绘与投票仲裁流程。
+description: Use when handling sing-box JSON proxy configurations that need connection-fingerprint deduplication, detour removal, on-demand node renaming or regional sorting, or explicitly requested real-egress probing.
 ---
-
-# proxy-geo-rename：代理节点统一重命名、地区排序与出口检测
+# proxy-geo-rename：代理节点重命名、排序、合并去重与出口检测
 
 ## 核心行为准则
 
-1. **默认快速整理模式**：除非用户明确包含“真实出口”、“检测落地”、“多源测绘”、“查真实归属”、“测伪装”等字眼，否则**一律走模式 A（快速本地整理）**，切勿擅自启动 sing-box 内核或发起网络探测。
-2. **默认自动去重铁律**：凡涉及节点的**合并（merge）、追加（append）、导入（import）或跨文件转移（transfer）**，**默认必须自动执行连接身份指纹去重（无需用户在指令中重复强调「去重」）**。只有连接信息（协议+地址+端口+凭据+传输+SNI）完全一致时视为重复并自动剔除，确保目标底库无重复节点。
-3. **默认移除链式代理（前置代理）铁律**：所有整理（`sort_nodes.py`）、合并（`merge_configs.py`）、重命名写回（`rename.py`）、生成轻量 Profile（`make_profile.py`）等操作，**默认一律自动剥离代理节点上的 `detour` 链式代理配置**，使所有代理节点均降级为直接连接（直连），避免前置失效导致节点瘫痪或产生悬空依赖。
+1. 合并、追加、导入或整理默认按完整连接身份指纹去重，并移除代理节点的 `detour`；可用 `--keep-dup`、`--keep-detour` 保留。指纹覆盖协议、地址、端口、凭据、传输、路径、SNI 等实际连接字段，不含 Tag。
+2. 只有用户明确要求时才排序或重命名；未要求时保留节点名称和顺序。
+3. 只有用户明确要求真实出口、落地 IP、多源测绘或查伪装时，才启动 sing-box 和网络探测。
+4. `--apply` 写回前自动备份；内容无变化时不写回、不生成备份。写回后校验全部 Tag、分组成员、`default`、`detour`、`route.final`、路由规则和 DNS 引用。
+
+## 环境与依赖
+
+- 本地整理和 Profile 提取只需要 Python 3.9+，不依赖 `requests`。
+- 出口测绘还需要用户已有的 `sing-box` 可执行文件和 `requests`；Windows 下检查 TUN 时使用 PowerShell。
+- 深度测绘遇到网络、DNS、内核版本或前置代理问题，先读 [references/troubleshooting.md](references/troubleshooting.md)。
 
 ---
 
-## 模式选择（默认轻量快速）
+## 常用指令与用户意图速查
 
-本技能包含两种工作模式，**默认使用模式 A**：
-
-| 模式 | 适用场景 | 执行方式 | 耗时与开销 |
-|---|---|---|---|
-| **模式 A：快速整理（默认）** | 用户要求重命名、整理节点名、按地区排序、合并去重、分类转移节点、保留自定义后缀等常规任务 | 本地解析现有节点名与配置信息，直接格式化重排 | **毫秒级**，零网络流量，无需启动内核 |
-| **模式 B：深度出口测绘（仅明确要求时触发）** | 用户明确要求“检测真实出口”、“测落地 IP”、“多源测绘”、“查是否伪装地区”、“网络探测” | 启动本机已有 sing-box 内核，通过每个节点向 8 个独立地理库查询出口并投票裁决 | 2~5 分钟，需内核及物理网卡绑定 |
+| 用户意图 | 推荐脚本与参数 | 行为保障 |
+|---|---|---|
+| **“帮我合并这几个订阅”** | `python merge_configs.py --base <底库.json> --add <订阅1.json> ... --apply` | **合并**：自动去重、自动剥离 detour；**不改名、不调序** |
+| **“合并并按地区排序”** | `python merge_configs.py --base <底库.json> --add <订阅1.json> ... --sort --apply` | 自动去重+剥离 detour，按地区排序，**不改名** |
+| **“合并并规范重命名”** | `python merge_configs.py --base <底库.json> --add <订阅1.json> ... --rename --apply` | 自动去重+剥离 detour，规范改名，**保持原有前后顺序** |
+| **“合并、排序并规范重命名”** | `python merge_configs.py --base <底库.json> --add <订阅1.json> ... --sort --rename --apply` | 执行完整合并整理流水线 |
+| **“只帮我把节点按地区排下序”** | `python sort_nodes.py --config <配置.json> --sort --apply` | 自动去重+剥离 detour，**仅排序，节点名称 100% 原样保留** |
+| **“只帮我规范化重命名节点”** | `python sort_nodes.py --config <配置.json> --rename --apply` | 自动去重+剥离 detour，**仅改名，原有先后顺序 100% 保持原样** |
+| **“帮我把节点重命名并排序”** | `python sort_nodes.py --config <配置.json> --sort --rename --apply` | 排序并规范化重命名（含自动去重与剥离 detour） |
+| **“帮我把配置去重并去掉链式代理”** | `python sort_nodes.py --config <配置.json> --apply` | 自动去重与剥离 detour，**不改名、不调序** |
+| **“检测真实出口 / 测落地 IP / 查伪装”** | `python probe.py ...` → `recheck.py` → `rename.py --apply` | 启动内核真实出口多源投票（自动剥离 detour，默认不排序除非加 `--sort`） |
+| **“提取干净的可导入轻量 profile”** | `python make_profile.py --config <配置.json>` | 去重并剥离客户端运行时 dump、`detour` 和私有 DNS 引用 |
 
 ---
 
-## 模式 A：快速重命名、地区排序与合并去重（默认模式）
+## 本地快速处理模块
 
 脚本位于本 skill 的 `scripts/` 目录。
 
-### 1. 单配置重命名与地区排序
+### 1. 节点排序与重命名 (`sort_nodes.py`)
+
+严格按用户指令决定是否排序或重命名：
 
 ```bash
-# 预览重排结果（dry-run）
-python <skill>/scripts/sort_nodes.py --config <配置.json>
+# 仅按地区排序（名称 100% 原样保留，默认自动去重与剥离 detour）
+python <skill>/scripts/sort_nodes.py --config <配置.json> --sort --apply
 
-# 确认无误后写回（写回前自动创建时间戳备份）
+# 仅规范化重命名（顺序 100% 原样保留，默认自动去重与剥离 detour）
+python <skill>/scripts/sort_nodes.py --config <配置.json> --rename --apply
+
+# 排序 + 规范化重命名（用户同时要求时）
+python <skill>/scripts/sort_nodes.py --config <配置.json> --sort --rename --apply
+
+# 仅单文件去重与剥离 detour（不改名、不调序）
 python <skill>/scripts/sort_nodes.py --config <配置.json> --apply
+
+# 可选保留参数：--keep-dup（保留重复节点）、--keep-detour（保留链式代理）
 ```
 
-- **命名规范**：`{国旗} {国家}[_{具体位置}]_{编号}[_{自定义后缀}]` 或 `{国旗} {国家}[_{具体位置}]_{编号}{自定义表情/符号}`（如 `🇯🇵 日本_东京_1`、`🇺🇸 美国_1_China`、`🇺🇸 美国_洛杉矶_2_USAI❇️`、`🇺🇸 美国_1🟩`、`🇺🇸 美国_3🔴`、`🇭🇰 香港_11_base`）。
-- **通用标准命名识别与手动内容保留（零硬编码）**：
-  - **标准格式 1**：`{国旗} {国家}_{编号}[手动内容]`（如 `🇺🇸 美国_1🟩`、`🇭🇰 香港_11_base`、`🇺🇸 美国_8_USAI❇️`）
-  - **标准格式 2**：`{国旗} {国家}_{地区}_{编号}[手动内容]`（如 `🇯🇵 日本_东京_1`、`🇺🇸 美国_洛杉矶_2_USAI❇️`、`🇨🇳 中国_合肥_1`）
-  - **核心准则**：凡符合标准命名前缀的节点，编号后面的全部内容（包括直接依附的表情如 `🟩`、`🔴`、下划线拼接的 `_USAI❇️`、`_base`、`_AI_❇️_base`，短横线 `-专线`，空格 ` VIP` 等）均被识别为用户手动标记并 100% 完整保留，无需且绝不硬编码任何关键词白名单，绝不将数字后依附的符号误判为城市。
-- **内置地名识别**：已内置全球主要枢纽与城市识别（东京、洛杉矶、圣何塞、法兰克福、合肥等）；数字开头段自动跳过绝不误判为城市；港澳新等城邦自动精简不重复（如 `🇭🇰 香港_1`、`🇸🇬 新加坡_1`）。
-- **地区排序**：港澳台 → 日韩新 → 东南亚/南亚 → 中东 → 北美 → 欧洲 → 大洋洲/南美 → 未知（`🏳️ 未知` 垫底），同地区编号连续。
+- **重命名规范（仅在指定 `--rename` 时生效）**：`{国旗} {国家}[_{具体位置}]_{编号}[_{自定义后缀}]`。
+- **自定义标记 100% 完整保留（零硬编码）**：凡符合标准命名前缀的节点，编号后面的全部内容（如 `🟩`、`🔴`、`_USAI❇️`、`_base`、`-专线` 等）均被识别为用户手动标记完整保留，绝不硬编码关键词白名单，绝不将数字后依附的符号误判为城市。
+- **地区排序顺位（仅在指定 `--sort` 时生效）**：港澳台 → 日韩新 → 东南亚/南亚 → 中东 → 北美 → 欧洲 → 大洋洲/南美 → 未知（`🏳️ 未知` 垫底）。
 
-### 2. 多个订阅合并与去重
+### 2. 多订阅合并 (`merge_configs.py`)
 
 ```bash
-# 预览合并去重效果
-python <skill>/scripts/merge_configs.py --base <底库.json> --add <订阅1.json> <订阅2.json>
-
-# 实际合并写入底库（自动备份底库、去重、并入新节点后自动执行统一命名与地区排序）
+# 1. 基础合并（默认自动去重、自动剥离 detour，不改名、不调序）
 python <skill>/scripts/merge_configs.py --base <底库.json> --add <订阅1.json> <订阅2.json> --apply
 
-# 保持底库不动，合并结果另存为新文件
+# 2. 合并并按地区排序（名称原样保留）
+python <skill>/scripts/merge_configs.py --base <底库.json> --add <订阅1.json> --sort --apply
+
+# 3. 合并写入新文件（底库不动）
 python <skill>/scripts/merge_configs.py --base <底库.json> --add <订阅1.json> --out <新文件.json> --apply
+
+# 4. 可选开关：--sort、--rename、--keep-dup（保留重复）、--keep-detour（保留链式）
 ```
 
-- **连接身份去重**：严格比对 `协议 + 服务器地址 + 端口 + 凭据(UUID/密码) + 传输方式 + 路径 + SNI`，只有连接信息完全一致才视为重复，避免误删同机不同配置。
-- **引用与链式清洗**：自动清洗源配置中的私有 `domain_resolver` 并剥离全部代理节点上的 `detour` 链式前置（降级直连），合并后自动同步更新各 `urltest`/`selector` 分组成员。
+- **连接身份去重**：严格比对 `协议 + 服务器地址 + 端口 + 凭据(UUID/密码) + 传输方式 + 路径 + SNI`。
+- **重名保护**：未开启重命名时，若遇到同名 Tag，自动追加 `#2`、`#3` 编号，绝不误改其他节点名，确保配置合法性。
 
 ---
 
-## 模式 B：真实出口地理检测与多源投票（仅明确要求时使用）
+## 深度出口测绘模块（仅在明确要求真实出口时触发）
 
-当用户明确需要**检测真实出口归属或验证节点是否伪装地区**时使用此流程。
+仅当用户明确出现“检测真实出口”、“测落地 IP”、“多源测绘”、“查伪装”时触发。
 
-### 步骤 0：环境准备与物理网卡确认
-1. 查找本机已有的 `sing-box.exe`（禁止未经允许擅自下载新可执行程序）。
-2. 查 TUN 网卡接管：`Get-NetAdapter | Where-Object Status -eq Up`，若有 TUN 虚拟网卡，必须获取物理网卡名（如 `WLAN`、`以太网`）并传入 `--iface`。
+### 流程步骤
+1. **环境与物理网卡确认**：查 TUN 网卡接管 `Get-NetAdapter | Where-Object Status -eq Up`，若有 TUN 虚拟网卡，获取物理网卡名（如 `WLAN`、`以太网`）传入 `--iface`。
+2. **主测与复核**：
+   ```bash
+   python <skill>/scripts/probe.py --config <配置.json> --singbox <内核路径> --iface <物理网卡> --workdir <workdir>
+   python <skill>/scripts/recheck.py --workdir <workdir>
+   ```
+3. **延迟仲裁（可选）**：
+   ```bash
+   python <skill>/scripts/latency_arbiter.py --workdir <workdir>
+   ```
+4. **按需写回**：
+   ```bash
+   # 仅按测绘结果重命名（保持原有顺序，自动剥离 detour）
+   python <skill>/scripts/rename.py --workdir <workdir> --apply
+   # 若用户同时要求排序，加 --sort
+   python <skill>/scripts/rename.py --workdir <workdir> --sort --apply
+   ```
 
-### 步骤 1：主检测与复核
-```bash
-# 1. 测出口地理位置（5个主地理源 + Cloudflare 机房物理决胜）
-python <skill>/scripts/probe.py --config <配置.json> --singbox <内核路径> --iface <物理网卡> --workdir <workdir>
+`overrides.json` 使用如下格式，键可以是检测时或当前节点名：
 
-# 2. 二次复核（离线重试、中转复活探测、增补 3 个地理库重投票）
-python <skill>/scripts/recheck.py --workdir <workdir>
+```json
+{
+  "原节点名": {
+    "cc": "DE",
+    "country_zh": "德国",
+    "city_zh": "法兰克福",
+    "note": "物理测距终裁"
+  }
+}
 ```
-
-### 步骤 2：存疑节点延迟仲裁（可选）
-对于数据库分歧、多库投票分散的中低置信节点：
-```bash
-python <skill>/scripts/latency_arbiter.py --workdir <workdir>
-# 将终裁写入 <workdir>/overrides.json
-```
-
-### 步骤 3：重命名写回
-```bash
-# 预览
-python <skill>/scripts/rename.py --workdir <workdir>
-# 确认后写回
-python <skill>/scripts/rename.py --workdir <workdir> --apply
-```
-
----
-
-## 模式与常用指令速查
-
-| 用户意图 | 推荐脚本与指令 |
-|---|---|
-| “帮我重命名 / 整理这个订阅里的节点” | `python sort_nodes.py --config <配置.json> --apply` |
-| “把多个订阅合并在一起（默认自动去重）” | `python merge_configs.py --base <底库.json> --add <新配置.json> --apply` |
-| “把特定后缀（如 USAI❇️）的节点转移走” | 本地 Python 按连接指纹去重并入目标文件，随后分别对两文件执行 `sort_nodes.py --apply` |
-| “检测节点的真实落地 IP / 判断是否伪装” | `python probe.py ...` → `recheck.py` → `rename.py --apply` |
-| “将运行时快照配置转成客户端可导入的轻量 profile” | `python make_profile.py --config <配置.json>` |

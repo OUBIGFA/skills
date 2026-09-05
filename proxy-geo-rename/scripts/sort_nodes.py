@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-按地区排序 + 统一命名（不做地理检测，只从现有节点名解析地区）。
+节点处理工具：默认主动去重与剥离链式代理，严格按需排序与重命名。
+
+准则：
+- 默认主动去重：自动按连接身份指纹执行去重，确保底库无重复节点（加 --keep-dup 可保留重复）。
+- 默认主动剥离链式代理：自动移除代理节点上的 detour 属性，降级为直接连接（加 --keep-detour 可保留）。
+- 严格不主动重命名：节点原有 Tag 100% 原样保留，仅在显式传入 --rename 时才规范化命名。
+- 严格不主动排序：节点原有先后顺序 100% 原样保留，仅在显式传入 --sort 时才按地区排序。
 
 支持通用标准格式（零硬编码）：
 - 标准格式1: {emoji} {国家}_{编号}[手动内容]
@@ -12,59 +18,32 @@
 全部通用、完整保留，绝不硬编码任何关键字，绝不误将编号后依附的符号误判为城市。
 
 用法：
-  python sort_nodes.py --config <配置.json> [--apply] [--keep-names] [--keep-unknown]
+  python sort_nodes.py --config <配置.json> [--sort] [--rename] [--keep-dup] [--keep-detour] [--apply]
 """
 import argparse
 import json
 import os
 import re
-import shutil
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, r'C:\Users\BIGFA\.gemini\config\skills\proxy-geo-rename\scripts')
 
-from common import ensure_utf8_stdout, reorder_outbounds
-from geodata import (CITY_REGION_FIX, CITY_ZH, COUNTRY_ZH, flag, region_rank,
-                     trim_admin)
-from probe import NODE_TYPES
+from common import (NODE_TYPES, deduplicate_nodes, ensure_utf8_stdout, remap_refs,
+                    reorder_outbounds, strip_node_detours, validate_config, write_config)
+from geodata import (CITY_REGION_FIX, CITY_ZH, COLO, COUNTRY_ZH, flag,
+                     region_rank, trim_admin)
 
 ensure_utf8_stdout()
 
 UNKNOWN = ('UNK', '🏳️ 未知')
 ZH2CC = {v: k for k, v in COUNTRY_ZH.items()}
 ZH_KEYS = sorted(ZH2CC, key=lambda x: (x == '中国', -len(x)))
-ISO_RE = re.compile(r'(?:^|[_\- ])([A-Z]{2})(?:[_\- ]|$)')
+ISO_RE = re.compile(r'(?:^|[_\- /])([A-Z]{2})(?=[_\- /]|$)', re.I)
 FLAG_RE = re.compile(r'^([\U0001F1E6-\U0001F1FF]{2}|🏳️|\U0001F3F3\uFE0F?)\s*([^_]+)_(.*)$')
 CITY_VOCAB = sorted(set(CITY_ZH.values()), key=len, reverse=True)
-EN_CITY = {
-    'sanjose': '圣何塞', 'newyork': '纽约', 'losangeles': '洛杉矶',
-    'frankfurt': '法兰克福', 'amsterdam': '阿姆斯特丹', 'singapore': '新加坡',
-    'tokyo': '东京', 'osaka': '大阪', 'seoul': '首尔', 'taipei': '台北',
-    'hongkong': '香港', 'chicago': '芝加哥', 'dallas': '达拉斯',
-    'seattle': '西雅图', 'miami': '迈阿密',
-    'paris': '巴黎', 'london': '伦敦', 'madrid': '马德里', 'warsaw': '华沙',
-    'fremont': '弗里蒙特', 'hefei': '合肥',
-    'bucharest': '布加勒斯特', 'belgrade': '贝尔格莱德', 'montreal': '蒙特利尔',
-    'ankara': '安卡拉', 'taoyuan': '桃园', 'taichung': '台中', 'kaohsiung': '高雄',
-    'yokohama': '横滨', 'fukuoka': '福冈', 'nagoya': '名古屋', 'vienna': '维也纳',
-    'zurich': '苏黎世', 'geneva': '日内瓦', 'toronto': '多伦多', 'vancouver': '温哥华',
-    'sydney': '悉尼', 'melbourne': '墨尔本', 'helsinki': '赫尔辛基',
-    'stockholm': '斯德哥尔摩', 'oslo': '奥斯陆', 'copenhagen': '哥本哈根',
-    'dublin': '都柏林', 'milan': '米兰', 'rome': '罗马', 'berlin': '柏林',
-    'munich': '慕尼黑', 'hamburg': '汉堡', 'panamacity': '巴拿马城',
-    'phoenix': '凤凰城', 'buffalo': '水牛城', 'falkenstein': '法尔肯施泰因',
-    'stpetersburg': '圣彼得堡', 'nuremberg': '纽伦堡', 'nuernberg': '纽伦堡',
-    'gravelines': '格拉沃利讷'
-}
-IATA_CITY = {
-    'LAX': '洛杉矶', 'SJC': '圣何塞', 'MIA': '迈阿密', 'SFO': '旧金山',
-    'JFK': '纽约', 'EWR': '纽约', 'ORD': '芝加哥', 'DFW': '达拉斯',
-    'SEA': '西雅图', 'NRT': '东京', 'HND': '东京', 'KIX': '大阪',
-    'ICN': '首尔', 'TPE': '台北', 'HKG': '香港', 'SIN': '新加坡',
-    'FRA': '法兰克福', 'LHR': '伦敦', 'CDG': '巴黎', 'AMS': '阿姆斯特丹'
-}
+EN_CITY = {re.sub(r'[^a-z]', '', name.lower()): city
+           for name, city in CITY_ZH.items() if name.isascii()}
+IATA_CITY = {code: city for code, (city, _) in COLO.items()}
 IP_RE = re.compile(r'^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?$|^\[?[0-9a-f:]+\]?:\d+$', re.I)
 PROVIDER_RE = re.compile(
     r'(?:阿里|腾讯|华为|谷歌|亚马逊|微软|甲骨文|天翼|移动|联通|百度|京东)云'
@@ -189,10 +168,8 @@ def parse_position(tag, cc):
     tag = re.sub(r'#\d+', '', tag)
     if cc in ('HK', 'MO', 'SG'):
         return ''
-    if '烏山' in tag or '乌山' in tag:
-        return '乌山'
     for code, cname in IATA_CITY.items():
-        if re.search(r'(?:^|[_\-A-Za-z])' + code + r'(?:[_\-0-9]|$)', tag, re.I):
+        if re.search(r'(?:^|[_\- /])' + re.escape(code) + r'(?=[_\- /0-9]|$)', tag, re.I):
             return cname
     czh = COUNTRY_ZH.get(cc, '')
     segs = [s.strip() for s in tag.split('_')]
@@ -247,12 +224,13 @@ def detect_cc(tag, node=None):
         cc = ''.join(chr(ord('A') + ord(c) - 0x1F1E6) for c in m.groups())
         if cc in COUNTRY_ZH and cc != 'CF':
             return cc
-    m_us = re.search(r'US(?:LAX|SJC|MIA|NYC|SFO|CHI|DFW|SEA)', tag, re.I)
-    if m_us:
-        return 'US'
     for cand in ISO_RE.findall(tag):
+        cand = cand.upper()
         if cand in COUNTRY_ZH:
             return cand
+    for code, (_, airport_cc) in COLO.items():
+        if re.search(r'(?:^|[_\- /])' + re.escape(code) + r'(?=[_\- /0-9]|$)', tag, re.I):
+            return airport_cc
     for en, cc in (('Russia', 'RU'), ('Japan', 'JP'), ('Korea', 'KR'),
                    ('Germany', 'DE'), ('France', 'FR'), ('Poland', 'PL'),
                    ('Italy', 'IT'), ('Czechia', 'CZ'), ('Kingdom', 'GB'),
@@ -266,12 +244,6 @@ def detect_cc(tag, node=None):
     flat = re.sub(r'[^a-z]', '', tag.lower())
     if any(k in flat for k in ('sanjose', 'losangeles', 'seattle', 'fremont', 'chicago', 'dallas', 'miami', 'newyork')):
         return 'US'
-    if node:
-        srv = node.get('server', '')
-        if srv == '62.210.124.146':
-            return 'FR'
-        if srv == '107.172.67.52':
-            return 'US'
     return None
 
 
@@ -290,12 +262,17 @@ def detect_suffix(tag, cc=None):
     czh = COUNTRY_ZH.get(cc, '')
     if czh:
         tag_clean = tag_clean.replace(czh, '')
+    if cc:
+        tag_clean = re.sub(rf'(?i)(?:^|(?<=[_\- /])){re.escape(cc)}(?=[_\- /]|$)', '', tag_clean)
     # 剔除已知城市词
     for c in CITY_VOCAB:
         if c in tag_clean:
             tag_clean = tag_clean.replace(c, '')
-    for k in EN_CITY:
-        tag_clean = re.sub(rf'\b{k}\b', '', tag_clean, flags=re.I)
+    for name in CITY_ZH:
+        if name.isascii():
+            tag_clean = re.sub(rf'(?i)(?:^|(?<=[_\- /])){re.escape(name)}(?=[_\- /]|$)', '', tag_clean)
+    for code in COLO:
+        tag_clean = re.sub(rf'(?i)(?:^|(?<=[_\- /])){re.escape(code)}(?=[_\- /0-9]|$)', '', tag_clean)
 
     segs = [s.strip() for s in re.split(r'[_\-\s/]+', tag_clean)]
     out = []
@@ -307,27 +284,10 @@ def detect_suffix(tag, cc=None):
     return '_'.join(out)
 
 
-def main():
-    ap = argparse.ArgumentParser(description='按地区排序并统一命名（不做检测）')
-    ap.add_argument('--config', required=True)
-    ap.add_argument('--apply', action='store_true', help='实际写回（默认仅预览）')
-    ap.add_argument('--keep-names', action='store_true',
-                    help='只排序不改名（名字已经规范时用）')
-    ap.add_argument('--keep-unknown', action='store_true',
-                    help='认不出地区的保留原名，不归入「未知」')
-    a = ap.parse_args()
-
-    src = os.path.abspath(a.config)
-    d = json.load(open(src, encoding='utf-8'))
-    nodes = [o for o in d['outbounds'] if o.get('type') in NODE_TYPES]
-    if not nodes:
-        print('配置中没有节点')
-        sys.exit(1)
-
+def _build_plan(nodes):
     plan = []
     for i, o in enumerate(nodes):
         tag = o['tag']
-        # 优先使用通用标准格式解析器
         std = parse_standard_tag(tag)
         if std:
             cc = std['cc']
@@ -355,89 +315,117 @@ def main():
             'country': country,
             'obj': o
         })
+    return plan
 
-    # 排序：按地区顺位 -> 国家代码 -> 城市 -> 原始先后次序
-    plan.sort(key=lambda p: (region_rank(p['cc']), p['cc'] or '', p['city'], p['i']))
+
+def process_config(d, do_sort=False, do_rename=False, keep_unknown=False,
+                   dedup=True, strip_detour=True):
+    removed = deduplicate_nodes(d) if dedup else []
+    stripped = strip_node_detours(d) if strip_detour else 0
+    nodes = [o for o in d.get('outbounds', []) if o.get('type') in NODE_TYPES]
+    if not nodes:
+        raise ValueError('配置中没有节点')
+
+    plan = _build_plan(nodes)
+
+    if do_sort:
+        plan.sort(key=lambda p: (region_rank(p['cc']), p['cc'] or '', p['city'], p['i']))
 
     counters = {}
     rows = []
     for p in plan:
-        if not p['cc'] and (a.keep_unknown or a.keep_names):
-            p['new_tag'] = p['tag']
-            rows.append((p['tag'], p['tag'], '（保留原名）'))
-            continue
-        if a.keep_names:
+        if do_rename:
+            if not p['cc'] and keep_unknown:
+                p['new_tag'] = p['tag']
+                rows.append((p['tag'], p['tag'], '保留原名'))
+                continue
+            key = (p['cc'] or UNKNOWN[0], p['city'])
+            counters[key] = counters.get(key, 0) + 1
+            new = format_tag(p['cc'], p['country'], p['city'], counters[key], p['suf'], p['sep'])
+            p['new_tag'] = new
+            rows.append((p['tag'], new, COUNTRY_ZH.get(p['cc'], '未知')))
+        else:
             p['new_tag'] = p['tag']
             rows.append((p['tag'], p['tag'], COUNTRY_ZH.get(p['cc'], '')))
-            continue
-
-        key = (p['cc'] or UNKNOWN[0], p['city'])
-        counters[key] = counters.get(key, 0) + 1
-        new = format_tag(p['cc'], p['country'], p['city'], counters[key], p['suf'], p['sep'])
-        p['new_tag'] = new
-        rows.append((p['tag'], new, COUNTRY_ZH.get(p['cc'], '未知')))
 
     finals = [p['new_tag'] for p in plan]
-    assert len(finals) == len(set(finals)), f'结果存在重名: {[t for t in finals if finals.count(t) > 1]}'
+    if do_rename:
+        duplicates = list(dict.fromkeys(tag for tag in finals if finals.count(tag) > 1))
+        if duplicates:
+            raise ValueError(f'重命名结果存在重名: {duplicates}')
 
-    changed = sum(1 for p in plan if p['tag'] != p['new_tag'])
-    for old, new, region in rows:
-        print(f'{old}  ->  {new}' if old != new else f'{old}  （名称不变）')
-    print(f'\n共 {len(rows)} 个节点，改名 {changed} 个，已按地区排序')
+    changed_names = sum(1 for p in plan if p['tag'] != p['new_tag'])
+    if do_rename:
+        for p in plan:
+            p['obj']['tag'] = p['new_tag']
+        mapping = {p['tag']: p['new_tag'] for p in plan}
+        remap_refs(d, mapping)
+
+    if do_sort:
+        reorder_outbounds(d, {p['new_tag']: i for i, p in enumerate(plan)}, NODE_TYPES)
+    validate_config(d)
+    return {
+        'removed': removed,
+        'stripped': stripped,
+        'rows': rows,
+        'plan': plan,
+        'renamed': changed_names,
+        'sorted': do_sort,
+    }
+
+
+def _print_result(result, do_sort, do_rename):
+    removed = result['removed']
+    if removed:
+        print(f'[去重] 清理 {len(removed)} 个重复节点：')
+        for old, kept in removed:
+            print(f'  {old}  ≡  {kept}')
+    else:
+        print('[去重] 配置中无重复节点')
+    print(f'[移除链式代理] 处理 {result["stripped"]} 个节点')
+
+    if do_rename:
+        print('\n--- 重命名计划 ---')
+        for old, new, _ in result['rows']:
+            print(f'{old}  ->  {new}' if old != new else f'{old}  （名称不变）')
+    elif do_sort:
+        print('\n--- 地区排序计划（名称保持不变）---')
+        for item in result['plan']:
+            print(f'  [{COUNTRY_ZH.get(item["cc"], "未知")}] {item["tag"]}')
+    order = '已按地区排序' if do_sort else '节点顺序保持不变'
+    print(f'\n共 {len(result["rows"])} 个节点，改名 {result["renamed"]} 个，{order}')
+
+
+def main():
+    ap = argparse.ArgumentParser(description='节点操作工具（默认去重与剥离 detour，按需排序和重命名）')
+    ap.add_argument('--config', required=True, help='sing-box 配置文件路径')
+    ap.add_argument('--apply', action='store_true', help='实际写回（默认仅预览）')
+    ap.add_argument('--sort', action='store_true', help='按地区排序（默认保持原序）')
+    ap.add_argument('--rename', action='store_true', help='规范化重命名（默认保持原名）')
+    ap.add_argument('--keep-dup', dest='dedup', action='store_false', help='保留重复节点')
+    ap.add_argument('--keep-detour', dest='strip_detour', action='store_false', help='保留节点 detour')
+    ap.add_argument('--keep-unknown', action='store_true', help='重命名时保留未识别节点的原名')
+    ap.set_defaults(dedup=True, strip_detour=True)
+    a = ap.parse_args()
+
+    src = os.path.abspath(a.config)
+    with open(src, encoding='utf-8-sig') as handle:
+        config = json.load(handle)
+    result = process_config(
+        config, do_sort=a.sort, do_rename=a.rename, keep_unknown=a.keep_unknown,
+        dedup=a.dedup, strip_detour=a.strip_detour,
+    )
+    _print_result(result, a.sort, a.rename)
 
     if not a.apply:
-        print('\n[预览] 未写回。确认无误后加 --apply')
+        print('\n[预览模式] 未写回。确认无误后加 --apply')
         return
 
-    # 直接在每个节点对象上赋值新 tag，杜绝由于输入配置存在重复 tag 导致的写回冲突
-    for p in plan:
-        p['obj']['tag'] = p['new_tag']
-        if p['obj'].get('type') in NODE_TYPES:
-            p['obj'].pop('detour', None)
-
-    # 建立映射表用于更新分组、规则、DNS
-    mapping = {p['tag']: p['new_tag'] for p in plan}
-    finals_set = set(finals)
-    other_outbound_tags = {o.get('tag') for o in d['outbounds'] if o.get('type') not in NODE_TYPES}
-
-    for o in d['outbounds']:
-        if o.get('outbounds'):
-            valid_non_nodes = [t for t in o['outbounds'] if t in other_outbound_tags]
-            o['outbounds'] = valid_non_nodes + finals
-        if o.get('default') in mapping:
-            o['default'] = mapping[o['default']]
-        elif o.get('detour') in mapping:
-            o['detour'] = mapping[o['detour']]
-
-    rt = d.get('route', {})
-    if rt.get('final') in mapping:
-        rt['final'] = mapping[rt['final']]
-    for ru in rt.get('rules', []):
-        if ru.get('outbound') in mapping:
-            ru['outbound'] = mapping[ru['outbound']]
-    for sv in d.get('dns', {}).get('servers', []):
-        if sv.get('detour') in mapping:
-            sv['detour'] = mapping[sv['detour']]
-
-    reorder_outbounds(d, {t: i for i, t in enumerate(finals)}, NODE_TYPES)
-
-    raw = open(src, 'rb').read()
-    bak = (src[:-5] if src.lower().endswith('.json') else src) \
-        + f'.backup.{time.strftime("%Y%m%d-%H%M%S")}.json'
-    shutil.copy2(src, bak)
-    out = json.dumps(d, ensure_ascii=False, indent=2)
-    if b'\r\n' in raw:
-        out = out.replace('\n', '\r\n')
-    open(src, 'wb').write(out.encode('utf-8'))
-
-    d2 = json.load(open(src, encoding='utf-8'))
-    tags = [o['tag'] for o in d2['outbounds']]
-    assert len(tags) == len(set(tags)), '写回后存在重名'
-    ts = set(tags)
-    for o in d2['outbounds']:
-        for t in o.get('outbounds', []):
-            assert t in ts, f'分组引用缺失: {t}'
-    print(f'\n已写回并校验通过；备份: {os.path.basename(bak)}')
+    changed, backup = write_config(src, config, backup=True)
+    if changed:
+        print(f'\n已写回并校验通过；备份: {os.path.basename(backup)}')
+    else:
+        print('\n配置无变化，未写回，也未生成备份')
 
 
 if __name__ == '__main__':

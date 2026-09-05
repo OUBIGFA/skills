@@ -22,14 +22,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
-from common import ensure_utf8_stdout, fp_of, save_session, start_kernel
+from common import NODE_TYPES, ensure_utf8_stdout, fp_of, save_session, start_kernel
 from verdict import vote
 
 ensure_utf8_stdout()
 
-NODE_TYPES = {'hysteria', 'hysteria2', 'tuic', 'http', 'shadowsocks',
-              'shadowsocksr', 'vless', 'trojan', 'vmess', 'anytls',
-              'socks', 'ssh', 'wireguard', 'mieru'}
 STRIP_FIELDS = {'domain_resolver', 'tls_fragment', 'detour'}  # 剥离非连接必需及链式代理字段，确保单节点独立直连探测
 IPAPI_FIELDS = 'status,country,countryCode,regionName,city,query'
 

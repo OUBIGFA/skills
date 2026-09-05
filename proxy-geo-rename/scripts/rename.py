@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-按检测终判生成统一命名【地区缩写_地区_城市_编号】并写回配置。
+按检测终判生成统一命名 `{国旗} {国家}[_{城市}]_{编号}` 并写回配置。
 默认 dry-run 只打印预览；确认无误后加 --apply 写回（写回前自动备份原文件）。
 高/中置信节点按检测结果命名；低置信节点保留原名，除非 overrides.json 给出终裁；
 离线节点一律保留原名——无法验证的绝不硬猜。
@@ -16,13 +16,12 @@ import argparse
 import csv
 import json
 import os
-import shutil
 import sys
 import time
 
-from common import ensure_utf8_stdout, load_session, pair_nodes, reorder_outbounds
+from common import (NODE_TYPES, ensure_utf8_stdout, load_session, pair_nodes,
+                    remap_refs, reorder_outbounds, strip_node_detours, write_config)
 from geodata import flag, region_rank
-from probe import NODE_TYPES
 from sort_nodes import detect_suffix, format_tag, parse_standard_tag
 
 ensure_utf8_stdout()
@@ -43,13 +42,27 @@ def auto_note(r):
     return '；'.join(parts)
 
 
+def apply_mapping(config, mapping, strip_detour=True):
+    for outbound in config.get('outbounds', []):
+        if outbound.get('tag') in mapping:
+            outbound['tag'] = mapping[outbound['tag']]
+    remap_refs(config, mapping)
+    if strip_detour:
+        strip_node_detours(config)
+
+
 def main():
     ap = argparse.ArgumentParser(description='按检测结果统一重命名节点')
     ap.add_argument('--workdir', required=True, help='probe.py 使用的工作目录')
     ap.add_argument('--overrides', default=None, help='终裁覆盖文件（JSON）')
     ap.add_argument('--apply', action='store_true', help='实际写回（默认仅预览）')
-    ap.add_argument('--no-sort', dest='sort', action='store_false',
-                    help='保持配置原有节点顺序（默认按地区排序）')
+    ap.add_argument('--sort', action='store_true', help='按地区重排节点顺序（默认保持配置原有节点顺序，严格按需）')
+    ap.add_argument('--no-sort', dest='sort', action='store_false', help='保持配置原有节点顺序')
+    ap.add_argument('--keep-detour', dest='strip_detour', action='store_false',
+                    help='保留代理节点的 detour 链式前置（默认自动剥离）')
+    ap.add_argument('--strip-detour', dest='strip_detour', action='store_true',
+                    help='移除代理节点的 detour 链式前置（默认即启用）')
+    ap.set_defaults(strip_detour=True)
     a = ap.parse_args()
     workdir = os.path.abspath(a.workdir)
     s = load_session(workdir)
@@ -83,7 +96,10 @@ def main():
             suf = detect_suffix(tag, cc_target)
             sep = '_'
         if ok and ov.get('cc'):
-            plan.append((idx, tag, r, ov['cc'], ov['country_zh'], ov['city_zh'], '终裁', note, suf, sep))
+            cc = ov['cc']
+            country = ov.get('country_zh') or r.get('country_zh') or cc
+            city = ov.get('city_zh') or r.get('city_zh') or '未知'
+            plan.append((idx, tag, r, cc, country, city, '终裁', note, suf, sep))
         elif ok and r.get('conf') in ('high', 'medium'):
             plan.append((idx, tag, r, r['cc'], r['country_zh'], r['city_zh'],
                          '高' if r['conf'] == 'high' else '中', note, suf, sep))
@@ -92,9 +108,11 @@ def main():
                          'geo': '', 'votes': '', 'conf': ('离线' if not ok else '低置信'),
                          'colo': r.get('colo', ''), 'note': note})
 
-    # 按地区排序：同一地区的节点聚在一起，编号也随之连续，客户端里一眼能扫完一个区
+    # 若指定 --sort 则按地区排序；否则严格保持配置原有节点顺序
     if a.sort:
         plan.sort(key=lambda p: (region_rank(p[3]), p[3], p[5] or '', p[0]))
+    else:
+        plan.sort(key=lambda p: p[0])
 
     for idx, tag, r, cc, czh, city, conf, note, suf, sep in plan:
         key = (cc, city)
@@ -109,14 +127,17 @@ def main():
 
     kept = [x['old'] for x in rows if x['new'] == '（保留原名）']
     news = list(mapping.values())
-    assert len(news) == len(set(news)), '新名称内部冲突'
-    assert not set(news) & set(kept), '新名称与保留名冲突'
+    if len(news) != len(set(news)):
+        raise ValueError('新名称内部冲突')
+    if set(news) & set(kept):
+        raise ValueError('新名称与保留名冲突')
 
     print(f'{"旧名称":40s} -> 新名称')
     for x in rows:
         print(f"{x['old']:40s} -> {x['new']}  [{x['conf']}] {x['note']}")
     print(f'\n重命名 {len(mapping)} 个，保留原名 {len(kept)} 个'
-          f'（其中低置信 {sum(1 for x in rows if x["conf"] == "低置信")} 个）')
+          f'（其中低置信 {sum(1 for x in rows if x["conf"] == "低置信")} 个）'
+          + ('，已按地区排序' if a.sort else '，节点顺序保持不变'))
 
     with open(os.path.join(workdir, 'rename_map.csv'), 'w',
               encoding='utf-8-sig', newline='') as f:
@@ -131,59 +152,18 @@ def main():
               '低置信节点如需命名，先经延迟仲裁写 overrides.json')
         return
 
-    # 同步全部引用，并移除代理节点的链式前置
-    for o in d['outbounds']:
-        if o.get('type') in ('selector', 'urltest'):
-            o['outbounds'] = [mapping.get(t, t) for t in o.get('outbounds', [])]
-            if o.get('default') in mapping:
-                o['default'] = mapping[o['default']]
-        elif o.get('type') in NODE_TYPES:
-            o.pop('detour', None)  # 移除链式代理（前置代理），全部降级为直接连接
-            if o.get('tag') in mapping:
-                o['tag'] = mapping[o['tag']]
-        else:
-            if o.get('detour') in mapping:
-                o['detour'] = mapping[o['detour']]
-            if o.get('tag') in mapping:
-                o['tag'] = mapping[o['tag']]
-    rt = d.get('route', {})
-    if rt.get('final') in mapping:
-        rt['final'] = mapping[rt['final']]
-    for ru in rt.get('rules', []):
-        if ru.get('outbound') in mapping:
-            ru['outbound'] = mapping[ru['outbound']]
-    for sv in d.get('dns', {}).get('servers', []):
-        if sv.get('detour') in mapping:
-            sv['detour'] = mapping[sv['detour']]
+    apply_mapping(d, mapping, a.strip_detour)
 
     if a.sort:  # 按上面排好的顺序重排配置与分组成员，客户端里同地区才会连成一块
         order = [x['new'] for x in rows if x['new'] != '（保留原名）'] + \
                 [x['old'] for x in rows if x['new'] == '（保留原名）']
         reorder_outbounds(d, {t: i for i, t in enumerate(order)}, NODE_TYPES)
 
-    # 备份 + 按原文件换行风格写回
-    raw = open(src_path, 'rb').read()
-    ts = time.strftime('%Y%m%d-%H%M%S')
-    bak = (src_path[:-5] if src_path.lower().endswith('.json') else src_path) \
-        + f'.backup.{ts}.json'
-    shutil.copy2(src_path, bak)
-    out = json.dumps(d, ensure_ascii=False, indent=2)
-    crlf = b'\r\n' in raw
-    if crlf:
-        out = out.replace('\n', '\r\n')
-    if raw.rstrip(b'\r\n') != raw:
-        out += '\r\n' if crlf else '\n'
-    open(src_path, 'wb').write(out.encode('utf-8'))
-
-    # 写回后校验
-    d2 = json.load(open(src_path, encoding='utf-8'))
-    tags = [o['tag'] for o in d2['outbounds']]
-    assert len(tags) == len(set(tags)), '写回后存在重名 tag'
-    tagset = set(tags)
-    for o in d2['outbounds']:
-        for t in o.get('outbounds', []):
-            assert t in tagset, f'分组引用缺失: {t}'
-    print(f'\n已写回并校验通过（JSON 合法、无重名、分组引用完整）；备份: {os.path.basename(bak)}')
+    changed, backup = write_config(src_path, d, backup=True)
+    if changed:
+        print(f'\n已写回并校验通过；备份: {os.path.basename(backup)}')
+    else:
+        print('\n配置无变化，未写回，也未生成备份')
 
     lines = ['# 节点地区检测与重命名报告', '',
              f'- 配置文件：{src_path}',
@@ -191,7 +171,7 @@ def main():
              '- 方法：真实连接测出口 → 多独立地理库投票 + Cloudflare 接入机房物理决胜'
              '（存疑出口另做城市锚点延迟仲裁）',
              f'- 结果：重命名 {len(mapping)} 个；保留原名 {len(kept)} 个',
-             f'- 备份文件：{os.path.basename(bak)}', '',
+             f'- 备份文件：{os.path.basename(backup) if backup else "未生成（配置无变化）"}', '',
              '| 旧名称 | 新名称 | 出口IP | 票数 | 置信 | 接入 | 备注 |',
              '|---|---|---|---|---|---|---|']
     for x in rows:
