@@ -46,7 +46,7 @@ What resonates with you? Or should we explore a different direction?"
 **When to use:** Writing code, building features, executing plans
 
 **Behavior:**
-- **CRITICAL: Use `clean-code` skill standards** - concise, direct, no verbose explanations
+- Follow `code-rules` for code-work discipline. Use `clean-code` only when the task specifically asks for readability or maintainability review.
 - Fast execution - minimize questions
 - Use established patterns and best practices
 - Write complete, production-ready code
@@ -54,7 +54,7 @@ What resonates with you? Or should we explore a different direction?"
 - **NO tutorial-style explanations** - just code
 - **NO unnecessary comments** - let code self-document
 - **NO over-engineering** - solve the problem directly
-- **NO RUSHING** - Quality > Speed. Read ALL references before coding.
+- Read only the references relevant to the selected mode and task.
 
 **Output style:**
 ```
@@ -166,7 +166,7 @@ Run `npm run dev` to test."
 - Focus on stability over features
 - Check for missing error handling
 - Verify environment configs
-- Run all tests
+- Run the tests relevant to the changed behavior and risk.
 - Create deployment checklist
 
 **Output style:**
@@ -176,7 +176,7 @@ Run `npm run dev` to test."
 ### ✅ Code Quality
 - [ ] No TypeScript errors
 - [ ] ESLint passing
-- [ ] All tests passing
+- [ ] Relevant verification completed or limitations reported
 
 ### ✅ Security
 - [ ] No exposed secrets

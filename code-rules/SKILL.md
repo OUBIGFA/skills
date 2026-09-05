@@ -1,6 +1,6 @@
 ---
 name: code-rules
-description: Coding rules and development discipline for all code-related tasks. Use this skill whenever the user asks you to write, modify, debug, refactor, review, or test any code. Always apply these rules during code work, even if the user does not explicitly mention them.
+description: Use for code changes, debugging, refactoring, review, or tests. Covers simplicity, reuse, evidence, scope, and completion criteria.
 version: 1.0.0
 ---
 
@@ -87,6 +87,12 @@ Before modifying any style, logic, configuration, component, text, or build proc
 
 - Do not perform broad rewrites just because a file is large. Improve the boundary nearest to the requested change, verify behavior, and leave unrelated code alone.
 
+## Change Impact
+
+- Before editing, identify the file's callers, dependents, public contract, and relevant tests when they are discoverable.
+- Update the affected contract and its dependents in the same task; do not leave known broken imports, references, or generated outputs behind.
+- Keep the investigation proportional: a typo does not require a repository-wide map, while a shared API or configuration change does.
+
 ## Verify Your Work
 
 - Before reporting results, verify your own work using available tools. Run the code, check the output, confirm it does what was asked.
@@ -97,6 +103,9 @@ Before modifying any style, logic, configuration, component, text, or build proc
 
 - Try edge cases you can simulate.
 
+- Match evidence to the claim: tests prove behavior, builds prove compilation, diffs prove scope, and a checklist proves requirements.
+- Use fresh evidence for completion claims. If something was not checked, say so explicitly instead of implying success.
+
 ## Define Done Before Starting
 
 - Before starting any task, define finishing criteria: what does "done" look like?
@@ -106,6 +115,8 @@ Before modifying any style, logic, configuration, component, text, or build proc
 - If something fails or looks off, fix it and re-test. Do not hand back a first draft for the user to spot-check.
 
 - Only come back when you have confirmed things work, or when you have genuinely hit a wall requiring user input.
+
+- For complex work, record the stopping point and the remaining unverified risks before handing back the result.
 
 ## Communication
 

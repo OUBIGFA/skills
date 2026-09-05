@@ -47,8 +47,6 @@
 !proxy-geo-rename/**
 !receiving-code-review/
 !receiving-code-review/**
-!requesting-code-review/
-!requesting-code-review/**
 !seo-fundamentals/
 !seo-fundamentals/**
 !skill-creator/
@@ -61,8 +59,6 @@
 !subagent-driven-development/**
 !systematic-debugging/
 !systematic-debugging/**
-!using-superpowers/
-!using-superpowers/**
 !verification-before-completion/
 !verification-before-completion/**
 !visual-design/

@@ -7,7 +7,7 @@ description: Overrides default LLM truncation behavior. Enforces complete code g
 
 ## Baseline
 
-Treat every task as production-critical. A partial output is a broken output. Do not optimize for brevity — optimize for completeness. If the user asks for a full file, deliver the full file. If the user asks for 5 components, deliver 5 components. No exceptions.
+Use this skill only when the user explicitly requests exhaustive output or a complete artifact. Preserve required content and state clearly when output must be split across messages.
 
 ## Banned Output Patterns
 
