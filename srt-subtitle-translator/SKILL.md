@@ -109,6 +109,29 @@ Read [formats.md](references/formats.md) before handling VTT or ASS/SSA.
   inventory. Bilingual and multi-speaker blocks may use two lines only when requested;
   validate those files with `--max-lines 2`.
 
+## Intermediate Artifacts and Cleanup
+
+Create one task workspace named `.srt-subtitle-translator-work` in the same directory
+as the source subtitle file. Store every runtime-created intermediate artifact inside
+this folder, including temporary files, split parts, assembled data, validation
+outputs, generated or copied helper scripts, logs, and other processing artifacts.
+
+Do not store intermediate artifacts in the system temporary directory, another project
+directory, or elsewhere on the filesystem. Keep the source subtitle and final
+deliverables outside this workspace.
+
+Before using the workspace, check whether it already exists. Never delete or overwrite
+files that were not created by the current task. If the workspace contains unrelated
+or unrecognized files, use a unique task-specific sibling folder instead and report it.
+
+After processing finishes, recycle every artifact created by this task, whether
+validation succeeds or fails. Cleanup must happen before replying to the user. If
+cleanup cannot be completed, report the exact remaining paths instead of claiming that
+cleanup succeeded.
+
+Only the source subtitle, final subtitle deliverables, and other explicitly requested
+outputs may remain in the source directory.
+
 ## Workflow
 
 1. Read the complete source file and identify its domain, register, recurring terms,
@@ -134,8 +157,10 @@ Read [formats.md](references/formats.md) before handling VTT or ASS/SSA.
 
 8. Fix every error. Review warnings for reading load, padding, dropped payload, markup,
    structure, and terminology; explain any deliberately retained warning.
-9. After validation succeeds, recycle only temporary artifacts created in this task.
-   Follow the platform-safe procedure in [edge-cases.md](references/edge-cases.md).
+9. After processing finishes, recycle the task workspace and every intermediate
+   artifact created in this task, whether validation succeeds or fails. Follow the
+   platform-safe procedure in [edge-cases.md](references/edge-cases.md), and report
+   any remaining artifacts.
 
 ## Strict mode
 
@@ -164,6 +189,7 @@ Use `.bi.` in place of the language code for bilingual output.
 | `references/segmentation.md` | Every translation or boundary repair |
 | `references/style-common.md` | Every translation |
 | `references/style-zh.md` | Chinese target |
+| `references/names-zh.md` | Chinese target containing personal, historical, literary, fictional, stage, or uncertain names |
 | `references/language-profiles.md` | Need human-readable profile explanations or custom calibration |
 | `references/reading-load.md` | A duration, reading-speed, or scan-width warning needs judgement |
 | `references/formats.md` | VTT, ASS, SSA, tags, or explicit conversion |

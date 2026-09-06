@@ -1,7 +1,6 @@
 ---
 name: code-rules
 description: Use for code changes, debugging, refactoring, review, or tests. Covers simplicity, reuse, evidence, scope, and completion criteria.
-version: 1.0.0
 ---
 
 # Code Rules
@@ -127,3 +126,4 @@ Before modifying any style, logic, configuration, component, text, or build proc
 - Write as if explaining to a smart person who is not looking at the code.
 
 - Your actual work (thinking, planning, coding, debugging) stays fully technical and rigorous. Only the communication is simplified.
+

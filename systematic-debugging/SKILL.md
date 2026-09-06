@@ -43,7 +43,7 @@ Use for ANY technical issue:
 
 ## The Four Phases
 
-Use the phases in order, but keep each investigation proportional to the symptom and available evidence. Do not skip root-cause analysis merely because the fix looks obvious.
+You MUST complete each phase before proceeding to the next.
 
 ### Phase 1: Root Cause Investigation
 
@@ -186,7 +186,7 @@ Use the phases in order, but keep each investigation proportional to the symptom
    - Test passes now?
    - No other tests broken?
    - Issue actually resolved?
-   - Apply the evidence and completion rules in `code-rules` before claiming success
+   - Use the `superpowers:verification-before-completion` skill before claiming success
 
 4. **If Fix Doesn't Work**
    - STOP

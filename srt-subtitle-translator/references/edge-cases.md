@@ -31,7 +31,8 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 
 For a directory, use `DeleteDirectory` with the same final two arguments. Do not use
 `rm`, `del`, or `Remove-Item`. If validation fails, keep the parts so the translation can
-be corrected and assembled again.
+be corrected and assembled again. Before replying to the user, recycle the task
+workspace and all intermediate artifacts, including artifacts from failed validation.
 
 ## Encoding
 

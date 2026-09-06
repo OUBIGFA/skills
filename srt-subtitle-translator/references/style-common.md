@@ -120,8 +120,11 @@ the expansion reads slower and takes more space.
 
 ## Names and terminology
 
-- Personal names stay in their Latin form; romanize non-Latin names rather than
-  transliterating, unless the target language has an established rendering
+- Personal names use an established target-language rendering only when it is supported
+  by an official naming standard, an official/institutional usage, or stable conventional
+  usage in authoritative sources; otherwise preserve the source form. For non-Latin
+  source names, use an established official romanization when one exists rather than
+  inventing a target-language transliteration.
 - Software, renderers, plugins, algorithms, file formats, and acronyms stay in their
   original form unless a stable target-language term exists and is more familiar
 - On first appearance of an important concept, `译名（original）` — target term with the

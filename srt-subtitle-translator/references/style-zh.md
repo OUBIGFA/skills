@@ -141,8 +141,12 @@ are full-width `“”`, and work titles take `《》`. Switch only on request, 
 
 ## Names and terminology, Chinese specifics
 
-- Personal names stay in their Latin form; do not transliterate into Chinese characters
-  unless the person has an established Chinese name
+- Read `references/names-zh.md` whenever Chinese subtitles contain personal, historical,
+  literary, fictional, stage, or uncertain names. Its evidence order and consistency
+  checks take precedence over ad-hoc transliteration.
+- Use Chinese characters only for a name with an established Chinese rendering. When the
+  current input already provides an English form and no established Chinese rendering
+  is supported, preserve that English form exactly instead of creating a phonetic version.
 - On first appearance of an important concept, `中文（English）`; afterwards the short
   form alone
 - Pick the wording the target audience already uses, not the literal or dictionary one.
