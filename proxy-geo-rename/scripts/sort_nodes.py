@@ -81,7 +81,7 @@ def parse_standard_tag(tag):
 
     返回 dict 或 None
     """
-    m = FLAG_RE.match(tag.strip())
+    m = FLAG_RE.match(re.sub(r'#\d+$', '', tag.strip()))
     if not m:
         return None
 

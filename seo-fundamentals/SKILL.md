@@ -1,129 +1,15 @@
 ---
 name: seo-fundamentals
-description: SEO fundamentals, E-E-A-T, Core Web Vitals, and Google algorithm principles.
+description: 检查或改善网页的搜索收录、技术 SEO 或搜索展示时使用。
 allowed-tools: Read, Glob, Grep
 ---
 
-# SEO Fundamentals
+# 搜索收录与展示
 
-> Principles for search engine visibility.
+根据实际请求检查 robots、索引指令、canonical、站点地图、状态码、内链、可见内容和页面性能。先取证，再调整相关控制点。
 
----
+标题、摘要和正文以准确、清晰、有用为目标；字数区间仅作参考，不以凑字数改变含义。结构化数据需与可见内容相符，不承诺排名。
 
-## 1. E-E-A-T Framework
+规则会变化：涉及当前 Google 政策或指标阈值时核对官方来源并注明适用日期。测量前后的变化，不把启发式检查当真实排名因素。
 
-| Principle | Signals |
-|-----------|---------|
-| **Experience** | First-hand knowledge, real examples |
-| **Expertise** | Credentials, depth of knowledge |
-| **Authoritativeness** | Backlinks, mentions, industry recognition |
-| **Trustworthiness** | HTTPS, transparency, accurate info |
-
----
-
-## 2. Core Web Vitals
-
-| Metric | Target | Measures |
-|--------|--------|----------|
-| **LCP** | < 2.5s | Loading performance |
-| **INP** | < 200ms | Interactivity |
-| **CLS** | < 0.1 | Visual stability |
-
----
-
-## 3. Technical SEO Principles
-
-### Site Structure
-
-| Element | Purpose |
-|---------|---------|
-| XML sitemap | Help crawling |
-| robots.txt | Control access |
-| Canonical tags | Prevent duplicates |
-| HTTPS | Security signal |
-
-### Performance
-
-| Factor | Impact |
-|--------|--------|
-| Page speed | Core Web Vital |
-| Mobile-friendly | Ranking factor |
-| Clean URLs | Crawlability |
-
----
-
-## 4. Content SEO Principles
-
-### Page Elements
-
-| Element | Best Practice |
-|---------|---------------|
-| Title tag | 50-60 chars, keyword front |
-| Meta description | 150-160 chars, compelling |
-| H1 | One per page, main keyword |
-| H2-H6 | Logical hierarchy |
-| Alt text | Descriptive, not stuffed |
-
-### Content Quality
-
-| Factor | Importance |
-|--------|------------|
-| Depth | Comprehensive coverage |
-| Freshness | Regular updates |
-| Uniqueness | Original value |
-| Readability | Clear writing |
-
----
-
-## 5. Schema Markup Types
-
-| Type | Use |
-|------|-----|
-| Article | Blog posts, news |
-| Organization | Company info |
-| Person | Author profiles |
-| FAQPage | Q&A content |
-| Product | E-commerce |
-| Review | Ratings |
-| BreadcrumbList | Navigation |
-
----
-
-## 6. AI Content Guidelines
-
-### What Google Looks For
-
-| ✅ Do | ❌ Don't |
-|-------|----------|
-| AI draft + human edit | Publish raw AI content |
-| Add original insights | Copy without value |
-| Expert review | Skip fact-checking |
-| Follow E-E-A-T | Keyword stuffing |
-
----
-
-## 7. Ranking Factors (Prioritized)
-
-| Priority | Factor |
-|----------|--------|
-| 1 | Quality, relevant content |
-| 2 | Backlinks from authority sites |
-| 3 | Page experience (Core Web Vitals) |
-| 4 | Mobile optimization |
-| 5 | Technical SEO fundamentals |
-
----
-
-## 8. Measurement
-
-| Metric | Tool |
-|--------|------|
-| Rankings | Search Console, Ahrefs |
-| Traffic | Analytics |
-| Core Web Vitals | PageSpeed Insights |
-| Indexing | Search Console |
-| Backlinks | Ahrefs, Semrush |
-
----
-
-> **Remember:** SEO is a long-term game. Quality content + technical excellence + patience = results.
+需要批量初筛时可用 [seo_checker.py](scripts/seo_checker.py)，结论仍需核对页面与当前规范。

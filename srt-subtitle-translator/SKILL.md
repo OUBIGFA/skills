@@ -1,6 +1,6 @@
 ---
 name: srt-subtitle-translator
-description: Translate and re-segment timed subtitle files in SRT, WebVTT, or ASS/SSA format while preserving timing, markup, and format-specific structure. Use for subtitle translation, bilingual subtitles, or translation-aware segmentation repair. Do not use for timing-only inspection, extraction, muxing/burning, or format conversion without translation.
+description: 翻译 SRT、VTT、ASS/SSA 字幕，或在翻译中修复分句时使用。
 metadata:
   short-description: Translate and repair timed subtitle files
 ---
@@ -111,26 +111,11 @@ Read [formats.md](references/formats.md) before handling VTT or ASS/SSA.
 
 ## Intermediate Artifacts and Cleanup
 
-Create one task workspace named `.srt-subtitle-translator-work` in the same directory
-as the source subtitle file. Store every runtime-created intermediate artifact inside
-this folder, including temporary files, split parts, assembled data, validation
-outputs, generated or copied helper scripts, logs, and other processing artifacts.
-
-Do not store intermediate artifacts in the system temporary directory, another project
-directory, or elsewhere on the filesystem. Keep the source subtitle and final
-deliverables outside this workspace.
-
-Before using the workspace, check whether it already exists. Never delete or overwrite
-files that were not created by the current task. If the workspace contains unrelated
-or unrecognized files, use a unique task-specific sibling folder instead and report it.
-
-After processing finishes, recycle every artifact created by this task, whether
-validation succeeds or fails. Cleanup must happen before replying to the user. If
-cleanup cannot be completed, report the exact remaining paths instead of claiming that
-cleanup succeeded.
-
-Only the source subtitle, final subtitle deliverables, and other explicitly requested
-outputs may remain in the source directory.
+Keep runtime-created intermediates in the task workspace's `_temp/<unique-task-directory>`.
+Without a workspace, use `%TEMP%/_temp/<unique-task-directory>`. Keep source files and
+final deliverables outside it. Never overwrite or recycle unrelated pre-existing files.
+Recycle this task's intermediates before delivery, including failed validation artifacts;
+if cleanup fails, report the exact remaining paths rather than claiming success.
 
 ## Workflow
 
@@ -179,8 +164,8 @@ confirming that self-created intermediate files were recycled. Do not put explan
 citations, or translator notes inside subtitle text.
 
 Use `source-zh.srt` for Simplified Chinese, `source-zh-hant.srt` for Traditional
-Chinese, `source.en.srt` for English and the analogous language code for other targets.
-Use `.bi.` in place of the language code for bilingual output.
+Chinese, `source-en.srt` for English and the analogous `-<language code>` for other
+targets. Use `-bi` in place of the language code for bilingual output.
 
 ## Reference routing
 

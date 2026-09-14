@@ -58,7 +58,7 @@
     {
       "id": 10,
       "prompt": "帮我把这份字幕翻译成中英双语的",
-      "expected_output": "同一个块内中文在上、原文在下，无空行；因密度翻倍而控制中文行长；输出为 .bi.srt 文件。",
+      "expected_output": "同一个块内中文在上、原文在下，无空行；因密度翻倍而控制中文行长；输出为 -bi.srt 文件。",
       "files": ["evals/fixtures/bilingual_sample.srt"]
     },
     {
@@ -76,7 +76,7 @@
     {
       "id": 13,
       "prompt": "把这份中文教程字幕翻译成英文",
-      "expected_output": "手工译为英文而非机器翻译；阅读负荷按英文标准（约 20 字符/秒，含空格）评估；英文遵循常规句末标点习惯，不套用中文的去句末标点规则；输出 .en.srt，校验时使用 --lang en。",
+      "expected_output": "手工译为英文而非机器翻译；阅读负荷按英文标准（约 20 字符/秒，含空格）评估；英文遵循常规句末标点习惯，不套用中文的去句末标点规则；输出 -en.srt，校验时使用 --lang en。",
       "files": ["evals/fixtures/chinese_to_english.srt"]
     },
     {

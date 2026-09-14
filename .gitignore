@@ -19,6 +19,8 @@
 !brooks-sweep/**
 !brooks-test/
 !brooks-test/**
+!_shared
+!_shared/**
 !chrome/
 !chrome/**
 !clean-code/
@@ -45,6 +47,8 @@
 !plan-writing/**
 !proxy-geo-rename/
 !proxy-geo-rename/**
+!proxy-yaml-converter/
+!proxy-yaml-converter/**
 !receiving-code-review/
 !receiving-code-review/**
 !seo-fundamentals/

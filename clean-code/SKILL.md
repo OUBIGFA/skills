@@ -1,6 +1,6 @@
 ---
 name: clean-code
-description: Use for focused readability or maintainability review about naming, unnecessary complexity, or local duplication. General code work uses code-rules.
+description: 专门审查命名、局部重复和不必要复杂度时使用。
 allowed-tools: Read, Write, Edit
 version: 3.0
 ---

@@ -1,36 +1,23 @@
 ---
 name: brooks-test
-description: >
-  Test quality review drawing on twelve classic engineering books — with primary focus
-  on xUnit Test Patterns, The Art of Unit Testing, How Google Tests Software, and
-  Working Effectively with Legacy Code — that diagnoses structural problems in an
-  existing test suite: brittleness, mock abuse, coverage illusions, slow execution,
-  poor readability.
-  Triggers when: user asks about test quality, shares test files for review, or
-  expresses frustration: "tests keep breaking whenever I change anything", "our tests
-  take forever", "I can't understand what this test is doing", "tests pass but bugs
-  still reach production", "we have too many mocks".
-  Do NOT trigger for: writing new tests from scratch (use the regular test-writing
-  workflow) or testing framework/syntax questions — this skill reviews an existing
-  suite for structural quality problems, not individual test authoring.
+description: 审查现有测试的脆弱性、过度模拟、速度或失效覆盖时使用。
 ---
 
-# Brooks-Lint — Test Quality Review
+# brooks-test
 
-## Setup
+先确定用户请求的范围与模式，不因架构、重构或健康等单词自行扩大任务。除 brooks-sweep 或明确授权修复外，只读分析，不自动修改历史记录或项目配置。
 
-1. Read `../_shared/common.md` for the Iron Law, Project Config, Report Template, and Health Score rules
-2. Read `../_shared/source-coverage.md` for book-level coverage, exceptions, and tradeoffs
-3. Read `../_shared/test-decay-risks.md` for test-space symptom definitions and source attributions
-4. Read `test-guide.md` in this directory for the test quality review framework
+## 按需加载
 
-## Process
+- 本模式的方法：[test-guide.md](test-guide.md)。
 
-**If the user has not shared test files or pointed to a test directory:** apply Auto
-Scope Detection from `../_shared/common.md` to determine the review scope before proceeding.
+- 存在 `.brooks-lint.yaml` 或需要确定范围、报告与评分规则时，读取 [common.md](../_shared/common.md) 的相关部分；不存在配置则沿用默认风险分类。
+- 生产代码、架构或技术债的具体风险分类：按问题读取 [decay-risks.md](../_shared/decay-risks.md)。
+- 现有测试质量的具体风险分类：按问题读取 [test-decay-risks.md](../_shared/test-decay-risks.md)。
+- 需要书籍归因、例外或权衡依据时才读 [source-coverage.md](../_shared/source-coverage.md)，不要给未经核实的来源背书。
 
-1. Build the test suite map (guide's "Before You Start" section)
-2. Scan for each test decay risk in the order specified (Steps 1–4 of the guide)
-3. Apply the Iron Law and output using the Report Template (Step 5 of the guide)
+## 结果与权限
 
-**Mode line in report:** `Test Quality Review`
+发现需给出实际位置、现象、来源或依据、后果与可行修复，不凑发现数量。说明实际检查范围和证据缺口；分数是启发式评估，不是质量保证。
+
+已授权的本地修复可连续实施、验证、修复失败并复验。高影响范围变化仍需相应授权；资源上限或无进展时报告真实剩余问题，不能视为全部修复。只读审计不因参考文档要求写历史而改变范围。

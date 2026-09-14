@@ -1,42 +1,24 @@
 ---
 name: brooks-audit
-description: >
-  Architecture audit that maps module dependencies, checks layering integrity, and
-  flags structural decay across a codebase, drawing on twelve classic engineering books.
-  Triggers when: user asks to audit architecture, review folder/module structure,
-  check for circular imports, understand how the codebase is organized, or asks
-  "does this follow clean architecture?", "why does everything depend on everything?",
-  "are our layers correct?", "where should this code live?".
-  Also triggers for onboarding requests: "explain this codebase to a new developer"
-  or "give me a codebase tour" (use onboarding mode).
-  Do NOT trigger for: PR-level code review (use brooks-review) or line-level refactoring
-  questions — this skill analyzes structural/module-level concerns, not individual functions.
+description: 审计代码模块依赖、分层或循环引用；也用于代码库导览。
 ---
 
-# Brooks-Lint — Architecture Audit
+# brooks-audit
 
-## Setup
+先确定用户请求的范围与模式，不因架构、重构或健康等单词自行扩大任务。除 brooks-sweep 或明确授权修复外，只读分析，不自动修改历史记录或项目配置。
 
-1. Read `../_shared/common.md` for the Iron Law, Project Config, Report Template, and Health Score rules
-2. Read `../_shared/source-coverage.md` for book-level coverage, exceptions, and tradeoffs
-3. Read `../_shared/decay-risks.md` for symptom definitions and source attributions
-4. Read `architecture-guide.md` in this directory for the audit framework
+## 按需加载
 
-## Process
+- 用户要导览：只读 [onboarding-guide.md](onboarding-guide.md)，说明模块职责与关键流程，不评分、不加载风险书目。
+- 用户要架构审计：读 [architecture-guide.md](architecture-guide.md)，以实际依赖和分层证据判断。
 
-**Onboarding mode:** If the user asks for an onboarding report, codebase tour, or
-"explain this codebase to a new developer", read `onboarding-guide.md` from this
-directory and follow it instead of `architecture-guide.md`. This mode explains rather
-than diagnoses — no Health Score, no Iron Law findings.
+- 存在 `.brooks-lint.yaml` 或需要确定范围、报告与评分规则时，读取 [common.md](../_shared/common.md) 的相关部分；不存在配置则沿用默认风险分类。
+- 生产代码、架构或技术债的具体风险分类：按问题读取 [decay-risks.md](../_shared/decay-risks.md)。
+- 现有测试质量的具体风险分类：按问题读取 [test-decay-risks.md](../_shared/test-decay-risks.md)。
+- 需要书籍归因、例外或权衡依据时才读 [source-coverage.md](../_shared/source-coverage.md)，不要给未经核实的来源背书。
 
-**If the user has not specified files or a directory to audit:** apply Auto Scope
-Detection from `../_shared/common.md` to determine the audit scope before proceeding.
+## 结果与权限
 
-1. Gather codebase context and draw the module dependency graph as Mermaid (Steps 0–1 of the guide)
-2. Scan for each decay risk in the order specified (Steps 2–4 of the guide)
-3. Assign node colors in the Mermaid diagram based on findings (red/yellow/green) — after Step 4
-4. Run the Testability Seam Assessment (Step 5 of the guide)
-5. Run the Conway's Law check (Step 6 of the guide)
-6. Output using the Report Template from common.md — Mermaid graph FIRST, then Findings
+发现需给出实际位置、现象、来源或依据、后果与可行修复，不凑发现数量。说明实际检查范围和证据缺口；分数是启发式评估，不是质量保证。
 
-**Mode line in report:** `Architecture Audit`
+已授权的本地修复可连续实施、验证、修复失败并复验。高影响范围变化仍需相应授权；资源上限或无进展时报告真实剩余问题，不能视为全部修复。只读审计不因参考文档要求写历史而改变范围。

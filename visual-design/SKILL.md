@@ -1,6 +1,6 @@
 ---
 name: visual-design
-description: Visual design rules for clean, readable, low-fatigue interfaces. Use when creating or reviewing any UI to enforce restraint in typography weight, element density, shadows, decorative indicators, color saturation, and motion.
+description: 创建或评审界面的排版、布局、颜色与交互视觉时使用。
 metadata:
   short-description: Restraint-focused visual design rules
 ---
@@ -20,7 +20,7 @@ Apply these principles to every UI decision — layout, typography, color, compo
 
 ## Website Restoration
 
-- **Inspect with CDP before recreating.** When restoring or recreating an existing website, use Chrome DevTools Protocol (CDP) to gather detailed page content and analyze the site's JavaScript and CSS before making design or implementation decisions.
+- **Inspect before recreating.** Only for restoration/recreation tasks, inspect the actual page content and relevant JavaScript/CSS using the available browser/CDP tools before making implementation decisions; ordinary UI work does not require a CDP setup.
 
 ## Visual Indicators
 

@@ -1,35 +1,23 @@
 ---
 name: brooks-debt
-description: >
-  Tech debt assessment that identifies, classifies, and prioritizes maintainability
-  problems — helping teams build a refactoring roadmap — drawing on twelve classic
-  engineering books.
-  Triggers when: user asks about tech debt, refactoring priorities, what to clean up
-  first, or asks "why is this so hard to change?", "where's the most painful part?",
-  "what should we fix first?", "how do I justify refactoring to management?",
-  "why is our velocity dropping?".
-  Do NOT trigger for: server health checks, HTTP /health endpoints, Kubernetes probes,
-  database health, or application uptime — "health" in those contexts is infrastructure,
-  not code quality. Also not for single-function refactoring questions.
+description: 评估代码维护成本和技术债，排列重构优先级时使用。
 ---
 
-# Brooks-Lint — Tech Debt Assessment
+# brooks-debt
 
-## Setup
+先确定用户请求的范围与模式，不因架构、重构或健康等单词自行扩大任务。除 brooks-sweep 或明确授权修复外，只读分析，不自动修改历史记录或项目配置。
 
-1. Read `../_shared/common.md` for the Iron Law, Project Config, Report Template, and Health Score rules
-2. Read `../_shared/source-coverage.md` for book-level coverage, exceptions, and tradeoffs
-3. Read `../_shared/decay-risks.md` for symptom definitions and source attributions
-4. Read `debt-guide.md` in this directory for the debt classification framework
+## 按需加载
 
-## Process
+- 本模式的方法：[debt-guide.md](debt-guide.md)。
 
-**If the user has not described the codebase or pointed to specific areas:** apply Auto
-Scope Detection from `../_shared/common.md` to determine the assessment scope before proceeding.
+- 存在 `.brooks-lint.yaml` 或需要确定范围、报告与评分规则时，读取 [common.md](../_shared/common.md) 的相关部分；不存在配置则沿用默认风险分类。
+- 生产代码、架构或技术债的具体风险分类：按问题读取 [decay-risks.md](../_shared/decay-risks.md)。
+- 现有测试质量的具体风险分类：按问题读取 [test-decay-risks.md](../_shared/test-decay-risks.md)。
+- 需要书籍归因、例外或权衡依据时才读 [source-coverage.md](../_shared/source-coverage.md)，不要给未经核实的来源背书。
 
-1. Scan for all six decay risks (Step 1 of the guide); list every finding before scoring
-2. Apply the Pain × Spread priority formula and classify debt intent (Steps 2–3 of the guide)
-3. Group findings by decay risk (Step 4 of the guide)
-4. Output using the Report Template from common.md, plus the Debt Summary Table
+## 结果与权限
 
-**Mode line in report:** `Tech Debt Assessment`
+发现需给出实际位置、现象、来源或依据、后果与可行修复，不凑发现数量。说明实际检查范围和证据缺口；分数是启发式评估，不是质量保证。
+
+已授权的本地修复可连续实施、验证、修复失败并复验。高影响范围变化仍需相应授权；资源上限或无进展时报告真实剩余问题，不能视为全部修复。只读审计不因参考文档要求写历史而改变范围。

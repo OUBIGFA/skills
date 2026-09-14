@@ -1,0 +1,42 @@
+{
+  "repository": "https://github.com/hyhmrright/brooks-lint",
+  "retrieved": "2026-09-14",
+  "files": [
+    {
+      "path": "skills/_shared/common.md",
+      "git_blob": "d7cb11db20bee5b3e83818b242abb4aa7734e795",
+      "url": "https://github.com/hyhmrright/brooks-lint/blob/main/skills/_shared/common.md"
+    },
+    {
+      "path": "skills/_shared/custom-risks-guide.md",
+      "git_blob": "d164a5f622a7808309ff04823a0a0e748e99ae8d",
+      "url": "https://github.com/hyhmrright/brooks-lint/blob/main/skills/_shared/custom-risks-guide.md"
+    },
+    {
+      "path": "skills/_shared/decay-risks.md",
+      "git_blob": "197f4491c08d59efec6c1f08e1620d82d51e3d0a",
+      "url": "https://github.com/hyhmrright/brooks-lint/blob/main/skills/_shared/decay-risks.md"
+    },
+    {
+      "path": "LICENSE",
+      "git_blob": "829723d094d79af322c347dc1b40642494c3ad23",
+      "url": "https://github.com/hyhmrright/brooks-lint/blob/main/LICENSE"
+    },
+    {
+      "path": "skills/_shared/remedy-guide.md",
+      "git_blob": "c9886c7a6f2e8e1ccf7844706b160854f3250edf",
+      "url": "https://github.com/hyhmrright/brooks-lint/blob/main/skills/_shared/remedy-guide.md"
+    },
+    {
+      "path": "skills/_shared/source-coverage.md",
+      "git_blob": "3bec8418dcd4007d10a4ce1815a2374dc0a23076",
+      "url": "https://github.com/hyhmrright/brooks-lint/blob/main/skills/_shared/source-coverage.md"
+    },
+    {
+      "path": "skills/_shared/test-decay-risks.md",
+      "git_blob": "caa5f5208dc6d617a6e5e1a51deb21b63ee2d505",
+      "url": "https://github.com/hyhmrright/brooks-lint/blob/main/skills/_shared/test-decay-risks.md"
+    }
+  ],
+  "local_changes": "common.md routing, authorization, config handling and optional history; remedy-guide.md relative path corrected; risk taxonomies unchanged"
+}

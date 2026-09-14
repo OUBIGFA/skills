@@ -8,7 +8,7 @@ silent format conversion is itself an error.
 
     python check_subtitle.py out-zh.srt                     # check one file
     python check_subtitle.py out-zh.srt --source in.srt     # also diff against the source
-    python check_subtitle.py out.en.srt --lang en           # non-Chinese target language
+    python check_subtitle.py out-en.srt --lang en           # non-Chinese target language
 
 Checks performed on the output file:
   - parseable; SRT indices sequential from 1; no empty text block

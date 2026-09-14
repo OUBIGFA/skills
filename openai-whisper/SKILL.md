@@ -1,6 +1,6 @@
 ---
 name: openai-whisper
-description: "Local speech-to-text with the Whisper CLI (no API key)."
+description: 使用本地 Whisper 将音频转写为文字或字幕时使用。
 description_zh: "本地语音转文字（无需 API 密钥）"
 description_en: "Local speech-to-text (no API key needed)"
 ---
@@ -15,5 +15,5 @@ Quick start
 
 Notes
 - Models download to `~/.cache/whisper` on first run.
-- `--model` defaults to `turbo` on this install.
+- Set `--output_dir` to the requested destination, or to the task's `_temp/<unique-directory>` for intermediate files. Check current CLI defaults rather than assuming an installed model.
 - Use smaller models for speed, larger for accuracy.

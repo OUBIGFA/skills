@@ -1,6 +1,6 @@
 ---
 name: gog
-description: "Google Workspace CLI for Gmail, Calendar, Drive, Contacts, Sheets, and Docs."
+description: 用户要通过 gog 管理 Google 邮件、日历、网盘或文档时使用。
 description_zh: "Google Workspace 全家桶（邮件、日历、文档等）"
 description_en: "Google Workspace: Gmail, Calendar, Drive & more"
 ---
@@ -25,7 +25,7 @@ Common commands
 - Sheets append: `gog sheets append <sheetId> "Tab!A:C" --values-json '[["x","y","z"]]' --insert INSERT_ROWS`
 - Sheets clear: `gog sheets clear <sheetId> "Tab!A2:Z"`
 - Sheets metadata: `gog sheets metadata <sheetId> --json`
-- Docs export: `gog docs export <docId> --format txt --out /tmp/doc.txt`
+- Docs export: `gog docs export <docId> --format txt --out <task-workspace>/doc.txt`
 - Docs cat: `gog docs cat <docId>`
 
 Notes
@@ -33,4 +33,5 @@ Notes
 - For scripting, prefer `--json` plus `--no-input`.
 - Sheets values can be passed via `--values-json` (recommended) or as inline rows.
 - Docs supports export/cat/copy. In-place edits require a Docs API client (not in gog).
-- Confirm before sending mail or creating events.
+- Read-only queries may proceed within scope. Sending mail or changing remote data requires clear authorization for the recipient/target and content; reuse authorization already given.
+- Put intermediate exports in the task's `_temp/<unique-directory>`; save requested deliverables at the requested destination.
