@@ -155,9 +155,10 @@ of what the audio sounds like:
   pause there. Boundaries like this are freely re-placed to fit the translation.
 - A **clear gap in the source subtitles** is only a pause proxy. Without audio, do not
   call it an audible silence; use the configured threshold mechanically and flag the
-  uncertainty when it matters. An output block may not cross a source gap at or above
-  that threshold. If a sentence appears to straddle such a gap, distribute the
-  translation so each side stands alone as target-language text.
+  uncertainty when it matters. The threshold is a judgement aid, not a ban: an output
+  block may cross a source gap at or above it, but only when the merge fixes a specific,
+  nameable defect — and the delivery reply must report the crossing. When the sides of
+  the gap are each complete and the translation has a natural seam there, keep the gap.
 
 ## Placing boundaries in the translation
 
@@ -220,6 +221,13 @@ Never rely on word-for-word translation or mechanical cut-and-paste. When transl
 Every subtitle block must be a standalone **Thought Unit (意群)** or **Breath Group (气口)**.
 - A native viewer reading the block must feel a complete semantic impression — never left "hanging in mid-air" waiting for an essential verb argument, clausal complement, or head noun.
 - **Governing Verbs (支配动词)** that take a full clausal object (e.g. "看看", "看看能否", "试图", "准备", "想要") MUST NOT be stranded at the end of a block if the governed clause only arrives in the next block.
+- **Remedy order for a flagged tail.** Try rewriting the tail so the block ends on a noun
+  or a result before you delete, move, or merge anything: this keeps the payload and
+  leaves the timeline untouched. A soft "let's see how it looks" ending (`这样定好，再动一下看`)
+  becomes `这样定好，再动一下看看效果`; a gaze-direction ending (`让它往上看`) becomes
+  `让视线朝上`. Move the word into the next block, or merge, only when no natural
+  noun-final rewrite exists. Deleting the word outright is the last resort, because it
+  is payload whenever it changes the meaning.
 
 ### 2. The Law of Clausal Introducer Head-Attachment (关联与引导成分前置律)
 Clausal connectives, conjunctions, relative markers, and prepositions are syntactic heads of the clause they introduce — they belong to the **beginning of the continuation unit**, never the tail of the preceding unit.
@@ -246,9 +254,10 @@ Before delivering any subtitle segment, run this two-pass cognitive test on ever
 
 ## Self-check before writing the output
 
-- Speech-span edges and every source pause proxy survive untouched; no block crosses a
-  source gap at or above the configured threshold; within each span the blocks tile it
-  exactly
+- Within each span the blocks tile it exactly; no new gap exists anywhere in the output
+- Every block that crosses a source gap at or above the configured threshold fixes a
+  specific, nameable defect that could not be fixed without crossing, and is reported
+  with its reason in the delivery reply
 - Every block is a single line and reads as a natural, self-contained target-language
   phrase — nothing in the file exists only because the source happened to cut there
 - No word in the output answers to nothing in the audio — merges added no bridging
@@ -260,10 +269,12 @@ Before delivering any subtitle segment, run this two-pass cognitive test on ever
 - Every merge fixes a specific, nameable defect; every added or moved boundary lands on
   a target-language seam, nameable the same way; no piece flashes by unread
 - No boundary was placed, and no wording was cut, to satisfy a character count
-- `scripts/check_subtitle.py --source <original>` reports zero errors
+- `scripts/check_subtitle.py --source <original>` reports zero errors, and every
+  "crosses a source gap" warning has been explained in the delivery reply
 
-`check_subtitle.py` mechanically proves the audio claims (speech coverage, pauses
-preserved, exact tiling, no overlap) and flags wrapped blocks, heavy merges, blocks
+`check_subtitle.py` mechanically proves the audio claims (speech coverage, exact
+tiling, no overlap) and flags every crossing of a source gap (pause proxy) for
+re-audit, wrapped blocks, heavy merges, blocks
 that exceed the reading-speed budget or the scan-comfort zone, spans whose translated
 length strays from the file's own norm, and a suspiciously low retention ratio. It cannot
 judge whether a boundary is natural in the target language — that stays your job.

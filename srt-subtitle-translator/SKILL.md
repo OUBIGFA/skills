@@ -19,8 +19,10 @@ user; Simplified Chinese is the default only when no target is given.
   politeness, necessity, or conclusions that were not spoken.
 - Work in this order: repair clear ASR segmentation defects, translate the complete
   sentence, then divide the translation at target-language thought boundaries.
-- Never cross a real pause. A gap in a subtitle file is only a pause proxy; without
-  audio, do not claim that it proves an audible pause.
+- Do not cross a real pause without a nameable reason. A gap in a subtitle file is
+  only a pause proxy; without audio, do not claim that it proves an audible pause.
+  Merging across one is the translator's judgement call: keep the merge only when
+  it fixes a specific defect, and report every crossed gap in the delivery reply.
 - Keep the source format. Convert only when explicitly requested, and state what the
   conversion loses.
 - Never use translation APIs, browser translation, online translators, MT plugins, or
@@ -46,7 +48,9 @@ paragraph shape; no timeline work is possible.
 Use `repair → translate → divide`, never translate each ASR block in isolation.
 
 - Merge only a specific defect: an orphan tail, stranded connector, split term,
-  dependent opening, trailing modifier, or filler-only flash block.
+  dependent opening, trailing modifier, or filler-only flash block. A defect that
+  straddles a source gap may still be merged across it — the checker will flag
+  the crossing as a warning; give it a nameable reason in the delivery reply.
 - Keep a source boundary when both sides are complete and the target translation also
   has a natural seam. Topic continuity alone is not a merge reason.
 - Within a continuous speech span, a translated sentence may stay in one block or be
@@ -128,8 +132,10 @@ if cleanup fails, report the exact remaining paths rather than claiming success.
 5. Re-divide long translations at natural target-language thought boundaries. Never use
    a character count as the cutting rule.
 6. Write UTF-8 output next to the source. For files over about 60 blocks, use
-   `scripts/assemble_subtitle.py` for numbered parts rather than pasting the result in
-   the reply.
+   `scripts/assemble_subtitle.py` to join numbered parts rather than pasting the result in
+   the reply. It concatenates the parts verbatim and does **not** renumber, so each part
+   must already carry its final sequential indices — or, equivalently, write the parts as
+   plain `<start>|<end>|<text>` rows and let a small build step add the numbering.
 7. Validate before replying:
 
    ```text
@@ -153,13 +159,16 @@ Strict mode is explicit-user-request only. It requires the same block count, blo
 timestamp lines, SRT indices, VTT identifiers/settings, ASS non-Text fields, protected
 markup, and format structure as the source. Only the dialogue wording may change.
 
-Normal mode may merge or split within a continuous source span, but it must preserve
-format structure, protected markers, source span coverage, and source pause proxies.
+Normal mode may merge or split within a continuous source span, and it may merge
+across a source gap when the merge fixes a nameable defect. It must still preserve
+format structure, protected markers, and source span coverage, and must report every
+crossed source gap; it may not create a new gap.
 
 ## Delivery
 
 Keep the final reply short: output path, mode and block count before/after, repair
-categories, unresolved timing/ASR/terminology issues, checker result, and one clause
+categories, every merge across a source gap with its one-line reason, unresolved
+timing/ASR/terminology issues, checker result, and one clause
 confirming that self-created intermediate files were recycled. Do not put explanations,
 citations, or translator notes inside subtitle text.
 

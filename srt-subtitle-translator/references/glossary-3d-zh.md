@@ -80,6 +80,7 @@ context-sensitive choices.
 | 烘培 | **烘焙** | Bake | homophone typo, extremely common |
 | 材料 | **材质** | Material | 材料 is physical stuff, not a shading asset |
 | 大型 | **基础形体** | Blocking / Blockout | spoken shorthand ("拉大型"); outside the niche it reads as "large-scale" and parses as nothing |
+| 图元 | **略去，只留对象名** | Primitive (a category word stacked onto a named object) | 这是 Unity 中文文档与图形学教材里 Primitive 的译法，C4D 观众不这么叫；三层名词还会把屏幕上真正要找的名字（直线样条）埋掉 |
 
 Everything outside this table is a default that context can override.
 
@@ -137,6 +138,12 @@ moving.
 
 **Clone** — 克隆 for the Cloner and the act; 克隆体 for the resulting copies. `The clones
 are overlapping` → 克隆体重叠了.
+
+**Primitive** — 说话人常把类别词叠在对象名后面，一句话里出现三个同指的词：`the line
+spline primitive`、`the cube primitive`、`the null primitive`。中文不叠 —— 对象名自己就把
+意思说完了：`Go to the line spline primitive` → 找到直线样条。类别词译出去，不是译进来，
+因为观众要按名字找到屏幕上那个东西。（图形学 API 语境里的点、线、三角形图元是另一回事，
+与本文件无关。）
 
 **Deformer vs Modifier** — Blender's *Modifier* is a stack of procedural operations
 (Subdivision, Array, Boolean, Solidify); C4D's *Deformer* is only the shape-bending

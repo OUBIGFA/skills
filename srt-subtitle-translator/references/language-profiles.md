@@ -8,8 +8,10 @@ to choose and override them; it is not a second configuration source.
 - `target_language`: human-readable name used in reports and fallback notices.
 - `counting`: `cjk` counts full-width characters as 1, Latin letters/digits as 0.5,
   and punctuation as 0; `raw` counts every visible character including spaces.
-- `final_punctuation`: `none` warns on ordinary sentence-final punctuation; `standard`
-  follows the target language's normal subtitle practice.
+- `final_punctuation`: `none` warns on ordinary trailing stopping/pausing punctuation
+  (full stops, commas, colons, semicolons, exclamation marks); genuine terminal question
+  marks (`？`/`?`) are explicitly exempted and preserved. `standard` follows the target
+  language's normal subtitle practice.
 - `max_cps`: reading-speed review threshold in display-cost units per second.
 - `max_width`: one-glance scan-width review threshold in display-cost units.
 - `spacing`: whether the checker reports missing CJK/Latin or CJK/digit spacing.

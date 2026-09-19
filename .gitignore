@@ -67,3 +67,7 @@
 !verification-before-completion/**
 !visual-design/
 !visual-design/**
+
+# 排除所有文件夹内的“.”文件夹及其内容
+.*/
+

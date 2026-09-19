@@ -47,11 +47,14 @@ CJK/Latin spacing, but the space makes mixed lines noticeably easier to scan:
   abbreviations, and English UI labels: `在 C4D 中设置 100%，亮度为 500nits`
 - **中文词汇严禁前后留空格**：空格仅用于中英文/数字分界或意群间停顿，中文词汇之间绝不可因属于专有名词或 UI 术语而生硬留出前后空格（错误：`但 吸引 完全没有任何可视反馈`、`摩擦 还在 我先把 摩擦 关掉`）。此类词汇要么取消前后空格自然融入中文句式（`但吸引完全没有任何可视反馈`、`摩擦还在 我先把摩擦关掉`），要么直接保留英文原文并按中英混排规则留空格（建议保留英文原文：`但 Attractor 完全没有任何可视反馈`、`Friction 还在 我先把 Friction 关掉`）。
 - No space between a number and its unit symbol, and no space around punctuation
-- Use full-width Chinese punctuation inside the line. `，、？` are normal when the
-  sentence needs them; use `：` only for a genuine explanation, label, or structural
-  introduction. Exclamation marks (`！` and `!`) are strictly forbidden across all
-  subtitles — never use exclamation marks in subtitle translation; express enthusiasm or
-  urgency through natural vocabulary, or convert to plain declarative sentences.
+- Use full-width Chinese punctuation inside the line (`，、`). Internal `？`
+  is normal when a question is immediately followed by another clause within the same block.
+  Colons `：` are strictly forbidden for introducing explanations, clauses, or reasoning
+  in spoken dialogue — use a comma `，` or natural spoken phrasing instead. Reserve `：`
+  exclusively for non-spoken structural markers: speaker labels (`John：`) or literal UI/code
+  strings from the source. Exclamation marks (`！` and `!`) are strictly forbidden across
+  all subtitles — never use exclamation marks in subtitle translation; express enthusiasm
+  or urgency through natural vocabulary, or convert to plain declarative sentences.
   A translation-created `；` normally calls for a block split instead.
   Use half-width numerals (`1, 2, 3`, never `１２３`).
 
@@ -67,8 +70,13 @@ boundary and distribute them across the speech span.
 This is not a general punctuation ban. Commas `，`, enumeration commas `、`, and
 question marks `？` are normal within one thought and do not justify a split by themselves.
 (Exclamation marks `！`/`!` are forbidden throughout and must not appear in any block.)
-A colon `：` is valid when a genuine explanation, label, or structural introduction needs
-it; otherwise prefer a natural rewrite. Meaning decides the boundary, but internal `。`
+Colons `：` must never be used to introduce explanations, elaborations, or causal
+clauses in spoken dialogue. Subtitles represent speech, and spoken Chinese connects
+thoughts with commas `，`, spoken connectives (`因为`/`由于`), or separate blocks —
+never with explanatory colons. Where written prose uses a colon to link an explanation,
+spoken Chinese prefers a comma or natural rewrite. The only valid exception for a colon
+is a non-dialogue structural label: speaker tags (`John：`), UI key-value pairs, menu paths,
+or code strings present in the source. Meaning decides the boundary, but internal `。`
 and `；`, as well as any exclamation marks `！`/`!`, receive automatic mechanical warnings.
 
 Structural speaker labels, UI labels, menu paths, code, and strings the viewer sees typed
@@ -78,33 +86,35 @@ such a string is not a translation-created segmentation mark.
 Examples:
 
 - `首先选择对象；然后打开 Settings 面板` → split into `先选择对象` / `再打开 Settings 面板`
-- `原因很简单：我们需要更多几何体` → keep the colon when the explanation reads as one thought
+- `原因很简单：我们需要更多几何体` → **wrong**; ban colons in explanatory dialogue. Rewrite with a comma or natural connective: `原因很简单，我们需要更多几何体` or `因为我们需要更多几何体`
 - `选择对象。然后打开面板` → split into two blocks rather than keeping an internal `。`
 - `先选择对象，再打开面板` → keep the comma when it remains one thought (no exclamation mark)
 - `位置、旋转和缩放都能调整` → keep the enumeration comma
-- `John：请打开面板` keeps the structural speaker label
+- `John：请打开面板` → valid exception: keeps the structural speaker label
 
 ## Punctuation at line ends
 
-Subtitles are timed, not typeset — the cut in time already ends the thought, so a trailing
-full stop adds a character and no information. Do not end a subtitle text line with
-`。．.` `;；` `:：` `，,` `、` `！!`. A genuine question may end with `？`; this mark
-carries question tone and is not treated like a full stop.
-
-Exclamation marks (`！` and `!`) are completely banned from subtitles, both at line ends
-and within lines. Even if the speaker sounds excited or urgent, translate using natural
-spoken vocabulary without adding exclamation marks.
+Subtitles are timed, not typeset — the cut in time already ends the thought, so trailing
+full stops, commas, or semicolons waste reading time and clutter the screen. Under the
+Chinese profile (`final_punctuation: none`):
+- **Never end a line with ordinary stopping punctuation:** Do not end a subtitle text line
+  with `。．.` `;；` `:：` `，,` `、` `！!` or dashes. Trailing commas or pause marks (`，、`)
+  are strictly forbidden at line ends — never leave a comma at the end of a block under
+  the guise of "preserving punctuation".
+- **Terminal question marks are explicitly exempted and preserved:** A genuine question
+  at the end of a block must keep its full-width `？`. This mark conveys vital interrogative
+  intonation and is not treated as a forbidden full stop.
+- Exclamation marks (`！` and `!`) are completely banned from subtitles, both at line ends
+  and within lines. Even if the speaker sounds excited or urgent, translate using natural
+  spoken vocabulary without adding exclamation marks.
 
 Punctuation inside a line is not a substitute for a subtitle boundary. Split when the
 meaning contains two thought units, especially when `。` or `；` makes the separation
-explicit. Do not split merely because a normal comma, enumeration comma, or question mark
-appears.
+explicit. Do not split merely because a normal comma or enumeration comma appears internally.
 
 A sentence that runs into the next block gets no ellipsis, no dash, no trailing comma —
-the timeline carries the continuation. Reserve `⋯`(U+2026) for a pause of two seconds or
-more, or an interruption.
-
-Use full-width `？` for genuine questions when their tone matters. Never use `！` or `!`.
+the timeline carries the continuation. Reserve `⋯`(U+2026) strictly for an internal pause
+of two seconds or more, or an interruption, never as a line-ending ornament.
 
 No emoji, no citation markers, no translator notes, no bracketed commentary.
 

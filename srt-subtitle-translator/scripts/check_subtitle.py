@@ -28,7 +28,9 @@ Checks performed on the output file:
 Extra checks when --source is given:
   - source gaps at or above the configured pause proxy form separate speech spans;
     smaller gaps may be preserved or re-placed
-  - no output block crosses a real pause or lies outside source speech
+  - every output block must overlap source speech; a block that crosses a source
+    gap (a pause proxy, not proof of audible silence) is allowed but reported as
+    a warning so the merge can be re-audited at delivery time
   - every speech span is fully covered: pieces tile it from start to end with no
     uncovered speech; boundaries inside a span may be re-placed (merges and
     target-language re-splits are legal and reported as notes)
@@ -533,8 +535,13 @@ def text_volume(text):
     return display_width(text, "cjk")
 
 
-def length_fidelity(segs, src_blocks, seg_pieces, cfg):
+def length_fidelity(segs, src_blocks, span_costs, cfg):
     """Flag speech spans whose translation is far longer or shorter than the file's norm.
+
+    `span_costs[j]` is the output text volume credited to span j plus a preview
+    line. A block merged across a pause proxy is credited to every span it
+    overlaps, in proportion to the overlap, so a bridging merge is never
+    double-counted.
 
     Padding — subjects, connectives and category nouns the audio never had — and
     dropped payload are both invisible to structural checks: the file still tiles
@@ -549,7 +556,7 @@ def length_fidelity(segs, src_blocks, seg_pieces, cfg):
     for j, (ss, se) in enumerate(segs):
         src_cost = sum(text_volume(block_text(b)) for b in src_blocks
                        if b["start"] >= ss - 1e-6 and b["end"] <= se + 1e-6)
-        out_cost = sum(text_volume(block_text(b)) for b in seg_pieces[j])
+        out_cost, first = span_costs[j]
         if src_cost >= cfg["min_span_cost"] and out_cost > 0:
             ratios.append((out_cost / src_cost, j, src_cost, out_cost))
     if len(ratios) < cfg["min_spans"]:
@@ -568,7 +575,7 @@ def length_fidelity(segs, src_blocks, seg_pieces, cfg):
     flagged.sort(reverse=True)
     for _, j, ratio, out_cost, src_cost, kind in flagged[:cfg["max_reports"]]:
         span = "%s --> %s" % (fmt_time(segs[j][0]), fmt_time(segs[j][1]))
-        first = block_text(seg_pieces[j][0])[:30] if seg_pieces[j] else ""
+        first = span_costs[j][1]
         if kind == "pad":
             warnings.append(
                 "speech span %s: %.0f output chars for %.0f source chars (%.1fx the "
@@ -740,6 +747,10 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
             else:
                 segs.append([s0, e0])
         seg_pieces = [[] for _ in segs]
+        # Length fidelity credits each block to the spans it overlaps in proportion
+        # to the overlap, so a block merged across a pause proxy is never
+        # double-counted: span_costs[j] = [credited text volume, preview line].
+        span_costs = [[0.0, ""] for _ in segs]
         new_edges = 0
         for i, b in enumerate(blocks):
             pos = "#%d %s" % (i + 1, b["time_line"])
@@ -751,13 +762,46 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
                     errors.append("%s: start time does not exist in the source (strict)" % pos)
                 if not ok_end:
                     errors.append("%s: end time does not exist in the source (strict)" % pos)
-            parent = next((j for j, (ss, se) in enumerate(segs)
-                           if ss - TOL <= b["start"] and b["end"] <= se + TOL), None)
-            if parent is None:
-                errors.append("%s: block crosses a real pause (>= %.1fs of silence) or "
-                              "lies outside source speech" % (pos, SMALL_GAP))
+            overlaps = []  # (span index, seconds of overlap)
+            for j, (ss, se) in enumerate(segs):
+                t = min(b["end"], se) - max(b["start"], ss)
+                if t > -TOL:
+                    overlaps.append((j, max(t, 0.0)))
+            if not overlaps:
+                errors.append("%s: block lies outside source speech" % pos)
                 continue
-            seg_pieces[parent].append(b)
+            # A source subtitle gap is only a pause proxy — without audio it proves
+            # nothing. Merging across one is a judgement call the translator must be
+            # able to make, so it stays legal; the checker keeps it visible instead:
+            # every stretch of source silence the block sits on is reported as a
+            # warning, and the delivery report must give the merge a nameable reason.
+            silence = []  # seconds covered of each inter-span source gap
+            for j in range(len(segs) - 1):
+                gap_start, gap_end = segs[j][1], segs[j + 1][0]
+                t = min(b["end"], gap_end) - max(b["start"], gap_start)
+                if t > TOL:
+                    silence.append(t)
+            if silence:
+                detail = ("a source gap of %.2fs" % silence[0] if len(silence) == 1
+                          else "%d source gaps (largest %.2fs)"
+                          % (len(silence), max(silence)))
+                warnings.append(
+                    "%s: crosses %s — a pause proxy, not proof of silence; keep the "
+                    "merge only with a nameable defect it fixes" % (pos, detail))
+            if b["start"] < segs[0][0] - TOL:
+                warnings.append("%s: lingers %.2fs before source speech starts"
+                                % (pos, segs[0][0] - b["start"]))
+            if b["end"] > segs[-1][1] + TOL:
+                warnings.append("%s: lingers %.2fs after source speech ends"
+                                % (pos, b["end"] - segs[-1][1]))
+            for j, _ in overlaps:
+                seg_pieces[j].append(b)
+            vol = text_volume(block_text(b))
+            share_total = sum(t for _, t in overlaps) or 1.0
+            for j, t in overlaps:
+                span_costs[j][0] += vol * (t / share_total)
+                if not span_costs[j][1]:
+                    span_costs[j][1] = block_text(b)[:30]
             if (not ok_start or not ok_end) and b["end"] - b["start"] < cfg["min_split_piece"] - TOL:
                 warnings.append("%s: re-placed piece is only %.2fs — the boundary sits in "
                                 "the wrong place or the split was unnecessary"
@@ -797,7 +841,7 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
                                   % (span, gap, b2["time_line"]))
         if new_edges:
             notes.append("%d block edges re-placed to fit target-language phrasing" % new_edges)
-        fid_warnings, fid_notes = length_fidelity(segs, src, seg_pieces, cfg)
+        fid_warnings, fid_notes = length_fidelity(segs, src, span_costs, cfg)
         warnings.extend(fid_warnings)
         notes.extend(fid_notes)
         kept = 100.0 * len(blocks) / max(len(src), 1)

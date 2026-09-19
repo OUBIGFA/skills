@@ -115,8 +115,8 @@ class MinimalChinesePunctuationTests(unittest.TestCase):
         warnings = self.check_warnings("先选择对象；再打开面板")
         self.assertTrue(any("internal '；'" in warning for warning in warnings))
 
-    def test_allows_genuine_colon(self):
-        warnings = self.check_warnings("原因很简单：需要更多几何体")
+    def test_allows_speaker_colon(self):
+        warnings = self.check_warnings("John：需要更多几何体")
         self.assertFalse(any("internal" in warning for warning in warnings))
 
     def test_allows_comma_and_dunhao(self):
@@ -397,6 +397,60 @@ class StructuralContractTests(unittest.TestCase):
         )
         _, errors, _, _ = run_format_check(output, source, "ass")
         self.assertTrue(any("non-Text" in error for error in errors), errors)
+
+
+class CrossGapMergeTests(unittest.TestCase):
+    """A source gap is a pause proxy, not proof of audible silence. Merging across
+    one is the translator's judgement call: the checker reports the crossing as a
+    warning instead of rejecting it, while a block floating in no-speech territory
+    is still an error."""
+
+    def test_merge_across_source_gap_is_a_warning_not_an_error(self):
+        source = srt((0.0, 2.0, "hello"), (3.0, 5.0, "world"))  # 1s gap -> two spans
+        output = srt((0.0, 5.0, "合并后的整句"))
+        _, errors, warnings, _ = run_check(output, source)
+        self.assertEqual([], errors)
+        self.assertTrue(any("crosses a source gap of 1.00s" in w for w in warnings), warnings)
+
+    def test_block_entirely_inside_source_gap_is_an_error(self):
+        source = srt((0.0, 2.0, "hello"), (3.0, 5.0, "world"))
+        output = srt((0.0, 2.0, "你好"), (2.2, 2.8, "孤块"), (3.0, 5.0, "世界"))
+        _, errors, _, _ = run_check(output, source)
+        self.assertTrue(any("outside source speech" in e for e in errors), errors)
+
+    def test_block_lingering_before_source_speech_warns(self):
+        source = srt((2.0, 4.0, "hello"))
+        output = srt((0.0, 4.0, "提前出现的字幕"))
+        _, errors, warnings, _ = run_check(output, source)
+        self.assertEqual([], errors)
+        self.assertTrue(any("lingers 2.00s before source speech" in w for w in warnings), warnings)
+
+    def test_cross_gap_merge_over_max_duration_still_warns(self):
+        source = srt((0.0, 3.0, "hello"), (10.0, 12.0, "world"))  # 7s gap
+        output = srt((0.0, 12.0, "横跨很长间隔的合并"))
+        _, errors, warnings, _ = run_check(output, source)
+        self.assertEqual([], errors)
+        self.assertTrue(any("crosses a source gap of 7.00s" in w for w in warnings), warnings)
+        self.assertTrue(any("longer than 7.0s" in w for w in warnings), warnings)
+
+    def test_bridging_merge_is_not_double_counted_by_fidelity(self):
+        """A block merged across two spans is credited proportionally, so neither
+        span looks padded by text that belongs to its neighbour."""
+        lean = LengthFidelityTests.LEAN_LINES
+        source = srt(*[
+            (i * 5.0, i * 5.0 + 4.0, text)
+            for i, text in enumerate(LengthFidelityTests.SOURCE_LINES)
+        ])
+        blocks = [
+            (i * 5.0, i * 5.0 + 4.0, text) for i, text in enumerate(lean)
+        ]
+        # replace the blocks for spans 3 and 4 with one bridging merge (15.0 -> 24.0)
+        blocks = blocks[:3] + [(15.0, 24.0, lean[3] + lean[4])] + blocks[5:]
+        output = srt(*blocks)
+        _, errors, warnings, _ = run_check(output, source)
+        self.assertEqual([], errors)
+        self.assertFalse([w for w in warnings if "check for padding" in w], warnings)
+        self.assertFalse([w for w in warnings if "check for dropped payload" in w], warnings)
 
 
 if __name__ == "__main__":

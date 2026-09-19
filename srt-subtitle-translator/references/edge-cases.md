@@ -70,12 +70,13 @@ recovered. Do not silently repair unknown corruption.
 |---|---|
 | Overlap | Report it; do not invent timestamps. ASS layered events may overlap. |
 | Zero or reversed duration | Preserve and flag the source anomaly. |
-| Source gap | Keep it; never stretch a cue to fill silence. |
+| Source gap | Keep it; never stretch a cue to fill silence. Merging across it is allowed only when the merge fixes a nameable defect; the checker reports the crossing as a warning. |
 | Dense block | Remove padding, condense payload, then split at a natural target-language seam. |
 | New output gap | Reject it unless it matches a source gap inside the same continuous span. |
 
 The checker uses one configurable subtitle-gap threshold as a pause proxy. It cannot
-prove an audible pause without the audio.
+prove an audible pause without the audio; the threshold structures the audit trail
+(warnings on every crossed gap), it does not forbid judgement-based merges.
 
 ## Markup and speakers
 
