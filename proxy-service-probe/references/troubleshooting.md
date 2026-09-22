@@ -135,3 +135,82 @@
 - 保持原文件换行风格（CRLF/LF）与末尾换行，避免无意义 diff
 - 写回后必须校验：JSON 可解析、tag 无重复、所有组成员存在
 - 写回前先备份带时间戳的副本
+
+## 20. 落地节点（链式/前置跳板）握手延迟与探测超时的致命矛盾
+
+**现象**：探测结果中“落地节点”一个都没有，哪怕原本在客户端中能正常中转的节点也全部被判定为“直连与前置均不可达”。
+**原因**：
+- 直连节点为 1-hop 链路，TCP + TLS 握手通常可在 0.5s~1.5s 内建立；
+- 落地节点为多跳链式链路（本机请求 -> 本地 sing-box 监听 -> Karing SOCKS5 前置 -> 远程服务器 -> TLS/Reality 握手 -> 目标网站）。实测该多跳代理链的建连需要 **2.3s ~ 3.5s**。
+- 若探针将超时固定设为较短的阈值（如 1.8s~2.0s）或全局设置了短的套接字超时（如 `socket.setdefaulttimeout(2.5)`），所有的落地探测请求在多跳握手完成前就会被主动打断（`ReadTimeout`），导致落地节点 100% 被误杀淘汰！
+**对策**：
+- **双轨差异化超时**：直连探测保持 2.0s~2.5s（快速排除不可达）；前置落地探测必须放宽至 **4.0s~5.0s**。
+- **全局套接字保护**：底层 `socket.setdefaulttimeout()` 必须至少设为 **6.0s**，绝不能低于 5s。
+- **轻量端点优先**：初始探活优先采用 `http://api.ipify.org` 或 `http://ipv4.icanhazip.com`，省去二次 SSL 往返，节省 1.0s+ 宝贵握手时间。
+
+## 21. 并发探测中的顺序阻塞与全局批次死线陷阱
+
+**现象**：整批节点（如批次 02~22）全部报 0 合格，耗时刚好卡在全局批次设定的 deadline（如 15.0s）。
+**原因**：
+- 采用 `for fut in futures.items(): fut.result(rem)` 顺序遍历并计算剩余时间。若前几个节点为死节点且耗尽了单节点超时，循环刚走到第 3、4 个节点时剩余预算就变为 `<= 0`。
+- 此时后续 20~30 个节点哪怕后台已经握手成功，也会在 `fut.result(timeout=0.05)` 中被判定为 `TimeoutError` 强制淘汰并强行 kill 内核！
+- 同时，批次过大（如 35~50 节点并发）会导致 Windows 本地 TCP 端口和队列饱和拥塞。
+**对策**：
+- 严禁对 futures 列表做顺序阻塞遍历！必须采用 `concurrent.futures.as_completed(futures, timeout=...)`，谁先完成谁先产出。
+- 批次大小建议控制在 **15 ~ 20 节点/批**，批次等待上限建议设为 35s~45s。
+- 退出清理时，必须**先 kill 内核子进程**（`proc.kill()`），使本地监听端口立即关闭并向挂起线程发送 TCP RST，然后再执行 `pool.shutdown(wait=False, cancel_futures=True)`，彻底防止线程卡死拖垮 Python 进程。
+
+## 22. Google 属地探测的 Stream 挂起陷阱
+
+**现象**：探针在探测 Google 属地（Gemini 页面）时偶发全局卡死，直到几分钟后超时。
+**原因**：Gemini 首页体积约 825KB。若使用 `session.get(url, stream=True)` 后调用 `resp.raw.read(1024*1024)` 尝试一次性读取 1MB，在 HTTP Keep-Alive 连接下，服务端传输完 825KB 后不会主动关闭套接字，客户端读取 1MB 会持续阻塞在剩余字节上，直到连接超时。
+**对策**：
+- 直接使用 `resp.text` 读取完整响应（内部由 requests 处理 chunked 编码与 Content-Length，瞬间完成）；
+- 或在 `resp.raw.read()` 时使用小 chunk 循环并检测 EOF。
+
+## 23. 测速防断流阈值切勿设过高以致误杀可用低速节点
+
+**现象**：大量连通性良好的节点被判定为“断流假死”淘汰，导致合格率极低。
+**原因**：旧版测速逻辑设定了“3秒内不足 300KB（即 100 KB/s）视为断流假死”。但在免费订阅或国际跨洋链路中，大量节点实际带宽在 20~80 KB/s，这对于文本 AI 对话、网页轻量浏览和 DNS 查询完全可用。
+**对策**：
+- 防断流判定应重点检测“是否完全建立真实数据流”。只要在 1.5s~2s 内平稳接收超过 **4KB ~ 16KB** 数据，即证明 TCP/HTTP 数据通道顺畅，不应判为假死。
+- 将节点根据真实速率标记高速节点为 `Fast`，让速度快的排在前面，但不轻易废弃可用节点。
+
+## 24. sing-box 1.10+ 内核校验严格模式与老式快照语法冲突
+
+**现象**：`sing-box check` 报错 `json: unknown field "statistics"`、`json: unknown field "server"`、`json: unknown field "type"`。
+**原因**：
+- sing-box 1.10+ 废弃了 `experimental.statistics`。
+- `dns.servers` 的语法在现代 sing-box 中全面统一为 `address: "..."`（如 `address: "8.8.8.8"`、`address: "tls://223.5.5.5"`），不再接受 `type: "udp"` 与 `server: "8.8.8.8"`，且移除了 `domain_resolver`。
+- `tls.utls.fingerprint` 严禁填 `"custom"`，必须回退至官方支持的 `"chrome"` / `"firefox"` 等。
+**对策**：
+- 导出或检测前必须执行 Schema 洗炼：
+  - `clean_node_for_singbox()` 过滤不支持的协议（`xhttp`、`anytls`、`mieru`、`shadowsocksr`），剥离 `tls_tricks` 与未知字段，归一化 fingerprint；
+  - 导出时自动清理 `experimental.statistics` 与旧式 DNS 字段。
+
+## 25. 前置代理穿透泄露检测（Leak Guard）
+
+**现象**：测试落地节点时，节点虽然返回了 IP，但实际上并没有连通远端节点，而是直接从前置代理（Karing）自身的出口出网了。
+**原因**：当代理软件配置不当或前置跳板转发退化时，流量被本地前置代理直接代为转发到公网，未能经过远端落地节点。
+**对策**：
+- 测试启动前必须先获取本地前置代理的“基线出口 IP”；
+- 凡经前置跳板测试的节点，其返回出口 IP 若与基线出口 IP 100% 相同，必须立即标记为 `前置穿透失败(出口等于前置本地出口)` 并淘汰，杜绝假落地。
+
+## 26. ThreadPoolExecutor 非守护线程导致主程序结束时死锁假死（Python 退出挂起）
+
+**现象**：终端控制台已完整输出“全部处理完毕”和节点明细表格，但 Python 进程一直停留在后台占用资源，终端光标不返回提示符，用户只能手动 Ctrl+C 或通过任务管理器强制杀进程。
+**原因**：
+- Python 标准库 `ThreadPoolExecutor` 创建的所有工作线程默认均为**非守护线程（`daemon=False`）**。
+- 在批次测试中，即使调用了 `pool.shutdown(wait=False, cancel_futures=True)`，此前各批次中部分阻塞在底层 Socket 握手或系统 DNS 查询（`getaddrinfo`）上的工作线程仍继续存活。
+- 当 `main()` 函数执行完毕调用 `sys.exit()` 时，Python 解释器在退出前会自动执行 `threading._shutdown()`，对所有未退出的非守护线程逐一调用 `t.join()`！若某个线程阻塞在网络 IO 上，解释器将被无限期卡死在退出阶段。
+**对策**：
+1. **显式使用 `os._exit()` 立即终止进程**：在脚本主入口 `if __name__ == '__main__':` 处，在刷新标准输出流后直接调用 `os._exit(ret)`：
+   ```python
+   if __name__ == '__main__':
+       ret = main()
+       sys.stdout.flush()
+       sys.stderr.flush()
+       os._exit(ret if isinstance(ret, int) else 0)
+   ```
+   `os._exit()` 直接在 C 运行时层面退出进程并释放全部 OS 句柄与网络连接，直接绕过 `threading._shutdown()` 的死锁等待。
+2. **退出时优先强制关闭内核监听**：在批次上下文退出时，先执行 `proc.kill()` 切断内核进程，强行关闭本地监听端口，向正在进行 Socket 读写的存活线程触发 TCP RST 异常，促使其立即中断退出。

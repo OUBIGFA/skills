@@ -86,8 +86,10 @@ def probe_egress(proxies=None, timeout=(3.0, 5.0)):
         "status": "unknown"
     }
 
-    # IPv4 端点
+    # IPv4 端点 (优先轻量 HTTP 端点，避免二次 SSL 握手延迟)
     v4_endpoints = [
+        ("ipify-http", "http://api.ipify.org?format=json"),
+        ("icanhazip-http", "http://ipv4.icanhazip.com"),
         ("ipify-v4", "https://api.ipify.org?format=json"),
         ("icanhazip-v4", "https://ipv4.icanhazip.com"),
         ("ipwhois-v4", "https://ipwho.is/"),
@@ -150,9 +152,9 @@ def probe_google_region(proxies, timeout=(3.0, 7.0)):
     # 1. 尝试 Gemini 页面
     try:
         resp = session.get("https://gemini.google.com/", proxies=proxies, timeout=timeout,
-                           stream=True, headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"})
+                           headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"})
         if resp.status_code == 200:
-            content = resp.raw.read(1024 * 1024).decode("utf-8", errors="replace")
+            content = resp.text
             m_reg = GEMINI_REGION_PATTERN.search(content)
             m_avail = GEMINI_AVAILABILITY_PATTERN.search(content)
 
@@ -173,9 +175,9 @@ def probe_google_region(proxies, timeout=(3.0, 7.0)):
     if not result["country_code"]:
         try:
             resp = session.get("https://www.youtube.com/premium", proxies=proxies, timeout=timeout,
-                               stream=True, headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"})
+                               headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"})
             if resp.status_code == 200:
-                content = resp.raw.read(1024 * 1024).decode("utf-8", errors="replace")
+                content = resp.text
                 m_gl = YOUTUBE_GL_PATTERN.search(content)
                 m_cc = YOUTUBE_COUNTRY_PATTERN.search(content)
                 if m_gl and m_cc and m_gl.group(1).upper() == m_cc.group(1).upper():

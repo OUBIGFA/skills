@@ -104,7 +104,6 @@ def main(argv=None):
                 "ai_supported": True,
                 "youtube_passed": False,
                 "shield_passed": False,
-                "is_key": False,
                 "is_fast": False,
                 "media_details": {"nf": True, "dp": True}
             })
@@ -242,7 +241,6 @@ def main(argv=None):
                         row["youtube_details"] = {}
 
                     # 判断角色
-                    row["is_key"] = bool(not row["is_landing"] and row.get("speed_kbs", 0) >= 128 and not g_region.get("is_sent_to_china"))
                     row["is_fast"] = bool(row.get("speed_kbs", 0) >= 500)
 
                     return row
@@ -312,4 +310,7 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    ret = main()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(ret if isinstance(ret, int) else 0)

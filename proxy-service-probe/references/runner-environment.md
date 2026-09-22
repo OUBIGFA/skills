@@ -57,11 +57,15 @@
 
 ---
 
-## 4. 降级模式（Graceful Degradation）
+## 4. 模式说明：标准全量模式 vs 降级模式
 
-- **无 Playwright 环境**：
-  - 若系统尚未安装 Playwright 或缺少 Chromium 内核，可添加命令行参数 `--no-browser`。
-  - 脚本将自动降级为 **HTTP 纯净轻量模式**：
-    - 完整执行：IP 真实出口、Google 地区判定、多源 GeoIP、Net.Coffee 纯净分、AI 三大平台接口测试、国际流媒体（Netflix/Disney+）及 3 秒流式下载测速。
-    - 安全跳过：YouTube 免登实播与浏览器免盾复核。
-    - 节点标签保留 `❇️`、`Key`、`Fast`、`_USAI` 等，仅省略依赖浏览器实播的 `✨️` 徽章。
+- **标准全量模式（默认）**：
+  - 系统默认启动全量服务测试，利用 Playwright Chromium 执行 YouTube 真实无头免登实播（>=10s）与 4 站免盾检测，为综合表现优异的节点打上 `✨️` 徽章。
+  - **严禁在用户未明确要求时默认跳过浏览器测试。**
+
+- **降级模式（Graceful Degradation，仅限显式指定 `--no-browser`）**：
+  - 仅当用户显式指定 `--no-browser`，或系统极端缺少 Playwright/Chromium 依赖时启用。
+  - 脚本将降级为 **HTTP 纯净轻量模式**：
+    - 完整执行：IP 真实出口、Google 地区判定、多源 GeoIP、Net.Coffee 纯净分、AI 三大平台接口测试、国际流媒体（Netflix/Disney+）及流式下载测速。
+    - 跳过：YouTube 免登实播与浏览器免盾复核。
+    - 节点标签保留 `❇️`、`Fast`、`_USAI` 等，省略依赖浏览器实播的 `✨️` 徽章。

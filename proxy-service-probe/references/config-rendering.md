@@ -12,6 +12,7 @@
 flowchart TD
     Inbound["用户流量入口"] --> NodeSelect["🌏️ 节点选择 (总开关)"]
     
+    NodeSelect --> Sparkle["✨️ 综合全通 (AI+YT+免盾 顶尖优选)"]
     NodeSelect --> AutoSelect["🚀 自动选择 (全量延迟选优)"]
     NodeSelect --> ManualSelect["🔄 手动切换 (全量节点列表)"]
     NodeSelect --> AIService["🔀 AI 服务"]
@@ -20,6 +21,7 @@ flowchart TD
     NodeSelect --> LandingGroup["🔒️ 落地节点"]
     NodeSelect --> Direct["DIRECT"]
 
+    AIService --> Sparkle
     AIService --> Google
     AIService --> USAI["✅ 解锁USAI (url-test)"]
     AIService --> AIUnlock["✅ 解锁 AI (url-test)"]
@@ -35,8 +37,8 @@ flowchart TD
     Streaming --> ManualSelect
 
     LandingNodes["落地节点群 (_Lnd / _USAI)"] -.->|dialer-proxy 链式前置| FrontGroup["🛡️ Front前置"]
-    FrontGroup --> FastSelect["⚡ Fast自动选择 (仅优质 Key 节点)"]
-    FrontGroup --> KeyNodes["Key 优质跳板列表"]
+    FrontGroup --> FastSelect["⚡ Fast自动选择 (直连优质节点)"]
+    FrontGroup --> DirectNodes["直连跳板列表"]
     FrontGroup --> Direct
 ```
 
@@ -46,8 +48,8 @@ flowchart TD
 
 1. **`🛡️ Front前置` 与 `⚡ Fast自动选择`**：
    - 专为落地节点提供前置中转跳板。
-   - 仅接纳标记为 `Key` 的优质前置节点，**绝不允许落地节点充当跳板**。
-   - 当无可用 Key 节点时，自动回落为 `DIRECT`。
+   - 仅接纳直连前置节点，**绝不允许落地节点充当跳板**。
+   - 当无可用直连节点时，自动回落为 `DIRECT`。
 2. **`✅ 解锁 AI` 与 `✅ 解锁USAI`**：
    - `✅ 解锁 AI`：由所有带 `❇️`（AI三大全通）的节点组成，执行低延迟自动选优。
    - `✅ 解锁USAI`：仅由归属美国（`US`）且带 `_USAI`（AI三大全通的美国落地节点）组成。

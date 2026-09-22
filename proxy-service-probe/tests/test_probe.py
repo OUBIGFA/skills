@@ -70,11 +70,11 @@ class TestProxyServiceProbe(unittest.TestCase):
         self.assertEqual(name_usai, "🇺🇸 ❇️✨️美国_1_USAI_NF_D+")
 
         # 优质日本直连跳板
-        name_jp_key = format_node_name(
+        name_jp = format_node_name(
             cc="JP", slot=2, ai_supported=True, comprehensive_sparkle=True,
-            is_key=True, media_details={"nf": True}
+            media_details={"nf": True}
         )
-        self.assertEqual(name_jp_key, "🇯🇵 ❇️✨️Key日本_2_NF")
+        self.assertEqual(name_jp, "🇯🇵 ❇️✨️日本_2_NF")
 
         # 批量打标与排序测试
         results = [
@@ -88,9 +88,8 @@ class TestProxyServiceProbe(unittest.TestCase):
                 "media_details": {"nf": True}
             },
             {
-                "proxy": {"name": "raw_hk_key", "type": "vless", "server": "2.2.2.2", "port": 443},
+                "proxy": {"name": "raw_hk", "type": "vless", "server": "2.2.2.2", "port": 443},
                 "cc": "HK",
-                "is_key": True,
                 "ai_supported": False,
                 "youtube_passed": False,
                 "shield_passed": False
@@ -99,7 +98,7 @@ class TestProxyServiceProbe(unittest.TestCase):
         tag_and_rename_nodes(results)
         # 香港应排在美国前面
         self.assertEqual(results[0]["cc"], "HK")
-        self.assertIn("Key香港_1", results[0]["final_name"])
+        self.assertIn("香港_1", results[0]["final_name"])
         self.assertEqual(results[1]["cc"], "US")
         self.assertIn("❇️✨️美国_1_USAI_NF", results[1]["final_name"])
 
@@ -109,7 +108,7 @@ class TestProxyServiceProbe(unittest.TestCase):
         self.assertIn("dns", template)
 
         mock_proxies = [
-            {"name": "🇭🇰 Key香港_1", "type": "vless", "server": "1.1.1.1", "port": 443},
+            {"name": "🇭🇰 香港_1", "type": "vless", "server": "1.1.1.1", "port": 443},
             {"name": "🇺🇸 ❇️✨️美国_1_USAI_NF_D+", "type": "vmess", "server": "2.2.2.2", "port": 443},
             {"name": "🇸🇬 ❇️新加坡_1_Lnd", "type": "trojan", "server": "3.3.3.3", "port": 443}
         ]
@@ -133,6 +132,56 @@ class TestProxyServiceProbe(unittest.TestCase):
         ]
         for req in required:
             self.assertIn(req, group_names, f"缺少策略组: {req}")
+
+    def test_singbox_format_and_sparkle(self):
+        import probe_singbox
+        name = probe_singbox.format_node_name(
+            cc="US", slot=1, city="洛杉矶", ai_supported=True,
+            comprehensive_sparkle=True, is_fast=True, is_landing=True,
+            is_usai=True, media_details={"nf": True, "dp": True}
+        )
+        self.assertEqual(name, "🇺🇸 ❇️✨️Fast美国_洛杉矶_1_USAI_NF_D+")
+
+    def test_convert_singbox_to_clash_yaml(self):
+        from core.renderer import convert_singbox_to_clash_yaml
+        import tempfile
+        import yaml
+
+        mock_sb = {
+            "outbounds": [
+                {
+                    "type": "vless",
+                    "tag": "🇺🇸 ❇️✨️美国_1_NF",
+                    "server": "1.2.3.4",
+                    "server_port": 443,
+                    "uuid": "01234567-89ab-cdef-0123-456789abcdef"
+                },
+                {
+                    "type": "vmess",
+                    "tag": "🇭🇰 香港_1_Lnd",
+                    "server": "5.6.7.8",
+                    "server_port": 443,
+                    "uuid": "01234567-89ab-cdef-0123-456789abcdef"
+                }
+            ]
+        }
+
+        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as tf:
+            tmp_yaml = tf.name
+
+        try:
+            convert_singbox_to_clash_yaml(mock_sb, tmp_yaml)
+            with open(tmp_yaml, "r", encoding="utf-8") as f:
+                clash_cfg = yaml.safe_load(f)
+
+            self.assertIn("proxies", clash_cfg)
+            self.assertEqual(len(clash_cfg["proxies"]), 2)
+            group_names = {g["name"] for g in clash_cfg["proxy-groups"]}
+            self.assertIn("✨️ 综合全通", group_names)
+            self.assertIn("🛡️ Front前置", group_names)
+        finally:
+            if os.path.exists(tmp_yaml):
+                os.remove(tmp_yaml)
 
 
 if __name__ == "__main__":

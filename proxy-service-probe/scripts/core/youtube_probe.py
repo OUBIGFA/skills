@@ -4,7 +4,7 @@ import asyncio
 import time
 import re
 
-YOUTUBE_VIDEO_IDS = ("M7lc1UVf-VE", "aqz-KE-bpKQ", "jNQXAC9IVRw")
+YOUTUBE_VIDEO_IDS = ("jNQXAC9IVRw", "YE7VzlLtp-4", "M7lc1UVf-VE")
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
 # 注入给页面的 HTML5 播放观察脚本
@@ -33,6 +33,12 @@ OBSERVER_JS = """
         const video = document.querySelector('video');
         if (!video) return;
 
+        // 确保静音并尝试触发播放 (突破 Chrome Autoplay Policy)
+        video.muted = true;
+        if (video.paused) {
+            video.play().catch(() => {});
+        }
+
         if (video.currentTime > 0 && !video.paused) {
             if (window.__yt_probe.startTime < 0) {
                 window.__yt_probe.startTime = Date.now();
@@ -47,7 +53,7 @@ OBSERVER_JS = """
         }
     };
 
-    setInterval(check, 500);
+    setInterval(check, 300);
 })();
 """
 
@@ -70,19 +76,19 @@ async def _get_context_ip(context):
     return None
 
 
-async def probe_single_video(context, video_id, target_duration=10.0, max_wait=30.0):
+async def probe_single_video(context, video_id, target_duration=10.0, max_wait=20.0):
     """测试单个视频的免登录真实播放。"""
     page = await context.new_page()
     url = f"https://www.youtube.com/watch?v={video_id}&hl=en"
     try:
         await page.add_init_script(OBSERVER_JS)
-        await page.goto(url, timeout=20000, wait_until="domcontentloaded")
+        await page.goto(url, timeout=18000, wait_until="domcontentloaded")
 
         # 尝试点击潜在的 Cookie 弹窗或播放按钮
         try:
-            for selector in ("button[aria-label*='Accept']", "button[aria-label*='Agree']", ".ytp-play-button"):
+            for selector in (".ytp-large-play-button", "button[aria-label*='Play']", "button[aria-label*='Accept']", "button[aria-label*='Agree']", ".ytp-play-button"):
                 btn = page.locator(selector).first
-                if await btn.is_visible(timeout=1500):
+                if await btn.is_visible(timeout=800):
                     await btn.click()
         except Exception:
             pass
@@ -99,7 +105,7 @@ async def probe_single_video(context, video_id, target_duration=10.0, max_wait=3
             if played >= target_duration:
                 return {"status": "passed", "reason": "video_played_cleanly", "played": round(played, 1)}
 
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.5)
 
         return {"status": "failed", "reason": "playback_timeout_or_buffering", "played": 0}
     except Exception as e:
@@ -116,7 +122,11 @@ async def probe_youtube_async(proxy_url, expected_ip=None, videos=YOUTUBE_VIDEO_
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=["--disable-quic", "--disable-blink-features=AutomationControlled"]
+            args=[
+                "--disable-quic",
+                "--disable-blink-features=AutomationControlled",
+                "--autoplay-policy=no-user-gesture-required"
+            ]
         )
         try:
             context = await browser.new_context(

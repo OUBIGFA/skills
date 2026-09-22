@@ -2,6 +2,7 @@
 """Clash / Mihomo 配置渲染模块: 以 template.yaml 为母版，注入节点并生成标准策略组与规则集。"""
 import os
 import re
+import json
 from copy import deepcopy
 import yaml
 
@@ -42,8 +43,9 @@ def clean_proxy_dict(proxy):
 def build_proxy_groups(proxies):
     """根据节点的能力和属性构造标准策略组结构。"""
     all_names = [p["name"] for p in proxies]
-    keys = [p["name"] for p in proxies if "Key" in p.get("name", "")]
     landing = [p["name"] for p in proxies if "_Lnd" in p.get("name", "") or "_USAI" in p.get("name", "")]
+    directs = [p["name"] for p in proxies if "_Lnd" not in p.get("name", "") and "_USAI" not in p.get("name", "")]
+    sparkle = [p["name"] for p in proxies if ("✨️" in p.get("name", "") or "✨" in p.get("name", ""))]
     ai = [p["name"] for p in proxies if "❇️" in p.get("name", "")]
     usai = [p["name"] for p in proxies if "_USAI" in p.get("name", "")]
     us = [p["name"] for p in proxies if re.search(r"🇺🇸|美国|USA|\bUS\b", p.get("name", ""))]
@@ -73,19 +75,41 @@ def build_proxy_groups(proxies):
         else:
             p.pop("dialer-proxy", None)
 
+    # 构造前置跳板池选项
+    front_proxies = [fast_group_name, "DIRECT"]
+    if directs:
+        front_proxies.extend(directs)
+
+    # 核心入口与分流总开关代理列表
+    node_select_proxies = []
+    if sparkle:
+        node_select_proxies.append("✨️ 综合全通")
+    node_select_proxies.extend(["🚀 自动选择", "🔄 手动切换", "🔀 AI 服务", "🇺🇸 Google", "🎬 国际流媒体", "🔒️ 落地节点", "DIRECT"])
+
+    # AI 策略组代理列表
+    ai_service_proxies = []
+    if sparkle:
+        ai_service_proxies.append("✨️ 综合全通")
+    ai_service_proxies.extend(["🇺🇸 Google", "✅ 解锁USAI", "✅ 解锁 AI", "🔄 手动切换"])
+
     groups = [
-        # 前置跳板管理组 (仅允许 Key 节点作为前置跳板)
-        {"name": front_group_name, "type": "select", "proxies": [fast_group_name, "DIRECT"] + (keys if keys else [])},
-        make_url_test(fast_group_name, keys, ["DIRECT"]),
+        # 前置跳板管理组 (允许直连非落地节点及本地 Karing 端口作为前置跳板)
+        {"name": front_group_name, "type": "select", "proxies": front_proxies},
+        make_url_test(fast_group_name, directs, ["DIRECT"]),
 
         # 核心入口与分流总开关
-        {"name": "🌏️ 节点选择", "type": "select",
-         "proxies": ["🚀 自动选择", "🔄 手动切换", "🔀 AI 服务", "🇺🇸 Google", "🎬 国际流媒体", "🔒️ 落地节点", "DIRECT"]},
+        {"name": "🌏️ 节点选择", "type": "select", "proxies": node_select_proxies},
         make_url_test("🚀 自动选择", all_names, ["DIRECT"], hidden=False, tolerance=20),
         {"name": "🔄 手动切换", "type": "select", "proxies": all_names if all_names else ["DIRECT"]},
+    ]
 
+    # ✨️ 综合全通标杆策略组 (AI + YouTube + 4站免盾全部通过)
+    if sparkle:
+        groups.append(make_url_test("✨️ 综合全通", sparkle, ["🚀 自动选择"], url="https://www.google.com/generate_204", interval=60, tolerance=0, hidden=False))
+
+    groups.extend([
         # AI 与 Google 策略组
-        {"name": "🔀 AI 服务", "type": "select", "proxies": ["🇺🇸 Google", "✅ 解锁USAI", "✅ 解锁 AI", "🔄 手动切换"]},
+        {"name": "🔀 AI 服务", "type": "select", "proxies": ai_service_proxies},
         {"name": "🇺🇸 Google", "type": "select", "proxies": ["✅ 解锁USAI", "✅ 解锁 AI", "🇺🇸 美国节点", "🚀 自动选择", "🔄 手动切换"]},
         make_url_test("✅ 解锁 AI", ai, ["🚀 自动选择"], url="https://www.google.com/generate_204", interval=60, tolerance=0),
         make_url_test("✅ 解锁USAI", usai, ["🚀 自动选择"], url="https://www.google.com/generate_204", interval=60, tolerance=0),
@@ -100,7 +124,7 @@ def build_proxy_groups(proxies):
         {"name": "🔒️ 落地节点", "type": "select", "proxies": landing if landing else ["DIRECT"]},
         {"name": "⛔️ 拦截广告", "type": "select", "proxies": ["DIRECT", "REJECT"]},
         {"name": "↪️ 漏网之鱼", "type": "select", "proxies": ["🌏️ 节点选择", "DIRECT"]},
-    ]
+    ])
 
     return groups
 
@@ -146,3 +170,32 @@ def export_clash_yaml(proxies, output_path, template_path=None):
     with open(output_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(cfg, f, allow_unicode=True, sort_keys=False)
     return output_path
+
+
+def convert_singbox_to_clash_yaml(singbox_input, output_yaml_path, template_path=None, front_proxy=("127.0.0.1", 3067)):
+    """
+    将 sing-box JSON 配置文件直接转换为标准的 Clash / Mihomo YAML 配置文件。
+    输入可为 JSON 路径或已被解析的 dict 对象。
+    """
+    from .parsers import parse_singbox_outbound
+
+    if isinstance(singbox_input, str):
+        with open(singbox_input, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    elif isinstance(singbox_input, dict):
+        cfg = singbox_input
+    else:
+        raise TypeError("singbox_input 必须是文件路径字符串或 dict 对象")
+
+    outbounds = cfg.get("outbounds", [])
+    clash_proxies = []
+
+    for ob in outbounds:
+        t = ob.get("type", "").lower()
+        if t in ("selector", "urltest", "direct", "block", "dns", "socks"):
+            continue
+        p = parse_singbox_outbound(ob)
+        if p:
+            clash_proxies.append(p)
+
+    return export_clash_yaml(clash_proxies, output_yaml_path, template_path=template_path)

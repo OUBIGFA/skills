@@ -10,14 +10,17 @@ SPEED_TEST_URLS = [
     ("https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg", {"Range": "bytes=0-10485759"}),
 ]
 
-STALL_MIN_BYTES = 300 * 1024  # 3 秒内累计下载不足 300KB 视为断流假死
+DEFAULT_STALL_MIN_BYTES = 16 * 1024  # 默认 3 秒内累计下载不足 16KB 视为断流假死 (兼顾低速文字/AI节点)
 
 
-def measure_speed_and_stall(proxies, window_sec=3.0, timeout=(3.0, 5.0)):
+def measure_speed_and_stall(proxies, window_sec=3.0, timeout=(3.0, 5.0), stall_min_bytes=None):
     """
     持续流式下载一个固定时间窗，返回 (KB/s, 累计字节, 是否断流, 淘汰原因)。
     任一测速目标可通即采纳。
     """
+    if stall_min_bytes is None:
+        stall_min_bytes = DEFAULT_STALL_MIN_BYTES
+
     best_speed = 0.0
     best_bytes = 0
     session = requests.Session()
@@ -40,7 +43,7 @@ def measure_speed_and_stall(proxies, window_sec=3.0, timeout=(3.0, 5.0)):
             if total > best_bytes:
                 best_bytes = total
                 best_speed = kbs
-            if total >= STALL_MIN_BYTES:
+            if total >= stall_min_bytes:
                 break
         except Exception:
             continue
@@ -48,7 +51,7 @@ def measure_speed_and_stall(proxies, window_sec=3.0, timeout=(3.0, 5.0)):
     session.close()
 
     is_dead = best_bytes == 0
-    is_stalled = 0 < best_bytes < STALL_MIN_BYTES
+    is_stalled = 0 < best_bytes < stall_min_bytes
 
     eliminated_reason = None
     if is_dead:
