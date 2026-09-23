@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 sing-box 订阅节点双轨服务能力测试、智能打标与配置导出命令行工具 (probe_singbox.py)。
-支持对 sing-box JSON 执行全量直连与 Karing/前置跳板双轨探测、严格 Schema 清洗与导出。
+支持对 sing-box JSON 执行全量直连与前置跳板双轨探测、严格 Schema 清洗与导出。
 """
 import sys
 import os
@@ -27,7 +27,7 @@ if sys.platform == "win32":
         pass
 
 from core.singbox_runner import find_singbox_bin, clean_node_for_singbox, singbox_dual_listeners, singbox_active_listeners, export_singbox_json
-from core.egress_geo import probe_google_region, query_ip_info, CATEGORY_ORDER, country_name_zh, flag_emoji
+from core.egress_geo import probe_egress, probe_geolocation, CATEGORY_ORDER, country_name_zh, flag_emoji
 from core.ai_probe import probe_all_ai
 from core.media_probe import probe_all_media
 from core.speed_probe import measure_speed_and_stall
@@ -79,6 +79,7 @@ def parse_info_from_tag(tag):
     return {
         "cc": cc,
         "ai_supported": ("❇️" in tag),
+        "is_key": ("Key" in tag),
         "is_fast": ("Fast" in tag),
         "is_landing": ("_Lnd" in tag or "_USAI" in tag),
         "is_usai": ("_USAI" in tag),
@@ -89,7 +90,9 @@ def parse_info_from_tag(tag):
 
 
 def format_node_name(cc, slot, city="", ai_supported=False, comprehensive_sparkle=False,
-                      is_fast=False, is_landing=False, is_usai=False, media_details=None):
+                      is_key=False, is_fast=False, is_landing=False, is_usai=False, media_details=None, poison_tag=None):
+    if poison_tag:
+        ai_supported = comprehensive_sparkle = is_usai = False
     flag = flag_emoji(cc)
     cname = country_name_zh(cc)
 
@@ -98,7 +101,9 @@ def format_node_name(cc, slot, city="", ai_supported=False, comprehensive_sparkl
         prefix_badges += "❇️"
     if comprehensive_sparkle:
         prefix_badges += "✨️"
-    if is_fast:
+    if is_key:
+        prefix_badges += "Key"
+    elif is_fast:
         prefix_badges += "Fast"
 
     country_part = f"{prefix_badges}{cname}"
@@ -117,39 +122,13 @@ def format_node_name(cc, slot, city="", ai_supported=False, comprehensive_sparkl
     if md.get("dp"):
         media_suffix += "_D+"
 
-    return f"{flag} {country_part}{lnd_suffix}{media_suffix}"
+    return f"{flag} {country_part}{lnd_suffix}{media_suffix}{poison_tag or ''}"
 
 
 def fast_probe_ip(proxies, timeout=2.0):
-    """高效探测出口 IP (优先轻量 HTTP 端点)"""
-    import requests
-    session = requests.Session()
-    session.trust_env = False
-    endpoints = [
-        ("http://api.ipify.org?format=json", "json"),
-        ("https://api.ipify.org?format=json", "json"),
-        ("http://ipv4.icanhazip.com", "text")
-    ]
-    for url, fmt in endpoints:
-        try:
-            r = session.get(url, proxies=proxies, timeout=timeout, headers={"User-Agent": "curl/7.88.1"})
-            if r.status_code == 200:
-                if fmt == "json":
-                    ip = r.json().get('ip')
-                    if ip:
-                        session.close()
-                        return ip
-                else:
-                    m = re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', r.text)
-                    if m:
-                        session.close()
-                        return m.group(0)
-        except requests.exceptions.RequestException:
-            break
-        except Exception:
-            continue
-    session.close()
-    return None
+    """用共享 HTTPS 回显验证公网 IP，不从错误页中匹配任意数字。"""
+    result = probe_egress(proxies, timeout=(timeout, timeout), ipv6=False)
+    return result['ipv4']['ip'] or result['ipv6']['ip']
 
 
 def run_fast_speed(proxies, max_sec=1.5, min_bytes=4*1024, timeout=2.5):
@@ -228,32 +207,18 @@ def test_target_node(target, baseline_ip=None):
         res['eliminated_reason'] = sp["eliminated_reason"]
         return res
 
-    # 4. Google 官方属地与地区判定
-    g_region = probe_google_region(active_proxies, timeout=(2.0, 3.5))
-    res['google_region'] = g_region
-
-    cc = g_region.get("country_code")
-    if not cc or cc == "UNK":
-        try:
-            info = query_ip_info(res['exit_ip'], timeout=(1.0, 1.5))
-            res['ip_info'] = info
-            cc = info.get("country_code") or "UNK"
-        except Exception:
-            res['ip_info'] = {}
-    else:
-        res['ip_info'] = {"country_code": cc}
-
-    if cc == "UNK":
-        m_cc = re.search(r'([\U0001F1E6-\U0001F1FF]{2})', orig_name)
-        if m_cc:
-            f = m_cc.group(1)
-            cc = chr(ord(f[0]) - 0x1F1E6 + ord('A')) + chr(ord(f[1]) - 0x1F1E6 + ord('A'))
-    res['cc'] = cc
-    res['city'] = parse_city_from_name(orig_name)
+    # 4. 与 Mihomo 共用属地判定，Google 可用时也查询第三方，不制造同源“共识”。
+    res.update(probe_geolocation(active_proxies))
+    g_region = res['google_region']
+    if not res['exit_ip']:
+        res['eliminated_reason'] = "属地复核时未验证到公网出口"
+        return res
+    res['city'] = parse_city_from_name(orig_name) if res['cc'] == parse_info_from_tag(orig_name)['cc'] else ''
 
     # 5. AI 解锁
     ai_res = probe_all_ai(active_proxies, google_region_info=g_region, timeout=(2.0, 3.5))
-    res['ai_supported'] = ai_res.get("ai_supported", False)
+    res['ai_supported'] = bool(ai_res.get("ai_supported", False) and res['geo_decision']['egress_stable']
+                               and not res['geo_decision']['is_pool'])
     res['ai_details'] = ai_res.get("details", {})
 
     # 6. 流媒体
@@ -281,6 +246,10 @@ def parse_args():
                         help="跳过阶段一基础初筛，直接对输入配置中的代理节点执行阶段二全量深度浏览器实测 (YouTube免登实播 + 4站免盾)")
     parser.add_argument("--browser-workers", type=int, default=6,
                         help="浏览器实测并发进程数 (默认: 6)")
+    parser.add_argument("--speed-test", action="store_true", default=False,
+                        help="主动开启本地完整下载测速 (非主动技能，仅在显式要求时执行)")
+    parser.add_argument("--rate-limit-mbps", type=float, default=10.0,
+                        help="测速带宽上限 (Mbps)，防止跑满本地网络导致卡顿 (默认: 10.0)")
     parser.add_argument("--report", "-r", help="保存测试详情报告的 JSON 路径")
     return parser.parse_args()
 
@@ -515,16 +484,20 @@ def main():
         slot = r['assigned_slot']
         is_usai = bool(r.get('is_landing') and cc == 'US' and r.get('ai_supported'))
         sparkle = r.get('comprehensive_sparkle', False)
+        is_key = bool(r.get('is_key', False))
+        is_fast = bool(r.get('is_fast', False) and not is_key)
         name = format_node_name(
             cc=cc,
             slot=slot,
             city=r.get('city', ''),
             ai_supported=r.get('ai_supported', False),
             comprehensive_sparkle=sparkle,
-            is_fast=r.get('is_fast', False),
+            is_key=is_key,
+            is_fast=is_fast,
             is_landing=r.get('is_landing', False),
             is_usai=is_usai,
-            media_details=r.get('media_details', {})
+            media_details=r.get('media_details', {}),
+            poison_tag=(r.get('geo_decision') or {}).get('poison_tag')
         )
         if name in seen_names:
             slot = allocators[cc].next_slot()
@@ -534,10 +507,12 @@ def main():
                 city=r.get('city', ''),
                 ai_supported=r.get('ai_supported', False),
                 comprehensive_sparkle=sparkle,
-                is_fast=r.get('is_fast', False),
+                is_key=is_key,
+                is_fast=is_fast,
                 is_landing=r.get('is_landing', False),
                 is_usai=is_usai,
-                media_details=r.get('media_details', {})
+                media_details=r.get('media_details', {}),
+                poison_tag=(r.get('geo_decision') or {}).get('poison_tag')
             )
         seen_names.add(name)
         r['final_name'] = name
@@ -548,11 +523,12 @@ def main():
         order_info = CATEGORY_ORDER.get(cc, (7, 999, '未知'))
         reg_rank = order_info[0]
         cntry_rank = order_info[1]
-        sparkle_rank = 0 if row.get("comprehensive_sparkle") else 1
-        ai_rank = 0 if row.get("ai_supported") else 1
+        key_rank = 0 if row.get("is_key") else 1
         fast_rank = 0 if row.get("is_fast") else 1
+        ai_rank = 0 if row.get("ai_supported") else 1
+        sparkle_rank = 0 if row.get("comprehensive_sparkle") else 1
         slot = row.get("slot", 9999)
-        return (reg_rank, cntry_rank, sparkle_rank, ai_rank, fast_rank, slot)
+        return (reg_rank, cntry_rank, key_rank, fast_rank, ai_rank, sparkle_rank, slot)
 
     qualified.sort(key=sort_key)
 
@@ -630,6 +606,12 @@ def main():
                     "comprehensive_sparkle": r.get('comprehensive_sparkle'),
                     "media": r.get('media_details'),
                     "shield_details": r.get('shield_details'),
+                    "geo_decision": r.get('geo_decision'),
+                    "google_region": r.get('google_region'),
+                    "egress": r.get('egress'),
+                    "egress_after": r.get('egress_after'),
+                    "ip_info": r.get('ip_info'),
+                    "ip_info_by_ip": r.get('ip_info_by_ip'),
                     "youtube_details": r.get('youtube_details')
                 } for r in qualified
             ]

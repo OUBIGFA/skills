@@ -183,6 +183,85 @@ class TestProxyServiceProbe(unittest.TestCase):
             if os.path.exists(tmp_yaml):
                 os.remove(tmp_yaml)
 
+    def test_singbox_modern_dns_and_node_sorting(self):
+        from core.singbox_runner import make_standard_singbox_config, export_singbox_json
+        import tempfile
+        import json
+
+        proxies = [
+            {"tag": "🇭🇰 香港_1_Lnd", "type": "vless", "server": "1.1.1.1", "server_port": 443},
+            {"tag": "🇺🇸 ❇️✨️美国_8_NF_D+", "type": "vmess", "server": "2.2.2.2", "server_port": 443},
+            {"tag": "🇯🇵 日本_1_D+", "type": "trojan", "server": "3.3.3.3", "server_port": 443}
+        ]
+        results = [
+            {"final_name": p["tag"], "raw_node": p, "is_landing": ("_Lnd" in p["tag"])}
+            for p in proxies
+        ]
+
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tf:
+            tmp_json = tf.name
+
+        try:
+            exp_res = export_singbox_json({}, results, tmp_json)
+            self.assertTrue(exp_res["check_ok"])
+
+            with open(tmp_json, "r", encoding="utf-8") as f:
+                sb_cfg = json.load(f)
+
+            # 1. 验证 DNS 结构完全符合 1.12+/1.14+ 强类型规范 (无 address 废弃语法，具备 type: https/udp/local，直连/本地无冗余 detour)
+            dns_servers = sb_cfg["dns"]["servers"]
+            types = {s["tag"]: s.get("type") for s in dns_servers}
+            self.assertEqual(types["dns_proxy"], "https")
+            self.assertEqual(types["dns_direct"], "udp")
+            self.assertEqual(types["dns_local"], "local")
+            self.assertNotIn("dns_block", types)
+            for s in dns_servers:
+                self.assertNotIn("address", s, f"DNS 服务器 {s['tag']} 不应包含废弃的 address 字段")
+                if s["tag"] in ("dns_direct", "dns_local"):
+                    self.assertNotIn("detour", s, f"DNS 服务器 {s['tag']} 不应指向空 direct 出站")
+
+            # 2. 验证 inbounds[0] 不含废弃的 sniff 字段 (符合 1.13+ 规范)
+            for ib in sb_cfg["inbounds"]:
+                self.assertNotIn("sniff", ib, "inbounds 不应包含废弃的 sniff 字段")
+
+            # 3. 验证 outbounds 不含废弃的 dns 特殊出站 (符合 1.13+ 规范，DNS 使用 hijack-dns 规则劫持)
+            out_types = {o.get("type") for o in sb_cfg["outbounds"]}
+            self.assertNotIn("dns", out_types, "outbounds 不应包含废弃的 dns 出站")
+
+            # 3.1 验证策略组完全同步 Clash/Mihomo 17 个标准策略组
+            group_tags = {o.get("tag") for o in sb_cfg["outbounds"] if o.get("type") in ("selector", "urltest")}
+            expected_groups = [
+                "🛡️ Front前置", "⚡ Fast自动选择", "🌏️ 节点选择", "🚀 自动选择", "🔄 手动切换",
+                "✨️ 综合全通", "🔀 AI 服务", "🇺🇸 Google", "✅ 解锁 AI", "✅ 解锁USAI",
+                "🇺🇸 美国节点", "🎬 国际流媒体", "🎥 奈飞解锁", "✨ 解锁Disney+",
+                "🔒️ 落地节点", "⛔️ 拦截广告", "↪️ 漏网之鱼"
+            ]
+            for eg in expected_groups:
+                self.assertIn(eg, group_tags, f"sing-box 配置应包含与 YAML 一致的策略组: {eg}")
+
+            # 4. 验证 route.rules 包含 action: sniff 与 action: hijack-dns
+            rule_actions = [r.get("action") for r in sb_cfg["route"]["rules"] if "action" in r]
+            self.assertIn("sniff", rule_actions)
+            self.assertIn("hijack-dns", rule_actions)
+
+            # 5. 验证 1.14+ 现代 http_clients 替代旧版 download_detour
+            self.assertIn("http_clients", sb_cfg)
+            self.assertEqual(sb_cfg["route"]["default_http_client"], "direct-client")
+            rule_sets = sb_cfg["route"]["rule_set"]
+            for rs in rule_sets:
+                self.assertNotIn("download_detour", rs, "1.14+ 规则集不应包含已废弃的 download_detour")
+            self.assertEqual(sb_cfg["route"]["default_domain_resolver"], "dns_direct")
+
+            # 6. 验证地区分组与落地节点规则：同地区落地排最后；若全节点首位地区仅有单个落地节点，则挪至下一个地区后面；定好位置再严格从 1 重新编号
+            raw_outbounds = [o["tag"] for o in sb_cfg["outbounds"] if o["type"] not in ("selector", "urltest", "direct", "block", "dns")]
+            self.assertEqual(raw_outbounds[0], "🇯🇵 日本_1_D+")
+            self.assertEqual(raw_outbounds[1], "🇭🇰 香港_1_Lnd")
+            self.assertEqual(raw_outbounds[2], "🇺🇸 ❇️✨️美国_1_NF_D+")
+        finally:
+            if os.path.exists(tmp_json):
+                os.remove(tmp_json)
+
 
 if __name__ == "__main__":
     unittest.main()
+

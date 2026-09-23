@@ -9,7 +9,7 @@
 ### 1.1 双栈出口与基线防污染
 - **出口探测端点**：
   - IPv4: `https://api.ipify.org?format=json`, `https://ipv4.icanhazip.com`
-  - IPv6: `https://api6.ipify.org?format=json`, `https://ipv6.icanhazip.com`
+  - IPv6: `https://api6.ipify.org?format=json`；Cloudflare trace 返回 IPv6 时也单独归入 IPv6。
 - **跑机基线出口（Runner Baseline）**：
   - 在探测任何节点前，必须先获取本地/跑机自身的直连公网出口 IP（`probe_egress(None)`）。
   - 若被测节点返回的出口 IP 与跑机自身直连出口一致（`runner_ip_match=True`），说明代理穿透失败或流量走直连泄露，判定为无效节点。
@@ -17,32 +17,27 @@
 - **出口稳定性（Stability）**：
   - 各项服务探测前后分别采集出口 IP。若前后出口 IP 不一致，标记为出口不稳定（漂移）。
 
-### 1.2 Google 自身地区码判定 (Google Region - 最高优先级)
-独立于任何第三方商用或公开 GeoIP 库，以 Google 官方服务对该 IP 的属地归因作为最终国别定性的第一依据：
-- **第一来源（Gemini 页面）**：
-  - 请求目标：`https://gemini.google.com/`
-  - 匹配规则：
-    1. 提取 ISO 3166-1 alpha-3 地区码：正则 `,2,1,200,\"([A-Z]{3})\"`（例如 `HKG` -> `HK`, `SGP` -> `SG`, `JPN` -> `JP`, `USA` -> `US`）。
-    2. 提取 Gemini 服务可用性标志：正则 `\[45631641,null,(true|false|null)`。
-- **第二来源（YouTube Premium 页面兜底）**：
-  - 当 Gemini 页面无法读取时，请求 `https://www.youtube.com/premium` 作为兜底。
-  - 必须同时存在 `"INNERTUBE_CONTEXT_GL":"([A-Za-z]{2})"` 与 `"countryCode":"([A-Za-z]{2})"` 且两者完全一致，才采纳为有效国家码（若二者不一致，说明属于 YouTube 默认 fallback，记为 `region_ambiguous` 不予采纳）。
-- **送中判定（Sent-to-China）**：
-  - 若 Google 地区码归因为 `CN` 或 `CHN`，说明该 IP 被 Google 识别为中国大陆出口。
-  - 必须剥离该节点的 AI 解锁资格（`ai_supported=False`），并视策略进行送中隔离或淘汰。
+### 1.2 Google 自身地区码与 IP 属地分开记录
+- Gemini 的有效 ISO alpha-3 标记优先；YouTube 必须有唯一且一致的 `INNERTUBE_CONTEXT_GL` 和 `countryCode` 才能兜底。缺标记、HTTP 错误、模糊页面不能补成美国；不再以 `google.com` 域名或界面语言定国。
+- Google 结果与第三方强共识冲突、与 YouTube 不一致或缺失时，额外复查一次；前后地区变化撤销 Google 定国资格并保留待复核标志。
+- 报告分别保留 `google_region`、`ip_info_by_ip`、`geo_decision`；Google 的服务归属不等于物理机房位置。
+- **送中/受限地区污染优先按已有专门方案处理**：
+  - 例如 IP 属地有韩国共识、Google/Gemini 为 `CN/CHN`：保留韩国，记录 `is_sent_to_china=True` / `is_poisoned=True`，命名后缀 `_⚠️CN`，剥离 AI 全通和综合全通徽章。
+  - 不把这类节点改成中国或普通“未知”；是否淘汰仍由任务策略决定，本次属地抽查不修改订阅。
+  - 任一次可信 CN 观测不能被后续非 CN 信号投票抹掉。
+- 普通非受限地区的强分歧暂定 `UNK`，保留候选、来源和待复核标志，不用原国旗兜底。
 
-### 1.3 多源 GeoIP 投票
-当 Google 未给出有效国家码时，采用多源公网数据库进行投票：
-- **数据源**：
-  - `ipwhois`: `https://ipwho.is/{ip}`
-  - `ipsb`: `https://api.ip.sb/geoip/{ip}`
-  - `Net.Coffee`: `https://ip.net.coffee/api/ip/lookup/{ip}`
-- **投票算法**：
-  - `confirmed`：来源 >= 2 且全部一致（高置信度）。
-  - `majority`：超过 50% 来源一致（中置信度）。
-  - `conflict` / `insufficient`：存在冲突或数据不足（低置信度）。
+### 1.3 出口绑定的多源 GeoIP
+- 固定 IP 反查：IPinfo、ipwho.is、ipapi.is、DB-IP；全部 HTTPS，每条来源须回显同一有效公网 IP 才能投票。注册地、ASN 国别不作为地理位置。
+- ipapi.is 兼容嵌套 `location.country_code` 和无密钥 free-tier 英文 `country` 两种已实测响应。
+- 来源族去重：至少两票且严格超过 50% 才形成共识。平票、单来源、错误、字段缺失均不产生确定国别；不按国家黑名单丢弃真实 SC/CY 等记录。
+- Cloudflare `loc` 是辅助 GeoIP 观测；`colo` 是 CF 接入机房，不计票、不作“物理锚点”。
+- 出口 IPv4/IPv6 分别归档，按 IP 反查；双栈不等于轮换池。同族多 IP、前后变化、跨 IP 国别冲突需要标记。Google 请求只验证其服务地区，不能证明其目的站出口一定等于回显站出口。
+- 不复用旧 `google_multi_signals` 为有效来源。默认无跨运行 GeoIP 缓存，HTTP 429/超时/解析错误完整留痕。
+- 详细判据、开源参考与纯属地复核命令见 [geolocation.md](geolocation.md)。
 
 ### 1.4 IP 信誉与欺诈风险评估 (Net.Coffee)
+该来源不再参与属地投票；须回显被查询 IP 才使用信誉字段，失败保留诊断而不是默认为好 IP。
 - **Trust Score**：0-100 分。
   - `>= 75`：良好 (`good`)。
   - `45 - 74`：一般 (`moderate`)。
@@ -123,14 +118,42 @@
   - 请求 `https://www.disneyplus.com/`。
   - 状态码返回 `200`, `301`, `302` 且页面正文不含 `not available` 或 `unsupported` 判定为解锁。
 
-### 5.2 3 秒流式下载带宽与断流淘汰 (Stall Check)
-- **测速目标**：
-  - `https://speed.cloudflare.com/__down?bytes=10000000`
-  - `https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg`（Range: 0-10485759）
-- **测速窗**：固定 3.0 秒流式下载。
-- **断流淘汰标准**：
-  - 累计传输字节数 `< 300 KiB`：判定为“断流假死”或连通性极差，直接淘汰淘汰（`eliminated_reason: 断流假死`）。
-  - 完全无法连通外网且速度为 0：判定为死节点淘汰（`eliminated_reason: 无法连通外网`）。
+### 5.2 默认 3 秒流式下载带宽与断流淘汰 (Stall Check)
+- **非主动模式默认行为**：
+  - 测速目标：`https://speed.cloudflare.com/__down?bytes=10000000` 或 Google DMG。
+  - 测速窗：固定 3.0 秒流式下载。
+  - 断流淘汰标准：累计传输字节数 `< 16 KiB` 判定为“断流假死”淘汰；完全无法连接且速度为 0 判定为死节点淘汰。
+
+### 5.3 本地持续下载测速规范 (Sustained Speed Testing - 主动要求时启用)
+- **触发条件**：仅在用户显式要求测速或传入 `--speed-test` 时激活。
+- **测速目标与轻量预检**：
+  - 主选目标：`https://proof.ovh.us/files/100Mb.dat`（备选 Cloudflare / Google）。
+  - **轻量预检 (Range: bytes=0-1023)**：在启动持续下载前先发送轻量 Range 探测，3 秒内无法返回有效响应的节点立即判定为预检失败，不浪费完整观测时间窗。
+- **逐秒采样与速率计 (RateMeter)**：
+  - 排除 TCP 慢启动前 1~2 秒的 Warmup 抖动数据；
+  - 按 1 秒切片精准记录各时间槽传输量，统计 `mean_mbps`（平均）、`median_mbps`（中位数）、`p10_mbps`（稳定性底线）与 `max_stall_seconds`（最大卡顿停滞时间）。
+- **宽带限流保护**：
+  - 默认强制限速 `--rate-limit-mbps 10.0`（通过 curl `--limit-rate` 控制），杜绝打满本地家宽影响其他应用的正常上网。
+- **测速合格门槛 (`speed_qualified`)**：
+  - 必须完整跑满观测窗口（`complete=True`）；
+  - `median_mbps >= 5.0 Mbps`；
+  - `p10_mbps >= 3.0 Mbps`；
+  - `max_stall_seconds <= 1.0 秒`。
+
+### 5.4 Key 优质前置跳板节点判定标准 (Key Qualification)
+Key 节点是专门用于在落地节点（`_Lnd`/`_USAI`）建立多跳链路时的第一跳（Jump Host），其质量直接决定后续所有落地节点的连通率与稳定性。
+- **协议准入硬门槛**：
+  - **严禁**：`http`、`https`、`socks`、`socks5` 充当 Key（无加密易被干扰，且 CONNECT 无法中转非标端口落地）。
+  - **支持**：`ss`、`vmess`（含TLS）、`vless`（含TLS/Reality/ws/grpc）、`trojan`、`hysteria2`、`tuic`。
+- **拓扑与出口硬门槛**：
+  - 必须是直连节点，落地节点绝对禁止充当 Key；
+  - 节点出口 IP 真实有效，严禁与本地跑机基线出口重合。
+- **测速硬门槛**：
+  - 必须通过上述 5.3 节的持续下载测速（中位数速率 >= 5.0 Mbps）。
+- **加权评分与配额**：
+  - 协议分类分：TLS-TCP (10分) > Self-enc (6分) > CDN-plain (4分) > UDP (3分)；
+  - 亚太核心区加分：香港（HK）、台湾（TW）、日本（JP）、新加坡（SG）、韩国（KR）优先加分；
+  - 综合评分前 N 名授予 `is_key = True`，并施加单国家配额（默认每国最多 3 个）。
 
 ---
 
@@ -138,16 +161,17 @@
 
 ### 6.1 节点命名结构
 ```text
-[国旗] [❇️] [✨️] [Fast] [国家]_[编号][落地后缀][流媒体后缀][来源后缀]
+[国旗] [❇️] [✨️] [Key / Fast] [国家]_[编号][落地后缀][流媒体后缀][来源后缀]
 ```
 
 ### 6.2 标签位解析
-1. **国旗 Emoji**：
-   - 根据测试最终确定的国家代码（Google 判定优先，GeoIP 为辅）生成对应的国旗 Emoji（如 `🇺🇸`, `🇯🇵`, `🇭🇰`, `🇸🇬`）。
-2. **前置能力徽章（国旗后、国名前）**：
+1. **国旗 Emoji**：根据 `geo_decision.cc` 生成。送中节点保留已确认的实际属地并附 `_⚠️CN`；普通强分歧/证据不足用 `🏳️ 未知`，不拿原名当检测结论。
+2. **前置能力徽章（国旗后、国名前，严格有序）**：
    - **`❇️`**：AI 三大全通（ChatGPT + Claude + Gemini 均通过）。
    - **`✨️`**：综合全通能力徽章（必须同时满足：① AI三大全通；② YouTube 免登实播通过；③ 四站免盾达成）。
-   - **`Fast`**：高速节点。
+   - **`Key`**：评选出的优质直连前置跳板节点。
+   - **`Fast`**：测速达标但未被选为 Key 的高速节点（如 HTTP 高速节点或落地高速节点）。
+   - *注：`Key` 与 `Fast` 严格互斥，优先授予 `Key`；未开启测速或未达标节点不带 Key/Fast 标签。*
 3. **国家中文名称**：标准简体中文名称（如 `美国`, `日本`, `香港`, `新加坡`, `德国` 等）。
 4. **序号（`Slot`）**：
    - 若保留原有节点，优先继承原编号；
@@ -163,7 +187,8 @@
      - **`_ChromeGo`** 等自定义来源标识。
 
 ### 6.3 典型命名示例
-- `🇺🇸 ❇️✨️美国_1_USAI_NF_D+`：美国落地、AI全通、综合全通（免盾+YT免登）、支持奈飞与迪士尼。
-- `🇯🇵 ❇️✨️日本_1_NF`：日本直连前置跳板、AI全通、综合全通、支持奈飞。
+- `🇯🇵 ❇️✨️Key日本_1_NF`：日本优质直连前置跳板、AI全通、综合全通（免盾+YT免登）、测速达标、支持奈飞。
+- `🇺🇸 ❇️✨️Fast美国_12`：美国高速直连节点（测速达标，非 Key）、AI全通、综合全通。
+- `🇺🇸 ❇️✨️美国_1_USAI_NF_D+`：美国落地、AI全通、综合全通、支持奈飞与迪士尼。
 - `🇸🇬 ❇️新加坡_2_Lnd`：新加坡落地、AI全通。
-- `🇭🇰 香港_3`：香港直连前置跳板。
+- `🇭🇰 香港_3`：香港直连普通节点。

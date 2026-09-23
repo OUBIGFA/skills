@@ -70,21 +70,18 @@ def probe_claude(proxies, timeout=(3.0, 6.0)):
 
 def probe_gemini(proxies, google_region_info=None, timeout=(3.0, 7.0)):
     """检测 Google Gemini 解锁状态（结合 Google 地区码与可用性标志）。"""
-    if google_region_info and google_region_info.get("source") == "gemini_page":
-        avail = google_region_info.get("gemini_available")
-        is_cn = google_region_info.get("is_sent_to_china", False)
-        if is_cn:
-            return {"status": "blocked", "reason": "google_region_cn"}
-        if avail is True:
-            return {"status": "passed", "reason": "region_supported"}
-        elif avail is False:
-            return {"status": "blocked", "reason": "unsupported_region"}
-        return {"status": "unknown", "reason": "availability_marker_missing"}
-
-    # 若未预先采集，则重新请求页面
-    from .egress_geo import probe_google_region
-    ginfo = probe_google_region(proxies, timeout=timeout)
-    return probe_gemini(proxies, google_region_info=ginfo, timeout=timeout)
+    # 只采集一次。缺标记、YT 兜底或旧报告来源都不能导致递归重试。
+    if google_region_info is None:
+        from .egress_geo import probe_google_region
+        google_region_info = probe_google_region(proxies, timeout=timeout)
+    avail = google_region_info.get("gemini_available")
+    if google_region_info.get("is_sent_to_china", False):
+        return {"status": "blocked", "reason": "google_region_cn"}
+    if avail is True:
+        return {"status": "passed", "reason": "region_supported"}
+    if avail is False:
+        return {"status": "blocked", "reason": "unsupported_region"}
+    return {"status": "unknown", "reason": "availability_marker_missing"}
 
 
 def probe_all_ai(proxies, google_region_info=None, timeout=(3.0, 6.0)):

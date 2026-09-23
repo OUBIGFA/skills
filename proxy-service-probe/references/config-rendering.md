@@ -1,6 +1,6 @@
-# Clash / Mihomo 配置渲染规范
+# Clash / Mihomo 配置渲染规范 (同步 freenode 规则体系)
 
-本文档详述如何将经由服务测试筛选、重命名打标后的代理节点安全注入到母版模版（`template.yaml`）中，生成高可用、防泄露的最终 Clash / Mihomo 配置文件。
+本文档详述如何将经由服务测试筛选、重命名打标后的代理节点安全注入到母版模版（`template.yaml`）中，生成高可用、防泄露、具备 Key 优质前置分流的最终 Clash / Mihomo 配置文件。
 
 ---
 
@@ -37,8 +37,8 @@ flowchart TD
     Streaming --> ManualSelect
 
     LandingNodes["落地节点群 (_Lnd / _USAI)"] -.->|dialer-proxy 链式前置| FrontGroup["🛡️ Front前置"]
-    FrontGroup --> FastSelect["⚡ Fast自动选择 (直连优质节点)"]
-    FrontGroup --> DirectNodes["直连跳板列表"]
+    FrontGroup --> FastSelect["⚡ Fast自动选择 (仅优选 Key 节点)"]
+    FrontGroup --> KeyNodes["Key 优质前置跳板列表"]
     FrontGroup --> Direct
 ```
 
@@ -47,9 +47,11 @@ flowchart TD
 ## 2. 策略组成员分配规则
 
 1. **`🛡️ Front前置` 与 `⚡ Fast自动选择`**：
-   - 专为落地节点提供前置中转跳板。
-   - 仅接纳直连前置节点，**绝不允许落地节点充当跳板**。
-   - 当无可用直连节点时，自动回落为 `DIRECT`。
+   - 专为落地节点提供第一跳（Jump Host）中转能力。
+   - **`🛡️ Front前置`**：成员固定为 `["⚡ Fast自动选择", "DIRECT"] + [所有 Key 节点]`。
+   - **`⚡ Fast自动选择`**：`url-test` 自动测优，**成员仅包含通过测速与协议准入遴选的 Key 节点**（回落为 `["DIRECT"]`）。
+   - **绝不允许落地节点充当跳板**：任何标记为 `_Lnd`、`_USAI` 或带有 `dialer-proxy` 的节点严禁进入前置组。
+   - 当本批次未开启测速或未评出 Key 节点时，自动安全退守为可用直连节点或 `DIRECT`。
 2. **`✅ 解锁 AI` 与 `✅ 解锁USAI`**：
    - `✅ 解锁 AI`：由所有带 `❇️`（AI三大全通）的节点组成，执行低延迟自动选优。
    - `✅ 解锁USAI`：仅由归属美国（`US`）且带 `_USAI`（AI三大全通的美国落地节点）组成。
@@ -58,7 +60,7 @@ flowchart TD
    - `🎥 奈飞解锁`：由带 `_NF` 的节点组成，针对 `https://www.netflix.com/title/81280792` 自动测优。
    - `✨ 解锁Disney+`：由带 `_D+` 的节点组成，针对 `https://www.disneyplus.com` 自动测优。
 4. **`🔒️ 落地节点`**：
-   - 汇总所有标记为落地（`_is_landing`、`_Lnd`、`_USAI` 或带有 dialer-proxy）的节点。
+   - 汇总所有标记为落地（`_is_landing`、`_Lnd`、`_USAI` 或带有 `dialer-proxy`）的节点。
 
 ---
 
@@ -66,8 +68,8 @@ flowchart TD
 
 对于所有落地节点，渲染器会自动设置 `dialer-proxy` 字段：
 - 默认指向 `🛡️ Front前置` 策略组；
-- 若指定了固定前置节点名称，且该前置节点确实存在于本批次直连节点中，则指向该固定前置；
-- 若为直连节点，则移除任何 `dialer-proxy` 字段。
+- 若直连前置发生变动或测速后动态调度，落地节点统一通过 `🛡️ Front前置` 建立连接；
+- 直连节点自动剔除任何 `dialer-proxy` 属性，杜绝循环前置引用。
 
 ---
 
@@ -98,7 +100,7 @@ rules:
 
 ---
 
-## 5. 校验与导出
+## 5. 语法校验与导出验证
 
 输出文件采用 UTF-8 编码无 BOM，导出后可通过以下命令进行语法和配置验证：
 ```bash

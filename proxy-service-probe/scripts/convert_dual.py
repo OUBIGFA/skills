@@ -13,7 +13,7 @@ from copy import deepcopy
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.parsers import parse_singbox_outbound, load_proxies
 from core.renderer import export_clash_yaml, convert_singbox_to_clash_yaml
-from core.singbox_runner import export_singbox_json, find_singbox_bin
+from core.singbox_runner import export_singbox_json, find_singbox_bin, make_standard_singbox_config
 
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
@@ -22,6 +22,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 def convert_file_to_dual(input_path, output_json=None, output_yaml=None, front_proxy=("127.0.0.1", 3067), singbox_bin=None):
     """
     将输入配置文件转换为标准 sing-box JSON 与标准 Clash/Mihomo YAML 双份文件。
+    严格保证 sing-box 现代 1.12+/1.14+ DNS/Route 规范与 ✨️ 综合全通直连节点置顶。
     """
     if not os.path.isfile(input_path):
         raise FileNotFoundError(f"输入文件不存在: {input_path}")
@@ -43,17 +44,29 @@ def convert_file_to_dual(input_path, output_json=None, output_yaml=None, front_p
         with open(input_path, "r", encoding="utf-8") as f:
             sb_cfg = json.load(f)
 
-        # 1. 确保输出合法规范的 sing-box JSON
-        # 如果输入已经是 out_json，则只做必要清洗和验证
-        if os.path.abspath(input_path) != os.path.abspath(out_json):
-            with open(out_json, "w", encoding="utf-8") as f:
-                json.dump(sb_cfg, f, ensure_ascii=False, indent=2)
-            print(f"      [1/2] sing-box JSON 配置已导出: {out_json}")
-        else:
-            print(f"      [1/2] sing-box JSON 源文件保留: {out_json}")
+        # 提取全部代理出站节点并执行严格排序
+        proxy_objs = []
+        for out in sb_cfg.get("outbounds", []):
+            if out.get("type") not in ("selector", "urltest", "direct", "block", "dns"):
+                out_copy = deepcopy(out)
+                out_copy.pop("detour", None)
+                proxy_objs.append(out_copy)
+
+        from core.renderer import sort_nodes_by_region_and_landing
+        sorted_proxies = sort_nodes_by_region_and_landing(proxy_objs)
+        qualified_tags = [p["tag"] for p in sorted_proxies]
+        sparkle_tags = [p["tag"] for p in sorted_proxies if "✨" in p.get("tag", "")]
+
+        # 构造 100% 遵循 sing-box 1.12+/1.14+ 官方标准的现代配置
+        modern_sb_cfg = make_standard_singbox_config(sorted_proxies, qualified_tags, sparkle_tags)
+
+        # 1. 导出规范升级后的 sing-box JSON
+        with open(out_json, "w", encoding="utf-8") as f:
+            json.dump(modern_sb_cfg, f, ensure_ascii=False, indent=2)
+        print(f"      [1/2] sing-box JSON 配置已升级并导出: {out_json}")
 
         # 2. 转换为标准 Clash/Mihomo YAML 配置
-        convert_singbox_to_clash_yaml(sb_cfg, out_yaml, front_proxy=front_proxy)
+        convert_singbox_to_clash_yaml(modern_sb_cfg, out_yaml, front_proxy=front_proxy)
         print(f"      [2/2] Clash/Mihomo YAML 配置已导出: {out_yaml}")
 
     else:

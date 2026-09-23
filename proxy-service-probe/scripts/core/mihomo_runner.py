@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Mihomo 内核定位、临时监听生成与生命周期管理。"""
+"""Mihomo 内核定位、临时监听生成与生命周期管理 (包含多客户端防冲突与物理网卡防 TUN 劫持)。"""
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -11,6 +12,11 @@ from contextlib import contextmanager
 from copy import deepcopy
 
 import yaml
+
+# 常见代理客户端默认端口黑名单 (杜绝与本地正在运行的 Karing, Sing-box, Clash/Mihomo, Xray 产生端口冲突)
+BLACKLIST_PORTS = frozenset({
+    53, 1053, 2080, 2081, 3067, 5353, 7890, 7891, 7892, 7893, 7894, 7895, 9090, 10808, 10809, 24999
+})
 
 
 def find_mihomo_bin(custom_path=None):
@@ -41,12 +47,49 @@ def find_mihomo_bin(custom_path=None):
     return None
 
 
-def get_free_port():
-    """获取一个未被占用的本地 TCP 端口。"""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('127.0.0.1', 0))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return s.getsockname()[1]
+def get_free_port(avoid_ports=None):
+    """获取一个未被占用的本地 TCP 端口，自动避开常用客户端默认端口与已分配端口。"""
+    avoid = set(avoid_ports or ()) | BLACKLIST_PORTS
+    for _ in range(50):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('127.0.0.1', 0))
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            port = s.getsockname()[1]
+            if port not in avoid:
+                return port
+    return port
+
+
+def detect_physical_interface():
+    """
+    自动检测当前联网的物理网卡名称 (例如 WLAN 或 以太网)。
+    避开 Karing、Sing-box、Clash 等客户端创建的虚拟 TUN 网卡。
+    """
+    env_iface = os.environ.get("FREENODE_TEST_INTERFACE") or os.environ.get("PROXY_PROBE_INTERFACE")
+    if env_iface:
+        return env_iface.strip()
+
+    if sys.platform != "win32":
+        return None
+
+    try:
+        cmd = [
+            "powershell", "-NoProfile", "-NonInteractive", "-Command",
+            "Get-NetAdapter | Where-Object Status -eq 'Up' | Select-Object -ExpandProperty Name"
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=4)
+        if res.returncode == 0:
+            for line in res.stdout.splitlines():
+                name = line.strip()
+                if not name:
+                    continue
+                # 排除 TUN / 虚拟网卡特征
+                if not re.search(r'TUN|Virtual|TAP|Sing-box|Karing|Clash|Tailscale|VPN|Loopback|vEthernet', name, re.IGNORECASE):
+                    return name
+    except Exception:
+        pass
+
+    return None
 
 
 def wait_port_open(port, timeout=8.0):
@@ -68,7 +111,7 @@ def node_listeners(items, anchor_front=None, is_landing=False, iface=None, mihom
     items: 可以是 proxy 字典列表，或 (proxy, extra) 元组列表。
     anchor_front: 落地节点使用的固定前置跳板节点字典。
     is_landing: 是否是落地链式测试。
-    iface: 绑定的物理网卡（如 WLAN / 以太网），用于绕开本地 TUN 接管。
+    iface: 绑定的物理网卡（如 WLAN / 以太网），若未指定则尝试自动探测，用于绕开本地 TUN 接管。
     mihomo_bin: 指定的内核可执行文件路径。
 
     yields: [(port, proxy, extra...), ...]
@@ -80,6 +123,9 @@ def node_listeners(items, anchor_front=None, is_landing=False, iface=None, mihom
     if not items:
         yield []
         return
+
+    # 若未显式指定网卡，则尝试自动探测物理网卡以防 TUN 劫持
+    effective_iface = iface or detect_physical_interface()
 
     # 解析元素
     normalized = []
@@ -99,6 +145,7 @@ def node_listeners(items, anchor_front=None, is_landing=False, iface=None, mihom
     targets = []
     listeners = []
     proxies_to_load = []
+    used_ports = set()
 
     # 规范化名称防冲突
     front_name = "🛡️_Front_Anchor"
@@ -109,7 +156,8 @@ def node_listeners(items, anchor_front=None, is_landing=False, iface=None, mihom
         proxies_to_load.append(front_proxy)
 
     for idx, (proxy, rest) in enumerate(normalized):
-        port = get_free_port()
+        port = get_free_port(avoid_ports=used_ports)
+        used_ports.add(port)
         proxy_copy = deepcopy(proxy)
         unique_name = f"node_{idx}_{proxy_copy.get('name', 'unnamed')}"
         proxy_copy["name"] = unique_name
@@ -129,7 +177,7 @@ def node_listeners(items, anchor_front=None, is_landing=False, iface=None, mihom
         })
         targets.append((port, proxy, *rest))
 
-    # 生成配置
+    # 生成配置: 强制关闭 TUN、仅监听 127.0.0.1
     config_dict = {
         "port": 0,
         "socks-port": 0,
@@ -151,8 +199,8 @@ def node_listeners(items, anchor_front=None, is_landing=False, iface=None, mihom
         "rules": ["MATCH,DIRECT"]
     }
 
-    if iface:
-        config_dict["interface-name"] = iface
+    if effective_iface:
+        config_dict["interface-name"] = effective_iface
 
     with open(cfg_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(config_dict, f, allow_unicode=True)
@@ -180,10 +228,11 @@ def node_listeners(items, anchor_front=None, is_landing=False, iface=None, mihom
         if proc:
             try:
                 proc.terminate()
-                proc.wait(timeout=3)
+                proc.wait(timeout=2)
             except Exception:
                 try:
                     proc.kill()
+                    proc.wait(timeout=3)
                 except Exception:
                     pass
         try:

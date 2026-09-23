@@ -22,33 +22,39 @@ class SlotAllocator:
 
 
 def parse_existing_slot(name):
-    """从节点名称中提取已有的数字序号。"""
+    """从节点名称中提取已有的数字序号，过滤 Key/Fast/AY 等干扰词。"""
     if not isinstance(name, str):
         return None
-    # 匹配类似 _1_ 或 _1 结尾
-    m = re.search(r'_(?:[A-Za-z]+_)?(\d+)(?:_|$)', name)
+    # 去除国旗与前缀标签
+    cleaned = re.sub(r'^(?:(?:[\U0001F1E6-\U0001F1FF]{2}|🏳️|\S+)\s*)', '', name.strip())
+    cleaned = re.sub(r'^(?:[❇✨]️?|\s+|Key|Fast)+', '', cleaned)
+    m = re.search(r'_(?:[A-Za-z]+_)?(\d+)(?:_|$)', cleaned)
     if not m:
-        m = re.search(r'_(\d+)', name)
+        m = re.search(r'_(\d+)', cleaned)
     return int(m.group(1)) if m else None
 
 
 def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
-                     is_fast=False, is_landing=False, is_usai=False,
-                     media_details=None, is_chromego=False):
+                     is_key=False, is_fast=False, is_landing=False, is_usai=False,
+                     media_details=None, is_chromego=False, poison_tag=None):
     """
     构造符合规范的节点名称:
-    [国旗] [❇️] [✨️] [Fast] [国家]_[编号][落地后缀][流媒体后缀][来源后缀]
+    [国旗] [❇️] [✨️] [Key/Fast] [国家]_[编号][落地后缀][流媒体后缀][来源后缀]
     """
+    if poison_tag:
+        ai_supported = comprehensive_sparkle = is_usai = False
     flag = flag_emoji(cc)
     cname = country_name_zh(cc)
 
-    # 1. 前置标识组合 (严格顺序: ❇️ -> ✨️ -> Fast)
+    # 1. 前置标识组合 (严格顺序: ❇️ -> ✨️ -> Key/Fast)
     prefix_tags = ""
     if ai_supported:
         prefix_tags += "❇️"
     if comprehensive_sparkle:
         prefix_tags += "✨️"
-    if is_fast:
+    if is_key:
+        prefix_tags += "Key"
+    elif is_fast:
         prefix_tags += "Fast"
 
     # 2. 基础名称与编号
@@ -68,7 +74,7 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
 
     cg_suffix = "_ChromeGo" if is_chromego else ""
 
-    return f"{flag} {country_part}{lnd_suffix}{media_suffix}{cg_suffix}"
+    return f"{flag} {country_part}{lnd_suffix}{media_suffix}{cg_suffix}{poison_tag or ''}"
 
 
 def tag_and_rename_nodes(results):
@@ -76,7 +82,7 @@ def tag_and_rename_nodes(results):
     对一批测试结果进行统一打标、分配空号并排序。
     每个 result 包含:
       proxy, cc, is_landing, ai_supported, youtube_passed, shield_passed,
-      is_fast, media_details
+      is_key, is_fast, media_details
     """
     # 1. 提取老节点编号并按国家认领 (同一个国家内每个编号只能被认领一次)
     claimed_slots = defaultdict(set)
@@ -107,13 +113,18 @@ def tag_and_rename_nodes(results):
         cc = r.get("cc") or "UNK"
         slot = r["assigned_slot"]
 
-        ai_sup = r.get("ai_supported", False)
+        poison_tag = (r.get("geo_decision") or {}).get("poison_tag")
+        ai_sup = bool(r.get("ai_supported", False) and not poison_tag)
+        r["ai_supported"] = ai_sup
         yt_pass = r.get("youtube_passed", False)
         cf_pass = r.get("shield_passed", False)
         # 综合全通: AI三大全通 + YouTube免登实播 + 目标网站免盾
         sparkle = bool(ai_sup and yt_pass and cf_pass)
 
-        is_landing = r.get("is_landing", False) or "_Lnd" in p.get("name", "") or "_USAI" in p.get("name", "")
+        is_key = bool(r.get("is_key", False) or p.get("_is_key", False))
+        is_fast = bool((r.get("is_fast", False) or p.get("_is_fast", False)) and not is_key)
+
+        is_landing = bool(r.get("is_landing", False) or "_Lnd" in p.get("name", "") or "_USAI" in p.get("name", ""))
         is_usai = bool(is_landing and cc == "US" and ai_sup)
 
         is_cg = "_ChromeGo" in p.get("_orig_name", "") or "_ChromeGo" in p.get("name", "")
@@ -123,11 +134,13 @@ def tag_and_rename_nodes(results):
             slot=slot,
             ai_supported=ai_sup,
             comprehensive_sparkle=sparkle,
-            is_fast=r.get("is_fast", False),
+            is_key=is_key,
+            is_fast=is_fast,
             is_landing=is_landing,
             is_usai=is_usai,
             media_details=r.get("media_details", {}),
-            is_chromego=is_cg
+            is_chromego=is_cg,
+            poison_tag=poison_tag
         )
 
         # 杜绝任何同名碰撞
@@ -138,32 +151,41 @@ def tag_and_rename_nodes(results):
                 slot=extra_slot,
                 ai_supported=ai_sup,
                 comprehensive_sparkle=sparkle,
-                is_fast=r.get("is_fast", False),
+                is_key=is_key,
+                is_fast=is_fast,
                 is_landing=is_landing,
                 is_usai=is_usai,
                 media_details=r.get("media_details", {}),
-                is_chromego=is_cg
+                is_chromego=is_cg,
+                poison_tag=poison_tag
             )
             r["assigned_slot"] = extra_slot
 
         seen_names.add(new_name)
         p["name"] = new_name
+        p["_is_key"] = is_key
+        p["_is_fast"] = is_fast
+        p["_key_score"] = r.get("key_score", 0.0)
+
         r["final_name"] = new_name
         r["slot"] = r["assigned_slot"]
+        r["is_key"] = is_key
+        r["is_fast"] = is_fast
         r["comprehensive_sparkle"] = sparkle
         r["is_usai"] = is_usai
 
-    # 4. 排序 (按区域优先级 -> 国家码 -> Fast优先 -> AI全通优先 -> 综合徽章 -> 序号)
+    # 4. 排序 (按区域优先级 -> 国家码 -> Key优先 -> Fast优先 -> AI全通优先 -> 综合徽章 -> 序号)
     def sort_key(row):
         cc = row.get("cc") or "UNK"
         order_info = CATEGORY_ORDER.get(cc, (7, 999, '未知'))
         region_rank = order_info[0]
         country_rank = order_info[1]
+        key_rank = 0 if row.get("is_key") else 1
         fast_rank = 0 if row.get("is_fast") else 1
         ai_rank = 0 if row.get("ai_supported") else 1
         sparkle_rank = 0 if row.get("comprehensive_sparkle") else 1
         slot = row.get("slot", 9999)
-        return (region_rank, country_rank, fast_rank, ai_rank, sparkle_rank, slot)
+        return (region_rank, country_rank, key_rank, fast_rank, ai_rank, sparkle_rank, slot)
 
     results.sort(key=sort_key)
     return results
