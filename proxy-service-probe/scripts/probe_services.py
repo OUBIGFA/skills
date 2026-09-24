@@ -58,6 +58,8 @@ def parse_args(argv=None):
     parser.add_argument("--dry-run", action="store_true", help="干跑测试: 仅解析节点与模版，不发起真实网络连接")
     parser.add_argument("--start-index", type=int, default=0, help="从指定节点序号 (0-based) 开始测试批次")
     parser.add_argument("--checkpoint", help="断点续测状态 JSON 文件路径")
+    parser.add_argument("--resort", action="store_true",
+                        help="仅在用户主动要求重排序时使用: 同地区按标签与信誉重排并从 1 重新编号 (默认保留原节点编号)")
 
     # 本地持续下载测速与 Key 遴选选项 (非主动技能: 默认不开启，仅在用户显式指定时触发)
     parser.add_argument("--speed-test", action="store_true", help="主动开启本地完整下载测速 (非主动技能，仅在显式要求时执行)")
@@ -79,7 +81,8 @@ def print_summary_table(results, speed_tested=False):
         if len(name) > 30:
             name = name[:28] + ".."
         ip = r.get("exit_ip") or "未知"
-        score = str((r.get("ip_info") or {}).get("score") or "-")
+        reputation = r.get("ip_reputation") or (r.get("ip_info") or {}).get("reputation") or {}
+        score = str(reputation.get("score")) if reputation.get("score") is not None else "-"
         ai = "✓" if r.get("ai_supported") else "✗"
         shield = "✓" if r.get("shield_passed") else "✗"
         yt = "✓" if r.get("youtube_passed") else "✗"
@@ -138,7 +141,7 @@ def main(argv=None):
                 "speed_mbps": 12.5 if (is_key_node or is_fast_node) else 2.1,
                 "media_details": {"nf": True, "dp": True}
             })
-        tag_and_rename_nodes(mock_results)
+        tag_and_rename_nodes(mock_results, resort=args.resort)
         print_summary_table(mock_results, speed_tested=args.speed_test)
         if args.output:
             out_file = export_clash_yaml([r["proxy"] for r in mock_results], args.output, template_path=args.template)
@@ -184,22 +187,27 @@ def main(argv=None):
     total = len(proxies)
     batch_size = max(1, args.batch_size)
 
+    start_index = args.start_index
     if args.checkpoint and os.path.isfile(args.checkpoint):
         try:
             with open(args.checkpoint, "r", encoding="utf-8") as f:
                 ckpt = json.load(f)
                 results = ckpt.get("results", [])
                 eliminated = ckpt.get("eliminated", [])
+                # 从最后完成批次的下一批继续，避免重复测试与重复结果
+                if isinstance(ckpt.get("batch_idx"), int):
+                    start_index = max(start_index, ckpt["batch_idx"] + ckpt.get("batch_size", batch_size))
                 print(f"      [断点] 已从检查点载入历史结果: 合格 {len(results)} 个，淘汰 {len(eliminated)} 个")
         except Exception as e:
             print(f"      [警告] 读取检查点失败: {e}")
 
-    print(f"[4/5] 启动分批服务测试 (共 {total} 个节点，每批 {batch_size} 个，起始序号: {args.start_index + 1})...")
+    print(f"[4/5] 启动分批服务测试 (共 {total} 个节点，每批 {batch_size} 个，起始序号: {start_index + 1})...")
 
-    for batch_idx in range(args.start_index, total, batch_size):
+    for batch_idx in range(start_index, total, batch_size):
         chunk = proxies[batch_idx:batch_idx + batch_size]
         print(f"      正在启动批次 {batch_idx + 1}~{min(batch_idx + batch_size, total)} 临时监听...")
 
+        finished = set()
         try:
             with node_listeners(chunk, iface=args.iface, mihomo_bin=mihomo_bin) as targets:
                 def test_node(item):
@@ -267,7 +275,8 @@ def main(argv=None):
                         if sp_res.get("eliminated_reason"):
                             row["eliminated_reason"] = sp_res["eliminated_reason"]
                             return row
-                        row["is_fast"] = bool(row.get("speed_kbs", 0) >= 500)
+                        # Fast/Key 只由主动测速授予；快检吞吐只用于断流淘汰
+                        row["is_fast"] = False
                     else:
                         row["speed_kbs"] = 0
                         row["is_fast"] = False
@@ -320,6 +329,7 @@ def main(argv=None):
 
                 with ThreadPoolExecutor(max_workers=args.workers) as pool:
                     for tested in pool.map(test_node, targets):
+                        finished.add(id(tested["proxy"]))
                         if tested.get("eliminated_reason"):
                             eliminated.append(tested)
                             print(f"      [淘汰] {tested['proxy'].get('name')}: {tested['eliminated_reason']}")
@@ -330,18 +340,25 @@ def main(argv=None):
 
         except Exception as e:
             print(f"      批次运行异常: {e}")
+            # 未完成测试的节点记为淘汰并保留原因，不从报告中凭空消失
+            for p in chunk:
+                if id(p) not in finished:
+                    eliminated.append({"proxy": p, "orig_name": p.get("name"),
+                                       "eliminated_reason": f"批次运行异常:{e}"})
 
         if args.checkpoint:
             try:
                 with open(args.checkpoint, "w", encoding="utf-8") as f:
-                    json.dump({"batch_idx": batch_idx, "results": results, "eliminated": eliminated}, f, ensure_ascii=False)
-            except Exception:
-                pass
+                    json.dump({"batch_idx": batch_idx, "batch_size": batch_size,
+                               "results": results, "eliminated": eliminated}, f, ensure_ascii=False)
+            except Exception as e:
+                print(f"      [警告] 写入检查点失败: {e}")
 
     # Key 优质前置节点评选 (仅在主动测速模式下激活)
     if args.speed_test and results:
         print("\n[4.5] 执行 Key 优质前置跳板节点评选与配额分配...")
-        chosen_keys = select_key_nodes(results, max_keys=10, per_country_cap=3)
+        chosen_keys = select_key_nodes(results, max_keys=10, per_country_cap=3,
+                                       min_median_mbps=args.min_speed_mbps)
         print(f"      成功评选出 {len(chosen_keys)} 个 Key 优质前置跳板节点")
 
     # 规范打标与排序
@@ -350,7 +367,7 @@ def main(argv=None):
         print("警告: 本轮所有节点均未通过服务测试或已被淘汰。")
         sys.exit(1)
 
-    tag_and_rename_nodes(results)
+    tag_and_rename_nodes(results, resort=args.resort)
     print_summary_table(results, speed_tested=args.speed_test)
 
     # 导出报告
@@ -371,8 +388,9 @@ def main(argv=None):
                     "geo_decision": r.get("geo_decision"),
                     "egress": r.get("egress"),
                     "egress_after": r.get("egress_after"),
-                    "ip_info_by_ip": r.get("ip_info_by_ip"),
                     "exit_ip": r.get("exit_ip"),
+                    "ip_info_by_ip": r.get("ip_info_by_ip"),
+                    "ip_reputation": r.get("ip_reputation"),
                     "is_key": r.get("is_key", False),
                     "is_fast": r.get("is_fast", False),
                     "key_score": r.get("key_score"),

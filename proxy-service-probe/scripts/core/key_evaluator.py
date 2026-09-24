@@ -66,7 +66,7 @@ def is_landing_role(proxy):
     )
 
 
-def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None):
+def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None, min_median_mbps=5.0):
     """
     对单个节点进行 Key 前置跳板资格判定与综合打分。
     返回: (eligible: bool, score: float, reason: str)
@@ -89,7 +89,7 @@ def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None):
     speed_mbps = 0.0
     if speed_result is not None:
         from .speed_probe import speed_qualified
-        if not speed_qualified(speed_result, min_median_mbps=5.0):
+        if not speed_qualified(speed_result, min_median_mbps=min_median_mbps):
             med = speed_result.get("median_mbps", 0.0)
             return False, 0.0, f"测速未达标({med}Mbps)"
         speed_mbps = float(speed_result.get("median_mbps") or 0.0)
@@ -105,7 +105,7 @@ def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None):
     score += PROTOCOL_CLASS_SCORE.get(p_class, 5)
 
     # 2. 亚太核心地区加分 (HK/TW/JP/SG/KR 优先)
-    cc = proxy.get("_country_code") or (egress_result.get("country") if egress_result else "")
+    cc = proxy.get("_country_code") or ((egress_result.get("cc") or egress_result.get("country")) if egress_result else "")
     if cc in ASIA_CORE:
         score += 8.0
 
@@ -123,7 +123,7 @@ def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None):
     return True, score, "ok"
 
 
-def select_key_nodes(results, max_keys=10, per_country_cap=3):
+def select_key_nodes(results, max_keys=10, per_country_cap=3, min_median_mbps=5.0):
     """
     从一组检测结果中优选 Key 节点，并根据国家配额进行分配。
     results 列表中每个 dict 应包含:
@@ -139,7 +139,8 @@ def select_key_nodes(results, max_keys=10, per_country_cap=3):
             proxy=p,
             speed_result=r.get("speed_result"),
             egress_result=r.get("egress_result") or r,
-            delay=r.get("delay")
+            delay=r.get("delay"),
+            min_median_mbps=min_median_mbps
         )
         r["is_key"] = False
         r["key_score"] = score

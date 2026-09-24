@@ -43,7 +43,16 @@ def clean_proxy_dict(proxy):
 def _is_landing(p):
     """判定是否为落地节点"""
     name = p.get("name") or p.get("tag") or ""
-    return bool(p.get("_is_landing") or p.get("is_landing") or "_Lnd" in name or "_USAI" in name or p.get("dialer-proxy") or p.get("detour"))
+    if isinstance(p.get("_is_landing"), bool):
+        return p["_is_landing"]
+    if isinstance(p.get("is_landing"), bool):
+        return p["is_landing"]
+    if "_Lnd" in name or "_USAI" in name or "_家宽" in name:
+        return True
+    # 旧 detour 可能残留在 Key 直连节点上，不能借此将前置节点链回自身。
+    if p.get("_is_key") is True or re.search(r'(?i)\bkey(?![a-z])', name):
+        return False
+    return bool(p.get("dialer-proxy") or p.get("detour"))
 
 
 def _is_key(p):
@@ -54,18 +63,20 @@ def _is_key(p):
     return "Key" in name and not _is_landing(p)
 
 
-def sort_nodes_by_region_and_landing(items):
+def sort_nodes_by_region_and_landing(items, resort=False):
     """
     按国家/地区分组，并严格保持与 YAML 相同的排序规则：
     1. 同一国家/地区内的节点聚集在一起（按 CATEGORY_ORDER 标准地区位阶排列）。
     2. 同一国家/地区内，直连节点排在前面，落地节点 (_Lnd / _USAI) 排在该地区最后。
     3. 特殊边界保护：如果排在全节点第一个的国家/地区仅有 1 个节点且为落地节点，
        则将该国家/地区挪至下一个国家/地区之后，确保客户端启动的首选节点必定为可直连节点。
+    4. resort=False（默认）：名称与编号原样保留，同组内按现有编号排位；
+       resort=True（仅用户主动要求重排序时）：按能力标签与信誉重排，位置全部确定后从 1 重新编号。
     """
     if not items:
         return []
 
-    from .egress_geo import CATEGORY_ORDER
+    from .egress_geo import CATEGORY_ORDER, valid_reputation_score
 
     def _get_name(item):
         if isinstance(item, dict):
@@ -74,12 +85,37 @@ def sort_nodes_by_region_and_landing(items):
 
     def _is_lnd(item):
         if isinstance(item, dict):
-            if item.get('is_landing') is True or item.get('_is_landing') is True:
-                return True
+            if isinstance(item.get('is_landing'), bool):
+                return item['is_landing']
+            if isinstance(item.get('_is_landing'), bool):
+                return item['_is_landing']
             if item.get('dialer-proxy') or item.get('detour'):
+                return True
+            proxy = item.get('proxy')
+            if isinstance(proxy, dict) and (proxy.get('dialer-proxy') or proxy.get('detour')):
                 return True
         name = _get_name(item)
         return ('_Lnd' in name) or ('_USAI' in name) or ('_家宽' in name)
+
+    def _reputation(item):
+        if not isinstance(item, dict):
+            return {}
+        return (item.get('ip_reputation') or item.get('_ip_reputation') or
+                (item.get('proxy') or {}).get('_ip_reputation') or
+                (item.get('raw_node') or {}).get('_ip_reputation') or {})
+
+    def _is_hq(item, name):
+        # 送中/受限地区污染节点不授予 ♥️，与打标层 format_node_name 保持一致
+        if '_⚠️' in name:
+            return False
+        # 打标层已给出结论（含浏览器复测沿用已有 ♥️）时以其为准，排位与命名不再各算一套
+        if isinstance(item, dict) and isinstance(item.get('is_high_quality'), bool):
+            return item['is_high_quality']
+        reputation = _reputation(item)
+        score = valid_reputation_score(reputation.get('score'))
+        if score is not None:
+            return score >= 80 and reputation.get('status') == 'observed'
+        return '♥' in name
 
     def _parse_cc(name):
         m = re.search(r'([\U0001F1E6-\U0001F1FF]{2})', name)
@@ -93,15 +129,25 @@ def sort_nodes_by_region_and_landing(items):
 
     def _node_internal_key(item):
         name = _get_name(item)
-        sparkle = 0 if '✨' in name else 1
-        ai = 0 if '❇️' in name else 1
-        key = 0 if ('Key' in name or 'key' in name) else 1
-        fast = 0 if 'Fast' in name else 1
+        sparkle = 0 if ('✨' in name) else 1
+        ai = 0 if ('❇️' in name or '❇' in name) else 1
+        key = 0 if re.search(r'(?i)\bkey(?![a-z])', name) else 1
+        fast = 0 if re.search(r'(?i)\bfast(?![a-z])', name) else 1
+        is_polluted = 1 if ('_⚠️' in name) else 0
+        reputation = _reputation(item)
+        score = valid_reputation_score(reputation.get('score'))
+        hq = 0 if _is_hq(item, name) else 1
+        has_score = 0 if score is not None else 1
+        reputation_rank = -score if score is not None and reputation.get('status') == 'observed' else 0
         nf = 0 if '_NF' in name else 1
         dp = 0 if '_D+' in name else 1
         m = re.search(r'_(\d+)', name)
         slot = int(m.group(1)) if m else 9999
-        return (sparkle, ai, key, fast, nf, dp, slot, name)
+        if not resort:
+            return (slot, name)
+        # 先按 ✨️ > ❇️ > Key > Fast > _NF > _D+ 硬分层；干净节点优于污染节点；
+        # ♥️ 与信誉分只在上述标签完全相同的节点之间决定先后，不跨越标签层级
+        return (sparkle, ai, key, fast, nf, dp, is_polluted, hq, has_score, reputation_rank, slot, name)
 
     country_buckets = {}
     country_order = []
@@ -120,10 +166,41 @@ def sort_nodes_by_region_and_landing(items):
         if len(first_nodes) == 1 and _is_lnd(first_nodes[0]):
             country_order = [country_order[1], first_c] + country_order[2:]
 
-    def _renumber_tag(old_name, slot):
-        m = re.search(r'^(.*?)_(\d+)(.*)$', old_name)
+    def _renumber_tag(old_name, slot, is_hq=False):
+        flag_match = re.search(r'^([\U0001F1E6-\U0001F1FF]{2}|🏳️|\U0001F3F3\uFE0F?)\s*', old_name)
+        flag = flag_match.group(0) if flag_match else ""
+        rest = old_name[len(flag):]
+
+        sparkle = bool("✨️" in rest or "✨" in rest)
+        ai = bool("❇️" in rest or "❇" in rest)
+        is_polluted = bool("_⚠️" in rest)
+        hq = bool(is_hq and not is_polluted)
+        key = bool(re.search(r'(?i)\bkey(?![a-z])', rest))
+        fast = bool(re.search(r'(?i)\bfast(?![a-z])', rest))
+
+        prefix = ""
+        if sparkle:
+            prefix += "✨️"
+        if ai:
+            prefix += "❇️"
+        if hq:
+            prefix += "♥️"
+        if key:
+            prefix += "Key"
+        elif fast:
+            prefix += "Fast"
+
+        cleaned_rest = re.sub(r'^(?:[✨❇️♥️♥]️?|\s+|Key|Fast)+', '', rest, flags=re.I)
+        m = re.search(r'^(.*?)_(\d+)(.*)$', cleaned_rest)
         if m:
-            return f"{m.group(1)}_{slot}{m.group(3)}"
+            country = m.group(1)
+            raw_suffix = m.group(3)
+            clean_suffix = re.sub(r'(?:✨\uFE0F?|❇\uFE0F?|♥\uFE0F?|\bKey\b|\bFast\b)', '', raw_suffix, flags=re.I).strip()
+            return f"{flag}{prefix}{country}_{slot}{clean_suffix}"
+
+        m_old = re.search(r'^(.*?)_(\d+)(.*)$', old_name)
+        if m_old:
+            return f"{m_old.group(1)}_{slot}{m_old.group(3)}"
         return f"{old_name}_{slot}"
 
     sorted_items = []
@@ -134,11 +211,14 @@ def sort_nodes_by_region_and_landing(items):
         directs.sort(key=_node_internal_key)
         landings.sort(key=_node_internal_key)
         combined = directs + landings
+        if not resort:
+            sorted_items.extend(combined)
+            continue
 
         # 定好位置再编号：每个国家/地区内的节点位置确定后，从 1 开始严格依次递增重新编号
         for slot_idx, item in enumerate(combined, start=1):
             old_name = _get_name(item)
-            new_name = _renumber_tag(old_name, slot_idx)
+            new_name = _renumber_tag(old_name, slot_idx, is_hq=_is_hq(item, old_name))
 
             if isinstance(item, dict):
                 if "tag" in item:
@@ -280,15 +360,10 @@ def convert_clash_groups_to_singbox(groups):
         g_type = g.get("type", "select")
         proxies = g.get("proxies", [])
 
-        # 映射 DIRECT -> direct, REJECT -> block
-        sb_proxies = []
-        for p in proxies:
-            if p == "DIRECT":
-                sb_proxies.append("direct")
-            elif p == "REJECT":
-                sb_proxies.append("block")
-            else:
-                sb_proxies.append(p)
+        # 映射 DIRECT -> direct；sing-box 1.11 起弃用 block 出站（拦截改用路由 action: reject），REJECT 不进组
+        sb_proxies = ["direct" if p == "DIRECT" else p for p in proxies if p != "REJECT"]
+        if not sb_proxies:
+            sb_proxies = ["direct"]
 
         if g_type == "select":
             sb_outbounds.append({
@@ -316,6 +391,13 @@ def convert_clash_groups_to_singbox(groups):
     return sb_outbounds
 
 
+def _rule_target(target):
+    """Clash 规则目标 → sing-box 1.14 路由目标：REJECT 用 action: reject 取代已弃用的 block 出站。"""
+    if target == "REJECT":
+        return {"action": "reject"}
+    return {"outbound": "direct" if target == "DIRECT" else target}
+
+
 def build_singbox_rules_from_template(template_path=None):
     """
     从 template.yaml 提取全部进程分流、国内外域名、AI、Google、流媒体与广告拦截规则，
@@ -339,17 +421,13 @@ def build_singbox_rules_from_template(template_path=None):
             continue
         rtype = parts[0]
         if rtype == "PROCESS-NAME" and len(parts) >= 3:
-            target = "direct" if parts[2] == "DIRECT" else parts[2]
-            sb_rules.append({"process_name": [parts[1]], "outbound": target})
+            sb_rules.append({"process_name": [parts[1]], **_rule_target(parts[2])})
         elif rtype == "DOMAIN-SUFFIX" and len(parts) >= 3:
-            target = "direct" if parts[2] == "DIRECT" else ("block" if parts[2] == "REJECT" else parts[2])
-            sb_rules.append({"domain_suffix": [parts[1]], "outbound": target})
+            sb_rules.append({"domain_suffix": [parts[1]], **_rule_target(parts[2])})
         elif rtype == "DOMAIN-KEYWORD" and len(parts) >= 3:
-            target = "direct" if parts[2] == "DIRECT" else ("block" if parts[2] == "REJECT" else parts[2])
-            sb_rules.append({"domain_keyword": [parts[1]], "outbound": target})
+            sb_rules.append({"domain_keyword": [parts[1]], **_rule_target(parts[2])})
         elif rtype == "DOMAIN" and len(parts) >= 3:
-            target = "direct" if parts[2] == "DIRECT" else ("block" if parts[2] == "REJECT" else parts[2])
-            sb_rules.append({"domain": [parts[1]], "outbound": target})
+            sb_rules.append({"domain": [parts[1]], **_rule_target(parts[2])})
         elif rtype == "GEOSITE" and len(parts) >= 3:
             if parts[1] in ("geolocation-cn", "cn"):
                 sb_rules.append({"rule_set": ["geosite-cn"], "outbound": "direct"})
@@ -357,15 +435,16 @@ def build_singbox_rules_from_template(template_path=None):
             if parts[1] in ("CN", "cn"):
                 sb_rules.append({"rule_set": ["geoip-cn"], "outbound": "direct"})
 
-    # 合并相邻同类同目标的规则
+    # 合并相邻同类同目标（同出站或同为 reject 动作）的规则
     optimized = []
     for r in sb_rules:
-        key = [k for k in r if k != "outbound"][0]
-        outbound = r["outbound"]
+        key = [k for k in r if k not in ("outbound", "action")][0]
         if (
             optimized
             and key in optimized[-1]
-            and optimized[-1].get("outbound") == outbound
+            and len(optimized[-1]) == len(r)
+            and optimized[-1].get("outbound") == r.get("outbound")
+            and optimized[-1].get("action") == r.get("action")
             and isinstance(optimized[-1][key], list)
             and isinstance(r[key], list)
         ):
@@ -420,6 +499,42 @@ def export_clash_yaml(proxies, output_path, template_path=None):
     return output_path
 
 
+def _singbox_wireguard_endpoint_to_clash(endpoint):
+    """把 sing-box wireguard endpoint 转回 Clash WireGuard 节点；缺关键字段时返回 None。"""
+    if not isinstance(endpoint, dict) or endpoint.get("type") != "wireguard":
+        return None
+    peers = endpoint.get("peers") or []
+    peer = peers[0] if peers and isinstance(peers[0], dict) else {}
+    if not peer.get("address") or not peer.get("port") or not peer.get("public_key"):
+        return None
+    addresses = endpoint.get("address") or []
+    if not addresses or not endpoint.get("private_key"):
+        return None
+    p = {
+        "name": endpoint.get("tag") or "wireguard",
+        "type": "wireguard",
+        "server": peer["address"],
+        "port": int(peer["port"]),
+        "ip": str(addresses[0]).split("/", 1)[0],
+        "private-key": endpoint["private_key"],
+        "public-key": peer["public_key"],
+        "allowed-ips": peer.get("allowed_ips") or ["0.0.0.0/0", "::/0"],
+    }
+    if len(addresses) > 1:
+        p["ipv6"] = str(addresses[1]).split("/", 1)[0]
+    if endpoint.get("mtu"):
+        p["mtu"] = int(endpoint["mtu"])
+    if peer.get("persistent_keepalive_interval"):
+        p["persistent-keepalive"] = int(peer["persistent_keepalive_interval"])
+    if peer.get("pre_shared_key"):
+        p["pre-shared-key"] = peer["pre_shared_key"]
+    if peer.get("reserved") is not None:
+        p["reserved"] = peer["reserved"]
+    if endpoint.get("detour"):
+        p["dialer-proxy"] = endpoint["detour"]
+    return p
+
+
 def convert_singbox_to_clash_yaml(singbox_input, output_yaml_path, template_path=None, front_proxy=("127.0.0.1", 3067)):
     """
     将 sing-box JSON 配置文件直接转换为标准的 Clash / Mihomo YAML 配置文件。
@@ -440,10 +555,17 @@ def convert_singbox_to_clash_yaml(singbox_input, output_yaml_path, template_path
 
     for ob in outbounds:
         t = ob.get("type", "").lower()
-        if t in ("selector", "urltest", "direct", "block", "dns", "socks"):
+        if t in ("selector", "urltest", "direct", "block", "dns"):
             continue
         p = parse_singbox_outbound(ob)
-        if p:
-            clash_proxies.append(p)
+        if not p:
+            raise ValueError(f"sing-box 节点 {ob.get('tag', '<未命名>')}（{t}）无法转换为 Clash 节点")
+        clash_proxies.append(p)
+
+    for endpoint in cfg.get("endpoints", []):
+        p = _singbox_wireguard_endpoint_to_clash(endpoint)
+        if not p:
+            raise ValueError(f"sing-box endpoint {endpoint.get('tag', '<未命名>')} 无法转换为 Clash 节点")
+        clash_proxies.append(p)
 
     return export_clash_yaml(clash_proxies, output_yaml_path, template_path=template_path)

@@ -51,6 +51,31 @@ def apply_mapping(config, mapping, strip_detour=True):
         strip_node_detours(config)
 
 
+def number_plan(plan, keep, do_sort=False):
+    """先定位置再编号：--sort 时先按地区排好全部位置，否则保持配置原序；随后按位置依次编号。
+    保留原名的节点已占用的名称跳过，避免重名。返回 (mapping, rows)。"""
+    if do_sort:
+        plan.sort(key=lambda p: (region_rank(p[3]), p[3], p[5] or '', p[0]))
+    else:
+        plan.sort(key=lambda p: p[0])
+
+    kept_names = {x['old'] for x in keep}
+    mapping, rows, counters = {}, [], {}
+    for idx, tag, r, cc, czh, city, conf, note, suf, sep in plan:
+        key = (cc, city)
+        while True:
+            counters[key] = counters.get(key, 0) + 1
+            new = format_tag(cc, czh, city, counters[key], suf, sep)
+            if new not in kept_names:
+                break
+        mapping[tag] = new
+        rows.append({'old': tag, 'new': new, 'exit': r.get('exit_ip', ''),
+                     'geo': f'{czh}·{city}',
+                     'votes': f"{r.get('votes')}/{r.get('answered')}",
+                     'conf': conf, 'colo': r.get('colo', ''), 'note': note})
+    return mapping, rows + keep  # 未识别的排在最后，不打断已归类的地区分块
+
+
 def main():
     ap = argparse.ArgumentParser(description='按检测结果统一重命名节点')
     ap.add_argument('--workdir', required=True, help='probe.py 使用的工作目录')
@@ -78,7 +103,6 @@ def main():
     # 按指纹配对，配置在检测后被客户端改过名也能对上
     rec_of = {j: recs[i] for i, j in pair_nodes(recs, nodes).items()}
 
-    mapping, rows, counters = {}, [], {}
     plan, keep = [], []
     for idx, o in enumerate(nodes):
         tag = o['tag']
@@ -108,22 +132,7 @@ def main():
                          'geo': '', 'votes': '', 'conf': ('离线' if not ok else '低置信'),
                          'colo': r.get('colo', ''), 'note': note})
 
-    # 若指定 --sort 则按地区排序；否则严格保持配置原有节点顺序
-    if a.sort:
-        plan.sort(key=lambda p: (region_rank(p[3]), p[3], p[5] or '', p[0]))
-    else:
-        plan.sort(key=lambda p: p[0])
-
-    for idx, tag, r, cc, czh, city, conf, note, suf, sep in plan:
-        key = (cc, city)
-        counters[key] = counters.get(key, 0) + 1
-        new = format_tag(cc, czh, city, counters[key], suf, sep)
-        mapping[tag] = new
-        rows.append({'old': tag, 'new': new, 'exit': r.get('exit_ip', ''),
-                     'geo': f'{czh}·{city}',
-                     'votes': f"{r.get('votes')}/{r.get('answered')}",
-                     'conf': conf, 'colo': r.get('colo', ''), 'note': note})
-    rows += keep  # 未识别的排在最后，不打断已归类的地区分块
+    mapping, rows = number_plan(plan, keep, a.sort)
 
     kept = [x['old'] for x in rows if x['new'] == '（保留原名）']
     news = list(mapping.values())

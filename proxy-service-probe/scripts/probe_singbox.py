@@ -10,10 +10,11 @@ import io
 import json
 import time
 import re
+import shutil
 import socket
 import argparse
+import tempfile
 from copy import deepcopy
-from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 
 # 全局底层套接字保护 (>=6.0s 杜绝多跳 TLS Reality 握手被掐断)
@@ -27,28 +28,17 @@ if sys.platform == "win32":
         pass
 
 from core.singbox_runner import find_singbox_bin, clean_node_for_singbox, singbox_dual_listeners, singbox_active_listeners, export_singbox_json
-from core.egress_geo import probe_egress, probe_geolocation, CATEGORY_ORDER, country_name_zh, flag_emoji
+from core.egress_geo import probe_egress, probe_geolocation, country_name_zh, flag_emoji
 from core.ai_probe import probe_all_ai
 from core.media_probe import probe_all_media
-from core.speed_probe import measure_speed_and_stall
+from core.speed_probe import DEFAULT_STALL_MIN_BYTES, DEFAULT_SUSTAINED_TARGETS, precheck_target, measure_download_sustained, speed_qualified
+from core.key_evaluator import select_key_nodes
 from core.youtube_probe import probe_youtube
 from core.shield_probe import probe_sites_http, probe_sites_browser, shield_passed
 from core.parsers import parse_singbox_outbound
 from core.renderer import export_clash_yaml
-
-
-class SlotAllocator:
-    def __init__(self, surviving_indices=()):
-        self.surviving = set(surviving_indices)
-        self.next_new = 1
-
-    def next_slot(self):
-        while self.next_new in self.surviving:
-            self.next_new += 1
-        slot = self.next_new
-        self.surviving.add(slot)
-        self.next_new += 1
-        return slot
+# 命名与编号规则与 Mihomo 流水线共用 core.tagger，此处导出 format_node_name 保持脚本接口不变
+from core.tagger import format_node_name, tag_and_rename_nodes
 
 
 def parse_existing_slot(name):
@@ -76,9 +66,13 @@ def parse_info_from_tag(tag):
     if m:
         f = m.group(1)
         cc = chr(ord(f[0]) - 0x1F1E6 + ord('A')) + chr(ord(f[1]) - 0x1F1E6 + ord('A'))
+    poison = re.search(r'_⚠️[A-Z]{2}', tag)
     return {
         "cc": cc,
+        # 复测不重新判定属地，沿用原名中的送中/受限地区污染标记，避免重命名时丢失 _⚠️CN
+        "poison_tag": poison.group(0) if poison else None,
         "ai_supported": ("❇️" in tag),
+        "is_high_quality": ("♥" in tag and "_⚠️" not in tag),
         "is_key": ("Key" in tag),
         "is_fast": ("Fast" in tag),
         "is_landing": ("_Lnd" in tag or "_USAI" in tag),
@@ -89,50 +83,14 @@ def parse_info_from_tag(tag):
     }
 
 
-def format_node_name(cc, slot, city="", ai_supported=False, comprehensive_sparkle=False,
-                      is_key=False, is_fast=False, is_landing=False, is_usai=False, media_details=None, poison_tag=None):
-    if poison_tag:
-        ai_supported = comprehensive_sparkle = is_usai = False
-    flag = flag_emoji(cc)
-    cname = country_name_zh(cc)
-
-    prefix_badges = ""
-    if ai_supported:
-        prefix_badges += "❇️"
-    if comprehensive_sparkle:
-        prefix_badges += "✨️"
-    if is_key:
-        prefix_badges += "Key"
-    elif is_fast:
-        prefix_badges += "Fast"
-
-    country_part = f"{prefix_badges}{cname}"
-    if city:
-        country_part += f"_{city}"
-    country_part += f"_{slot}"
-
-    lnd_suffix = ""
-    if is_landing:
-        lnd_suffix = "_USAI" if is_usai else "_Lnd"
-
-    md = media_details or {}
-    media_suffix = ""
-    if md.get("nf"):
-        media_suffix += "_NF"
-    if md.get("dp"):
-        media_suffix += "_D+"
-
-    return f"{flag} {country_part}{lnd_suffix}{media_suffix}{poison_tag or ''}"
-
-
 def fast_probe_ip(proxies, timeout=2.0):
     """用共享 HTTPS 回显验证公网 IP，不从错误页中匹配任意数字。"""
     result = probe_egress(proxies, timeout=(timeout, timeout), ipv6=False)
     return result['ipv4']['ip'] or result['ipv6']['ip']
 
 
-def run_fast_speed(proxies, max_sec=1.5, min_bytes=4*1024, timeout=2.5):
-    """轻量流式吞吐检测"""
+def run_fast_speed(proxies, max_sec=3.0, min_bytes=DEFAULT_STALL_MIN_BYTES, timeout=2.5):
+    """默认 3 秒轻量防断流快检：累计不足 16KB 判定断流假死（与 Mihomo 流水线同一门槛）"""
     import requests
     url = "https://speed.cloudflare.com/__down?bytes=5000000"
     total = 0
@@ -201,7 +159,7 @@ def test_target_node(target, baseline_ip=None):
             return res
 
     # 3. 测速与断流
-    sp = run_fast_speed(active_proxies, max_sec=1.5, min_bytes=4*1024, timeout=2.5)
+    sp = run_fast_speed(active_proxies)
     res.update(sp)
     if sp.get("eliminated_reason"):
         res['eliminated_reason'] = sp["eliminated_reason"]
@@ -225,10 +183,55 @@ def test_target_node(target, baseline_ip=None):
     media_res = probe_all_media(active_proxies, timeout=(2.0, 3.5))
     res['media_details'] = media_res.get("details", {})
 
-    speed_kbs = res.get('speed_kbs', 0)
-    res['is_fast'] = bool(speed_kbs >= 500)
+    # Fast/Key 只由主动测速授予；快检吞吐只用于断流淘汰
+    res['is_fast'] = False
 
     return res
+
+
+def run_speed_stage(qualified, args, front_proxy):
+    """主动完整下载测速：仅直连节点参与 Fast/Key 评选；测速失败只取消资格，不淘汰已通过初筛的节点。"""
+    directs = [r for r in qualified if not r.get('is_landing')]
+    print(f"\n[3.5/6] 主动完整下载测速 (限速 {args.rate_limit_mbps}Mbps，窗口 {args.speed_duration}s，"
+          f"阈值 {args.min_speed_mbps}Mbps，共 {len(directs)} 个直连节点)...")
+
+    def measure(target):
+        r = target['result_ref']
+        pre_err = precheck_target(args.speed_target, target['proxy_url'], timeout=3.0)
+        if pre_err:
+            r['speed_result'] = {"complete": False, "status": pre_err.get("status"), "error": pre_err.get("error")}
+            return
+        shard_dir = tempfile.mkdtemp(prefix="speed_probe_shard_")
+        try:
+            r['speed_result'] = measure_download_sustained(
+                url=args.speed_target, proxy_url=target['proxy_url'], work_dir=shard_dir,
+                duration_seconds=args.speed_duration, warmup_seconds=1.0,
+                rate_limit_mbps=args.rate_limit_mbps)
+        except Exception as e:
+            r['speed_result'] = {"complete": False, "status": "error", "error": f"{type(e).__name__}: {e}"}
+        finally:
+            shutil.rmtree(shard_dir, ignore_errors=True)
+
+    for start in range(0, len(directs), 10):
+        chunk = directs[start:start + 10]
+        try:
+            with singbox_active_listeners(chunk, front_proxy=front_proxy, singbox_bin=args.singbox_bin) as targets:
+                with ThreadPoolExecutor(max_workers=max(1, min(4, len(targets)))) as pool:
+                    list(pool.map(measure, targets))
+        except Exception as e:
+            print(f"      测速批次 {start // 10 + 1} 异常: {e}")
+            for r in chunk:
+                r.setdefault('speed_result', {"complete": False, "status": "listener_error", "error": str(e)})
+
+    for r in directs:
+        measured = r.get('speed_result') or {}
+        r['speed_mbps'] = measured.get('median_mbps') or 0.0
+        r['is_fast'] = bool(measured.get('complete') and
+                            speed_qualified(measured, min_median_mbps=args.min_speed_mbps))
+        r['proxy'] = parse_singbox_outbound(deepcopy(r['raw_node'])) or {}
+    chosen = select_key_nodes([r for r in directs if r['proxy']], max_keys=10, per_country_cap=3,
+                              min_median_mbps=args.min_speed_mbps)
+    print(f"      测速达标: {sum(1 for r in directs if r['is_fast'])} 个 | 评选 Key 优质前置跳板: {len(chosen)} 个")
 
 
 def parse_args():
@@ -250,6 +253,11 @@ def parse_args():
                         help="主动开启本地完整下载测速 (非主动技能，仅在显式要求时执行)")
     parser.add_argument("--rate-limit-mbps", type=float, default=10.0,
                         help="测速带宽上限 (Mbps)，防止跑满本地网络导致卡顿 (默认: 10.0)")
+    parser.add_argument("--speed-duration", type=float, default=5.0, help="单节点持续下载测速时长 (秒，默认: 5.0)")
+    parser.add_argument("--min-speed-mbps", type=float, default=5.0, help="测速合格中位数速率门槛 (Mbps，默认: 5.0)")
+    parser.add_argument("--speed-target", default=DEFAULT_SUSTAINED_TARGETS[0], help="持续测速目标 URL")
+    parser.add_argument("--resort", action="store_true", default=False,
+                        help="仅在用户主动要求重排序时使用: 同地区按标签与信誉重排并从 1 重新编号 (默认保留原节点编号)")
     parser.add_argument("--report", "-r", help="保存测试详情报告的 JSON 路径")
     return parser.parse_args()
 
@@ -314,12 +322,15 @@ def main():
                 'orig_name': tag,
                 'exit_ip': None,
                 'cc': info['cc'],
+                'geo_decision': {'poison_tag': info['poison_tag']},
                 'city': info['city'],
                 'assigned_slot': info['slot'],
                 'is_landing': info['is_landing'],
                 'is_usai': info['is_usai'],
                 'ai_supported': info['ai_supported'],
-                'is_fast': info['is_fast'],
+                'is_high_quality': info['is_high_quality'],
+                'is_key': info['is_key'],
+                'is_fast': info['is_fast'] and not info['is_key'],
                 'media_details': info['media_details'],
                 'speed_kbs': 500 if info['is_fast'] else 120
             })
@@ -331,12 +342,10 @@ def main():
             chunk = candidates[b_idx * batch_size: (b_idx + 1) * batch_size]
             b_num = b_idx + 1
             t_b0 = time.time()
-            base_port = 26000 + (b_idx % 20) * 100
-
             b_results = []
             try:
                 with singbox_dual_listeners(chunk, front_proxy=(front_host, front_port),
-                                           singbox_bin=args.singbox_bin, base_port=base_port) as targets:
+                                           singbox_bin=args.singbox_bin) as targets:
                     pool = ThreadPoolExecutor(max_workers=min(args.workers, len(targets)))
                     futures = {pool.submit(test_target_node, t, baseline_ip): t for t in targets}
                     completed = set()
@@ -358,6 +367,11 @@ def main():
                         pool.shutdown(wait=False, cancel_futures=True)
             except Exception as e:
                 print(f"      批次 {b_num} 异常: {e}")
+                # 监听启动失败的节点记为淘汰并保留原因，不从报告中凭空消失
+                done = {id(r.get('raw_node')) for r in b_results}
+                b_results += [{'raw_node': c['raw'], 'orig_name': c['raw'].get('tag'),
+                               'eliminated_reason': f"批次监听启动失败:{e}"}
+                              for c in chunk if id(c['raw']) not in done]
 
             b_qual = [r for r in b_results if not r.get('eliminated_reason')]
             b_elim = [r for r in b_results if r.get('eliminated_reason')]
@@ -372,6 +386,9 @@ def main():
         print("错误: 本轮无节点通过基础测试。")
         return 1
 
+    if args.speed_test:
+        run_speed_stage(qualified, args, (front_host, front_port))
+
     # [4/6] 全量深度浏览器实测 (YouTube 免登实播 + 4 站免盾)
     if not args.no_browser:
         print(f"\n[4/6] 启动全量深度浏览器实测 (YouTube 免登实播 + 4 站免盾，共 {len(qualified)} 个合格节点)...")
@@ -382,11 +399,10 @@ def main():
             q_chunk = qualified[qb_idx * qual_batch_size: (qb_idx + 1) * qual_batch_size]
             qb_num = qb_idx + 1
             t_qb0 = time.time()
-            base_port = 28000 + (qb_idx % 20) * 50
 
             try:
                 with singbox_active_listeners(q_chunk, front_proxy=(front_host, front_port),
-                                              singbox_bin=args.singbox_bin, base_port=base_port) as active_targets:
+                                              singbox_bin=args.singbox_bin) as active_targets:
                     def test_browser_node(target_info):
                         r = target_info['result_ref']
                         p_url = target_info['proxy_url']
@@ -458,79 +474,9 @@ def main():
             r['shield_passed'] = False
             r['comprehensive_sparkle'] = False
 
-    # 规范打标与命名
-    print("\n[5/6] 规范打标、Slot 分配与地区优先级重排序...")
-    claimed_slots = defaultdict(set)
-    for r in qualified:
-        orig_slot = parse_existing_slot(r['orig_name'])
-        cc = r.get('cc') or 'UNK'
-        if orig_slot and orig_slot > 0 and orig_slot not in claimed_slots[cc]:
-            claimed_slots[cc].add(orig_slot)
-            r['assigned_slot'] = orig_slot
-        else:
-            r['assigned_slot'] = None
-
-    allocators = {cc: SlotAllocator(slots) for cc, slots in claimed_slots.items()}
-    for r in qualified:
-        cc = r.get('cc') or 'UNK'
-        if cc not in allocators:
-            allocators[cc] = SlotAllocator()
-        if r['assigned_slot'] is None:
-            r['assigned_slot'] = allocators[cc].next_slot()
-
-    seen_names = set()
-    for r in qualified:
-        cc = r.get('cc') or 'UNK'
-        slot = r['assigned_slot']
-        is_usai = bool(r.get('is_landing') and cc == 'US' and r.get('ai_supported'))
-        sparkle = r.get('comprehensive_sparkle', False)
-        is_key = bool(r.get('is_key', False))
-        is_fast = bool(r.get('is_fast', False) and not is_key)
-        name = format_node_name(
-            cc=cc,
-            slot=slot,
-            city=r.get('city', ''),
-            ai_supported=r.get('ai_supported', False),
-            comprehensive_sparkle=sparkle,
-            is_key=is_key,
-            is_fast=is_fast,
-            is_landing=r.get('is_landing', False),
-            is_usai=is_usai,
-            media_details=r.get('media_details', {}),
-            poison_tag=(r.get('geo_decision') or {}).get('poison_tag')
-        )
-        if name in seen_names:
-            slot = allocators[cc].next_slot()
-            name = format_node_name(
-                cc=cc,
-                slot=slot,
-                city=r.get('city', ''),
-                ai_supported=r.get('ai_supported', False),
-                comprehensive_sparkle=sparkle,
-                is_key=is_key,
-                is_fast=is_fast,
-                is_landing=r.get('is_landing', False),
-                is_usai=is_usai,
-                media_details=r.get('media_details', {}),
-                poison_tag=(r.get('geo_decision') or {}).get('poison_tag')
-            )
-        seen_names.add(name)
-        r['final_name'] = name
-        r['slot'] = slot
-
-    def sort_key(row):
-        cc = row.get("cc") or "UNK"
-        order_info = CATEGORY_ORDER.get(cc, (7, 999, '未知'))
-        reg_rank = order_info[0]
-        cntry_rank = order_info[1]
-        key_rank = 0 if row.get("is_key") else 1
-        fast_rank = 0 if row.get("is_fast") else 1
-        ai_rank = 0 if row.get("ai_supported") else 1
-        sparkle_rank = 0 if row.get("comprehensive_sparkle") else 1
-        slot = row.get("slot", 9999)
-        return (reg_rank, cntry_rank, key_rank, fast_rank, ai_rank, sparkle_rank, slot)
-
-    qualified.sort(key=sort_key)
+    # 规范打标与命名：与 Mihomo 流水线共用编号规则（默认保留原节点编号，新节点补空号；--resort 才重排并重编号）
+    print("\n[5/6] 规范打标、原节点编号保留与新节点补位" + ("（主动重排序并从 1 重新编号）" if args.resort else "") + "...")
+    tag_and_rename_nodes(qualified, resort=args.resort)
 
     print(f"\n[6/6] 导出双份标准配置文件 (sing-box JSON + Clash/Mihomo YAML)...")
     out_target = args.output
@@ -606,12 +552,19 @@ def main():
                     "comprehensive_sparkle": r.get('comprehensive_sparkle'),
                     "media": r.get('media_details'),
                     "shield_details": r.get('shield_details'),
+                    "is_key": r.get('is_key', False),
+                    "is_fast": r.get('is_fast', False),
+                    "key_score": r.get('key_score'),
+                    "key_reason": r.get('key_reason'),
+                    "speed_mbps": r.get('speed_mbps'),
+                    "speed_result": r.get('speed_result'),
                     "geo_decision": r.get('geo_decision'),
                     "google_region": r.get('google_region'),
                     "egress": r.get('egress'),
                     "egress_after": r.get('egress_after'),
                     "ip_info": r.get('ip_info'),
                     "ip_info_by_ip": r.get('ip_info_by_ip'),
+                    "ip_reputation": r.get('ip_reputation'),
                     "youtube_details": r.get('youtube_details')
                 } for r in qualified
             ]

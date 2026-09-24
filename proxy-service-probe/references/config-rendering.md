@@ -66,10 +66,10 @@ flowchart TD
 
 ## 3. 落地节点链式跳板注入 (Dialer-Proxy)
 
-对于所有落地节点，渲染器会自动设置 `dialer-proxy` 字段：
-- 默认指向 `🛡️ Front前置` 策略组；
+对于所有落地节点，渲染器会自动设置链式前置字段：
+- Clash/Mihomo 设置 `dialer-proxy`，sing-box 设置 `detour`，均指向 `🛡️ Front前置` 策略组（原有 `detour` 可能指向不存在的出站，一律先剥离再注入）；
 - 若直连前置发生变动或测速后动态调度，落地节点统一通过 `🛡️ Front前置` 建立连接；
-- 直连节点自动剔除任何 `dialer-proxy` 属性，杜绝循环前置引用。
+- 直连节点自动剔除任何 `dialer-proxy` / `detour` 属性，杜绝循环前置引用。
 
 ---
 

@@ -197,18 +197,37 @@ class TestKeyEvaluator(unittest.TestCase):
         self.assertTrue(nodes[0]["proxy"]["_is_key"])
         self.assertFalse(nodes[2]["proxy"].get("_is_key", False))
 
+    def test_key_selection_honors_raised_speed_threshold(self):
+        # 用户调高 --min-speed-mbps 后，Key 与 Fast 使用同一门槛，不再固定按 5 Mbps 放行
+        row = {
+            "proxy": {"name": "node_jp", "type": "trojan"}, "cc": "JP",
+            "speed_result": {"complete": True, "status": "complete", "median_mbps": 6.0,
+                             "p10_mbps": 5.0, "max_stall_seconds": 0.0},
+            "egress_result": {"exit_ip": "1.1.1.1", "runner_ip_match": False},
+        }
+        self.assertEqual(select_key_nodes([row], min_median_mbps=8.0), [])
+        self.assertEqual(len(select_key_nodes([row], min_median_mbps=5.0)), 1)
+
+    def test_asia_bonus_uses_pipeline_country_code(self):
+        # 流水线结果行只有 cc（无 _country_code / country），亚太加分仍需生效
+        speed = {"complete": True, "status": "complete", "median_mbps": 20.0, "p10_mbps": 15.0, "max_stall_seconds": 0.0}
+        row = {"exit_ip": "1.1.1.1", "cc": "JP"}
+        _, jp_score, _ = evaluate_key_node({"name": "a", "type": "trojan"}, speed, row, delay=50.0)
+        _, us_score, _ = evaluate_key_node({"name": "b", "type": "trojan"}, speed, {**row, "cc": "US"}, delay=50.0)
+        self.assertEqual(jp_score - us_score, 8.0)
+
 
 class TestTaggerAndNaming(unittest.TestCase):
     """测试 Key 与 Fast 节点打标规范与重命名"""
 
     def test_format_node_name_variants(self):
-        # 1. 综合全通 Key 节点: 🇯🇵 ❇️✨️Key日本_1
+        # 1. 综合全通 Key 节点: 🇯🇵 ✨️❇️Key日本_1
         name_key = format_node_name(cc="JP", slot=1, ai_supported=True, comprehensive_sparkle=True, is_key=True)
-        self.assertEqual(name_key, "🇯🇵 ❇️✨️Key日本_1")
+        self.assertEqual(name_key, "🇯🇵 ✨️❇️Key日本_1")
 
-        # 2. 综合全通 Fast 节点 (非 Key): 🇺🇸 ❇️✨️Fast美国_1
+        # 2. 综合全通 Fast 节点 (非 Key): 🇺🇸 ✨️❇️Fast美国_1
         name_fast = format_node_name(cc="US", slot=1, ai_supported=True, comprehensive_sparkle=True, is_key=False, is_fast=True)
-        self.assertEqual(name_fast, "🇺🇸 ❇️✨️Fast美国_1")
+        self.assertEqual(name_fast, "🇺🇸 ✨️❇️Fast美国_1")
 
         # 3. Key 与 Fast 互斥 (Key 优先): 🇯🇵 ❇️Key日本_2
         name_conflict = format_node_name(cc="JP", slot=2, ai_supported=True, is_key=True, is_fast=True)
@@ -218,9 +237,18 @@ class TestTaggerAndNaming(unittest.TestCase):
         name_norm = format_node_name(cc="HK", slot=1)
         self.assertEqual(name_norm, "🇭🇰 香港_1")
 
+    def test_canonical_name_parsing_for_slot_preservation(self):
+        from core.tagger import parse_canonical_node
+        self.assertEqual(parse_canonical_node("🇯🇵 ✨️❇️♥️Key日本_12_NF"), {"cc": "JP", "slot": 12, "city": ""})
+        self.assertEqual(parse_canonical_node("🇺🇸 Fast美国_洛杉矶_3_USAI"), {"cc": "US", "slot": 3, "city": "洛杉矶"})
+        self.assertEqual(parse_canonical_node("🇰🇷 韩国_2_⚠️CN")["slot"], 2)
+        # 非本技能规范命名、国旗与国家名不一致均视为新节点
+        for name in ("JP-Tokyo-01", "🇯🇵 东京_1", "🇯🇵 美国_1", "日本_1", "🇯🇵 日本", "🇯🇵 日本_0"):
+            self.assertIsNone(parse_canonical_node(name), name)
+
     def test_parse_existing_slot_strips_tags(self):
-        self.assertEqual(parse_existing_slot("🇯🇵 ❇️✨️Key日本_1"), 1)
-        self.assertEqual(parse_existing_slot("🇺🇸 ❇️✨️Fast美国_12_USAI"), 12)
+        self.assertEqual(parse_existing_slot("🇯🇵 ✨️❇️Key日本_1"), 1)
+        self.assertEqual(parse_existing_slot("🇺🇸 ✨️❇️Fast美国_12_USAI"), 12)
         self.assertEqual(parse_existing_slot("🇭🇰 香港_3_Lnd"), 3)
 
 
@@ -229,9 +257,9 @@ class TestRendererGroupingSync(unittest.TestCase):
 
     def test_front_and_fast_groups_with_keys(self):
         proxies = [
-            {"name": "🇯🇵 ❇️✨️Key日本_1", "type": "trojan", "_is_key": True, "_key_score": 42.0},
+            {"name": "🇯🇵 ✨️❇️Key日本_1", "type": "trojan", "_is_key": True, "_key_score": 42.0},
             {"name": "🇭🇰 ❇️Key香港_1", "type": "vmess", "_is_key": True, "_key_score": 39.0},
-            {"name": "🇺🇸 ❇️✨️Fast美国_1", "type": "http", "_is_fast": True},
+            {"name": "🇺🇸 ✨️❇️Fast美国_1", "type": "http", "_is_fast": True},
             {"name": "🇺🇸 ❇️美国_2_Lnd", "type": "ss", "_is_landing": True}
         ]
 
@@ -246,21 +274,21 @@ class TestRendererGroupingSync(unittest.TestCase):
         front_members = groups["🛡️ Front前置"]["proxies"]
         self.assertIn("⚡ Fast自动选择", front_members)
         self.assertIn("DIRECT", front_members)
-        self.assertIn("🇯🇵 ❇️✨️Key日本_1", front_members)
+        self.assertIn("🇯🇵 ✨️❇️Key日本_1", front_members)
         self.assertIn("🇭🇰 ❇️Key香港_1", front_members)
         self.assertNotIn("🇺🇸 ❇️美国_2_Lnd", front_members)
 
         # 2. 验证 ⚡ Fast自动选择 仅对 Key 优质跳板执行 url-test
         fast_members = groups["⚡ Fast自动选择"]["proxies"]
-        self.assertIn("🇯🇵 ❇️✨️Key日本_1", fast_members)
+        self.assertIn("🇯🇵 ✨️❇️Key日本_1", fast_members)
         self.assertIn("🇭🇰 ❇️Key香港_1", fast_members)
-        self.assertNotIn("🇺🇸 ❇️✨️Fast美国_1", fast_members)
+        self.assertNotIn("🇺🇸 ✨️❇️Fast美国_1", fast_members)
         self.assertNotIn("🇺🇸 ❇️美国_2_Lnd", fast_members)
 
         # 3. 验证落地节点自动注入 dialer-proxy: 🛡️ Front前置
         clean_proxies = {p["name"]: p for p in cfg["proxies"]}
         self.assertEqual(clean_proxies["🇺🇸 ❇️美国_2_Lnd"].get("dialer-proxy"), "🛡️ Front前置")
-        self.assertNotIn("dialer-proxy", clean_proxies["🇯🇵 ❇️✨️Key日本_1"])
+        self.assertNotIn("dialer-proxy", clean_proxies["🇯🇵 ✨️❇️Key日本_1"])
 
 
 class TestSafetyAndIsolation(unittest.TestCase):

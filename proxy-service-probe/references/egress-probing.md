@@ -20,6 +20,7 @@
    # 若用户同时要求排序，加 --sort
    python <skill>/scripts/rename.py --workdir <workdir> --sort --apply
    ```
+   编号严格“先定位置、再编号”：`--sort` 时先按地区排好全部位置，否则保持原序，然后按 `国家[_城市]` 从 1 依次编号；低置信/离线节点保留原名，其已占用的名称会被跳过，不产生重名。
 
 `overrides.json` 使用如下格式，键可以是检测时或当前节点名：
 

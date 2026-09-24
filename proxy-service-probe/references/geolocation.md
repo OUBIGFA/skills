@@ -49,7 +49,7 @@ python <skill>/scripts/audit_geolocation.py \
 - 链式节点默认排除，避免拆掉 `dialer-proxy` 后假装复核了原拓扑。直连不可达只代表本次隔离直连路径失败，不能推断用户客户端经前置也不可用。
 - **ip.cx 是留出来源，不参与自动仲裁**。另一次无 Cookie Gemini 请求做时间复核。ip.cx 网络超时最多追加一次请求并保留首次失败，不绕过挑战页。
 - 生成同名 JSON、Markdown 和 `.evidence/` ip.cx 原页。既有报告不覆盖；输入文件 SHA-256 检测前后保持一致。
-- `verified` 是来源一致，不是地理真值认证；`verified_sent_to_china` 表示实际属地和送中分别复核成功；离线、证据不足、轮换和分歧分别统计，不算通过。
+- `verified` 是来源一致，不是地理真值认证；`verified_sent_to_china` 表示实际属地和送中分别复核成功；`verified_correction` 表示出口 IP 未变化，ip.cx 与第二次 Gemini 共同确认了不同于自动判定的国家，报告中的 `recommended_cc` 才是可供人工确认的修正候选。离线、证据不足、轮换和分歧分别统计，不算通过。
 - 抽查不要将预筛后的样本一致率宣传为全订阅准确率。需要补抽时保留首轮完整失败记录，并说明补抽口径。
 
 ## 验证

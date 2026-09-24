@@ -59,6 +59,21 @@ def parse_ipcx(text):
     return {"ip": ip, "country_code": cc, "status": 'observed' if ip and cc else 'missing_marker'}
 
 
+def review_country(row):
+    """Return a correction candidate only when independent reviews agree."""
+    decision = row.get('geo_decision') or {}
+    ipcx = row.get('ipcx_review') or {}
+    gemini = row.get('gemini_review') or {}
+    observed = set(decision.get('observed_ips') or [])
+    if ipcx.get('ip') not in observed:
+        return None
+    ipcx_cc = normalize_country_code(ipcx.get('country_code'))
+    gemini_cc = normalize_country_code(gemini.get('country_code'))
+    if not ipcx_cc or ipcx_cc != gemini_cc:
+        return None
+    return ipcx_cc
+
+
 def review_status(row):
     if not row.get('exit_ip'):
         return 'offline'
@@ -66,10 +81,13 @@ def review_status(row):
         return 'runner_ip_match'
     decision = row['geo_decision']
     ipcx, gemini = row['ipcx_review'], row['gemini_review']
+    reviewed_cc = review_country(row)
     if not decision['egress_stable'] or decision['is_pool']:
         return 'unstable_egress'
     if ipcx.get('ip') and ipcx['ip'] not in decision['observed_ips']:
         return 'different_review_egress'
+    if reviewed_cc and reviewed_cc != row['cc']:
+        return 'verified_correction'
     if decision.get('is_poisoned') and ipcx.get('country_code') == row['cc'] and \
             gemini.get('country_code') == decision.get('poisoned_cc'):
         return 'verified_sent_to_china' if decision['poisoned_cc'] == 'CN' else 'verified_geo_poisoning'
@@ -112,7 +130,12 @@ def run_review(item, runner_ips, evidence_dir):
     else:
         row['ipcx_review'] = row['gemini_review'] = {'status': 'not_probed_no_egress'}
     row['review_status'] = review_status(row)
+    row['reviewed_cc'] = review_country(row)
+    row['recommended_cc'] = row['reviewed_cc'] or (row['cc'] if row['review_status'] in {
+        'verified', 'verified_with_db_conflict', 'verified_sent_to_china', 'verified_geo_poisoning'
+    } else None)
     row['name_mismatch'] = bool(row['cc'] != 'UNK' and row['original_cc'] != row['cc'])
+    row['reviewed_name_mismatch'] = bool(row['recommended_cc'] and row['original_cc'] != row['recommended_cc'])
     return row
 
 
@@ -124,14 +147,15 @@ def markdown_report(report):
              '- 仅检测 IP 属地；未测速、未重新检测 AI/流媒体能力，未改原订阅。',
              '- Google 服务地区不等于可证明的物理机房。多源一致也不是地理真值保证。',
              f"- 状态统计：`{json.dumps(report['summary'], ensure_ascii=False)}`", '',
-             '| # | 原节点 | 出口 IPv4/IPv6 | 新判定 | GeoIP / CF loc | ip.cx | Gemini复核 | 状态 |',
-             '|---|---|---|---|---|---|---|---|']
+             '| # | 原节点 | 出口 IPv4/IPv6 | 自动判定 | 复核推荐 | GeoIP / CF loc | ip.cx | Gemini复核 | 状态 |',
+             '|---|---|---|---|---|---|---|---|---|']
     for r in report['results']:
         d = r['geo_decision']
         ips = '<br>'.join(d['observed_ips']) or '—'
         info = '/'.join(f"{x['provider']}:{x.get('cc', x.get('error', '?'))}" for x in r['ip_info']['records'])
-        lines.append(f"| {r['index']} | {r['original_name']} | {ips} | {r['cc']} ({d['confidence']}) | {info}; CF:{d['cf_loc'] or '—'} | {r['ipcx_review'].get('country_code', '—')} | {r['gemini_review'].get('country_code', '—')} | {r['review_status']} |")
+        lines.append(f"| {r['index']} | {r['original_name']} | {ips} | {r['cc']} ({d['confidence']}) | {r.get('recommended_cc') or '—'} | {info}; CF:{d['cf_loc'] or '—'} | {r['ipcx_review'].get('country_code', '—')} | {r['gemini_review'].get('country_code', '—')} | {r['review_status']} |")
     lines += ['', '## 解读', '',
+              '- `verified_correction`：出口 IP 与自动探测稳定，ip.cx 和第二次 Gemini 独立复核一致且共同指向另一国家；`recommended_cc` 可供后续人工确认后修正标签。',
               '- `verified`：出口稳定，ip.cx、再次请求的 Gemini 与自动判定一致。',
               '- `verified_with_db_conflict`：以上复核一致，但第三方库或 Google 子服务仍有分歧，保留待复核标志。',
               '- `verified_sent_to_china`：ip.cx 确认实际属地，Gemini 确认送中；保留属地，标 `_⚠️CN` 并剥离 AI 全通资格。',

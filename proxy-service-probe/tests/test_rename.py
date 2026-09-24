@@ -60,6 +60,17 @@ class RenameTests(unittest.TestCase):
         self.assertEqual(config['route']['rules'][0]['outbound'], '🇺🇸 美国_洛杉矶_1')
         common.validate_config(config)
 
+    def test_number_plan_positions_first_and_skips_kept_names(self):
+        def item(idx, cc, czh, city=''):
+            return (idx, f'raw-{idx}', {}, cc, czh, city, '高', '', '', '_')
+        plan = [item(0, 'US', '美国'), item(1, 'HK', '香港'), item(2, 'US', '美国'), item(3, 'HK', '香港')]
+        keep = [{'old': '🇺🇸 美国_1', 'new': '（保留原名）', 'conf': '低置信'}]
+        mapping, rows = rename.number_plan(plan, keep, do_sort=True)
+        # 先按地区排好位置（香港在美国前），再依次编号；保留原名已占用的美国_1 被跳过
+        self.assertEqual([r['new'] for r in rows],
+                         ['🇭🇰 香港_1', '🇭🇰 香港_2', '🇺🇸 美国_2', '🇺🇸 美国_3', '（保留原名）'])
+        self.assertEqual(mapping['raw-2'], '🇺🇸 美国_3')
+
 
 if __name__ == '__main__':
     unittest.main()

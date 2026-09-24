@@ -14,6 +14,7 @@ SHIELD_TARGETS = [
     {"name": "claude", "url": "https://www.anthropic.com/", "markers": ("anthropic", "claude")},
     {"name": "gemini", "url": "https://gemini.google.com/", "markers": ("gemini",)},
 ]
+SHIELD_MIN_PASSED = 2
 
 CHALLENGE_MARKERS = (
     "just a moment", "checking your browser", "verify you are human", "verify that you are human",
@@ -137,17 +138,11 @@ def probe_sites_browser(proxy_url, targets=None):
 
 def shield_passed(results):
     """
-    免盾判定标准:
-    4 站观测齐全（若有浏览器观测则以浏览器为准，否则以 HTTP 为准），至多 1 站遇到挑战（且自动通过），其余全部通过。
+    免盾判定标准 (若有浏览器观测则以浏览器为准，否则以 HTTP 为准):
+    4 站中至少 SHIELD_MIN_PASSED 站直接通过或质询自动解除即判定免盾；
+    未观测 (unknown)、阻断或质询未解除的站点不计入通过数。
     """
-    if not results or len(results) < len(SHIELD_TARGETS):
+    if not results:
         return False
-
-    rows = list(results.values())
-    # 任何被阻断则不能免盾
-    if any(item.get("status") == "blocked" for item in rows):
-        return False
-
-    # 遇到质询的站点数至多 1 个
-    challenged_count = sum(item.get("status") in ("challenge", "auto_passed") for item in rows)
-    return challenged_count <= 1
+    rows = [results.get(t["name"]) or {} for t in SHIELD_TARGETS]
+    return sum(item.get("status") in ("passed", "auto_passed") for item in rows) >= SHIELD_MIN_PASSED

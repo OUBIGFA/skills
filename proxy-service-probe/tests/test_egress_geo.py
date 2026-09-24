@@ -85,6 +85,20 @@ class GoogleRegionTests(unittest.TestCase):
 
 
 class GeoEvidenceTests(unittest.TestCase):
+    def test_reputation_score_is_strictly_validated(self):
+        self.assertEqual(geo.valid_reputation_score(88), 88)
+        for value in (True, "88", -1, 101, float("nan"), None):
+            self.assertIsNone(geo.valid_reputation_score(value))
+
+    def test_rotating_exit_reputation_uses_worst_complete_score(self):
+        infos = {IP: {"reputation": {"score": 90}}, IP2: {"reputation": {"score": 35}}}
+        result = geo.reputation_for_exits(infos, [IP, IP2])
+        self.assertEqual(result["score"], 35)
+        self.assertEqual(result["status"], "observed")
+        result = geo.reputation_for_exits({IP: infos[IP]}, [IP, IP2])
+        self.assertIsNone(result["score"])
+        self.assertEqual(result["status"], "unknown")
+
     def test_free_tier_and_nested_ipapi_schema(self):
         for data in [{'ip': IP, 'country': 'Japan', 'asn': 'AS132203'},
                      {'ip': IP, 'location': {'country_code': 'JP'}, 'asn': {'country': 'SG'}}]:
@@ -141,7 +155,8 @@ class GeoEvidenceTests(unittest.TestCase):
                'ai_supported': True, 'youtube_passed': True, 'shield_passed': True}
         tag_and_rename_nodes([row])
         self.assertFalse(row['ai_supported'])
-        self.assertEqual(row['final_name'], '🇰🇷 韩国_3_⚠️CN')
+        # 导出前按地区重新从 1 编号，报告名称与配置一致
+        self.assertEqual(row['final_name'], '🇰🇷 韩国_1_⚠️CN')
         self.assertEqual(probe_gemini({}, google)['status'], 'blocked')
         module = importlib.import_module('probe_singbox')
         name = module.format_node_name('KR', 3, ai_supported=True, comprehensive_sparkle=True, poison_tag='_⚠️CN')
@@ -214,6 +229,16 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(proxies, before)
         self.assertEqual(len(selected), 20)
         self.assertTrue(all(not p.get('dialer-proxy') for p in selected))
+
+    def test_independent_reviews_surface_a_country_correction(self):
+        row = {'exit_ip': IP, 'cc': 'US', 'google_region': {'country_code': 'US'},
+               'geo_decision': {'egress_stable': True, 'is_pool': False,
+                                'observed_ips': [IP], 'conflict': False},
+               'ipcx_review': {'ip': IP, 'country_code': 'JP'},
+               'gemini_review': {'country_code': 'JP'}}
+        from audit_geolocation import review_country
+        self.assertEqual(review_country(row), 'JP')
+        self.assertEqual(review_status(row), 'verified_correction')
 
     def test_failed_or_different_exit_is_not_verified(self):
         row = {'exit_ip': IP, 'cc': 'JP', 'google_region': {'country_code': 'JP'},

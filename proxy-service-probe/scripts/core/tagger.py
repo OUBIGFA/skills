@@ -2,7 +2,8 @@
 """节点规范打标、命名与空号分配模块。"""
 import re
 from collections import defaultdict
-from .egress_geo import CATEGORY_ORDER, country_name_zh, flag_emoji
+from .egress_geo import country_name_zh, flag_emoji, valid_reputation_score
+from .renderer import sort_nodes_by_region_and_landing
 
 
 class SlotAllocator:
@@ -27,38 +28,70 @@ def parse_existing_slot(name):
         return None
     # 去除国旗与前缀标签
     cleaned = re.sub(r'^(?:(?:[\U0001F1E6-\U0001F1FF]{2}|🏳️|\S+)\s*)', '', name.strip())
-    cleaned = re.sub(r'^(?:[❇✨]️?|\s+|Key|Fast)+', '', cleaned)
+    cleaned = re.sub(r'^(?:[❇✨♥️♥]️?|\s+|Key|Fast)+', '', cleaned)
     m = re.search(r'_(?:[A-Za-z]+_)?(\d+)(?:_|$)', cleaned)
     if not m:
         m = re.search(r'_(\d+)', cleaned)
     return int(m.group(1)) if m else None
 
 
+_FLAG_RE = re.compile(r'^([\U0001F1E6-\U0001F1FF]{2}|🏳️?)\s*')
+_BADGES_RE = re.compile(r'^(?:[✨❇♥]️?|Key|Fast)*')
+_CITY_SLOT_RE = re.compile(r'^(?:_([^_\d\s]+))?_(\d+)(?!\d)')
+
+
+def parse_canonical_node(name):
+    """
+    解析本技能规范命名的原节点: [国旗] [徽章] 国家[_城市]_编号...
+    国旗与国家名必须一致；返回 {cc, slot, city}，非规范名称（新节点）返回 None。
+    """
+    if not isinstance(name, str):
+        return None
+    text = name.strip()
+    m = _FLAG_RE.match(text)
+    if not m:
+        return None
+    flag = m.group(1)
+    cc = 'UNK' if flag.startswith('🏳') else ''.join(chr(ord(c) - 127397) for c in flag)
+    rest = text[m.end():]
+    rest = rest[_BADGES_RE.match(rest).end():]
+    cname = country_name_zh(cc)
+    if not rest.startswith(cname):
+        return None
+    s = _CITY_SLOT_RE.match(rest[len(cname):])
+    if not s or int(s.group(2)) <= 0:
+        return None
+    return {"cc": cc, "slot": int(s.group(2)), "city": s.group(1) or ""}
+
+
 def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
-                     is_key=False, is_fast=False, is_landing=False, is_usai=False,
-                     media_details=None, is_chromego=False, poison_tag=None):
+                     is_high_quality=False, is_key=False, is_fast=False,
+                     is_landing=False, is_usai=False, media_details=None,
+                     is_chromego=False, poison_tag=None, city=""):
     """
     构造符合规范的节点名称:
-    [国旗] [❇️] [✨️] [Key/Fast] [国家]_[编号][落地后缀][流媒体后缀][来源后缀]
+    [国旗] [✨️] [❇️] [♥️] [Key/Fast] [国家][_城市]_[编号][落地后缀][流媒体后缀][来源后缀]
     """
     if poison_tag:
-        ai_supported = comprehensive_sparkle = is_usai = False
+        ai_supported = comprehensive_sparkle = is_usai = is_high_quality = False
     flag = flag_emoji(cc)
     cname = country_name_zh(cc)
 
-    # 1. 前置标识组合 (严格顺序: ❇️ -> ✨️ -> Key/Fast)
+    # 1. 前置标识组合 (严格顺序: ✨️ -> ❇️ -> ♥️ -> Key/Fast)
     prefix_tags = ""
-    if ai_supported:
-        prefix_tags += "❇️"
     if comprehensive_sparkle:
         prefix_tags += "✨️"
+    if ai_supported:
+        prefix_tags += "❇️"
+    if is_high_quality:
+        prefix_tags += "♥️"
     if is_key:
         prefix_tags += "Key"
     elif is_fast:
         prefix_tags += "Fast"
 
     # 2. 基础名称与编号
-    country_part = f"{prefix_tags}{cname}_{slot}"
+    country_part = f"{prefix_tags}{cname}{f'_{city}' if city else ''}_{slot}"
 
     # 3. 后置后缀组合: 落地 (_USAI / _Lnd) -> 流媒体 (_NF / _D+) -> 来源
     lnd_suffix = ""
@@ -77,24 +110,31 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
     return f"{flag} {country_part}{lnd_suffix}{media_suffix}{cg_suffix}{poison_tag or ''}"
 
 
-def tag_and_rename_nodes(results):
+def _orig_name(r):
+    p = r.get("proxy") or {}
+    return r.get("orig_name") or p.get("_orig_name") or p.get("name") or ""
+
+
+def tag_and_rename_nodes(results, resort=False):
     """
     对一批测试结果进行统一打标、分配空号并排序。
     每个 result 包含:
-      proxy, cc, is_landing, ai_supported, youtube_passed, shield_passed,
-      is_key, is_fast, media_details
+      proxy (或 sing-box 的 raw_node + orig_name), cc, is_landing, ai_supported,
+      youtube_passed, shield_passed, is_key, is_fast, media_details
+    编号规则:
+      - 默认: 规范命名且属地未变的原节点保留原编号；新节点及属地变化的节点按国家从 1 补空号；
+      - resort=True (用户主动要求重排序): 位置按标签与信誉全部确定后，从 1 重新编号。
     """
-    # 1. 提取老节点编号并按国家认领 (同一个国家内每个编号只能被认领一次)
+    # 1. 原节点按国家认领原编号 (属地变化即视为新节点；同一国家内每个编号只能被认领一次)
     claimed_slots = defaultdict(set)
     for r in results:
-        p = r["proxy"]
         cc = r.get("cc") or "UNK"
-        orig_slot = parse_existing_slot(p.get("_orig_name") or p.get("name", ""))
-        if orig_slot and orig_slot > 0 and orig_slot not in claimed_slots[cc]:
-            claimed_slots[cc].add(orig_slot)
-            r["assigned_slot"] = orig_slot
-        else:
-            r["assigned_slot"] = None
+        canon = parse_canonical_node(_orig_name(r))
+        r["assigned_slot"] = None
+        if canon and canon["cc"] == cc and canon["slot"] not in claimed_slots[cc]:
+            claimed_slots[cc].add(canon["slot"])
+            r["assigned_slot"] = canon["slot"]
+            r.setdefault("city", canon["city"])
 
     allocators = {cc: SlotAllocator(slots) for cc, slots in claimed_slots.items()}
 
@@ -109,9 +149,12 @@ def tag_and_rename_nodes(results):
     # 3. 生成规范化名称并防止重名
     seen_names = set()
     for r in results:
-        p = r["proxy"]
+        p = r.get("proxy") if isinstance(r.get("proxy"), dict) else {}
+        pname = p.get("name", "")
+        orig = _orig_name(r)
         cc = r.get("cc") or "UNK"
         slot = r["assigned_slot"]
+        city = r.get("city") or ""
 
         poison_tag = (r.get("geo_decision") or {}).get("poison_tag")
         ai_sup = bool(r.get("ai_supported", False) and not poison_tag)
@@ -124,23 +167,35 @@ def tag_and_rename_nodes(results):
         is_key = bool(r.get("is_key", False) or p.get("_is_key", False))
         is_fast = bool((r.get("is_fast", False) or p.get("_is_fast", False)) and not is_key)
 
-        is_landing = bool(r.get("is_landing", False) or "_Lnd" in p.get("name", "") or "_USAI" in p.get("name", ""))
+        # 流水线已实测判定直连/落地时以实测为准，不让原名里的 _Lnd/_USAI 覆盖本轮结果
+        if isinstance(r.get("is_landing"), bool):
+            is_landing = r["is_landing"]
+        else:
+            is_landing = "_Lnd" in pname or "_USAI" in pname
         is_usai = bool(is_landing and cc == "US" and ai_sup)
 
-        is_cg = "_ChromeGo" in p.get("_orig_name", "") or "_ChromeGo" in p.get("name", "")
+        is_cg = "_ChromeGo" in orig or "_ChromeGo" in pname
+
+        rep = r.get("ip_reputation") or p.get("_ip_reputation") or {}
+        sc = valid_reputation_score(rep.get("score"))
+        # 本轮有绑定信誉证据时按分数授予；仅浏览器复测等沿用已有 ♥️ 的场景由调用方显式传入 is_high_quality
+        is_hq = bool((r.get("is_high_quality") is True or
+                      (sc is not None and sc >= 80 and rep.get("status") == "observed")) and not poison_tag)
 
         new_name = format_node_name(
             cc=cc,
             slot=slot,
             ai_supported=ai_sup,
             comprehensive_sparkle=sparkle,
+            is_high_quality=is_hq,
             is_key=is_key,
             is_fast=is_fast,
             is_landing=is_landing,
             is_usai=is_usai,
             media_details=r.get("media_details", {}),
             is_chromego=is_cg,
-            poison_tag=poison_tag
+            poison_tag=poison_tag,
+            city=city
         )
 
         # 杜绝任何同名碰撞
@@ -151,41 +206,39 @@ def tag_and_rename_nodes(results):
                 slot=extra_slot,
                 ai_supported=ai_sup,
                 comprehensive_sparkle=sparkle,
+                is_high_quality=is_hq,
                 is_key=is_key,
                 is_fast=is_fast,
                 is_landing=is_landing,
                 is_usai=is_usai,
                 media_details=r.get("media_details", {}),
                 is_chromego=is_cg,
-                poison_tag=poison_tag
+                poison_tag=poison_tag,
+                city=city
             )
             r["assigned_slot"] = extra_slot
 
         seen_names.add(new_name)
-        p["name"] = new_name
-        p["_is_key"] = is_key
-        p["_is_fast"] = is_fast
-        p["_key_score"] = r.get("key_score", 0.0)
+        if "proxy" in r:
+            p["name"] = new_name
+            p["_is_key"] = is_key
+            p["_is_fast"] = is_fast
+            p["_key_score"] = r.get("key_score", 0.0)
+            p["_ip_reputation"] = r.get("ip_reputation")
 
         r["final_name"] = new_name
         r["slot"] = r["assigned_slot"]
         r["is_key"] = is_key
         r["is_fast"] = is_fast
         r["comprehensive_sparkle"] = sparkle
+        r["is_high_quality"] = is_hq
         r["is_usai"] = is_usai
 
-    # 4. 排序 (按区域优先级 -> 国家码 -> Key优先 -> Fast优先 -> AI全通优先 -> 综合徽章 -> 序号)
-    def sort_key(row):
-        cc = row.get("cc") or "UNK"
-        order_info = CATEGORY_ORDER.get(cc, (7, 999, '未知'))
-        region_rank = order_info[0]
-        country_rank = order_info[1]
-        key_rank = 0 if row.get("is_key") else 1
-        fast_rank = 0 if row.get("is_fast") else 1
-        ai_rank = 0 if row.get("ai_supported") else 1
-        sparkle_rank = 0 if row.get("comprehensive_sparkle") else 1
-        slot = row.get("slot", 9999)
-        return (region_rank, country_rank, key_rank, fast_rank, ai_rank, sparkle_rank, slot)
-
-    results.sort(key=sort_key)
+    # 4. 与导出共用同一排序规则：默认按编号排位；resort 时先定位置再从 1 重新编号
+    results[:] = sort_nodes_by_region_and_landing(results, resort=resort)
+    if resort:
+        for row in results:
+            canon = parse_canonical_node(row["final_name"])
+            if canon:
+                row["slot"] = row["assigned_slot"] = canon["slot"]
     return results

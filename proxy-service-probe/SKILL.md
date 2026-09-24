@@ -13,12 +13,14 @@ description: 对代理节点执行服务能力测试（IP属地检测、AI解锁
 > **默认行为准则**：
 > 1. **全量服务检测**：本技能默认执行涵盖 IP 属地、AI 三大平台解锁、Playwright Chromium YouTube 免登录实播、4 站免盾检测与国际流媒体解锁。严禁擅自启用轻量模式；`--no-browser` 仅作为用户显式指定或系统无浏览器环境时的降级保底选项。
 > 2. **测速非主动技能契约**：**节点持续下载测速为非主动技能**。默认流水线仅执行 3 秒轻量防断流快检（<16KB 淘汰）；**仅当用户明确主动要求**（如指令中包含“测速”、“测试节点速度”、“测速筛选”或显式传入 `--speed-test`）时，才启动完整本地持续下载测速流水线并执行 Key 节点遴选与打标。
+> 3. **编号稳定契约**：流水线默认保留原节点编号（属地未变即不改号），新节点按国家补空号；**仅当用户明确要求重排序/重编号**时才传 `--resort`，且重排序必定先定位置再从 1 重新编号。
 
 1. **测试范围与判定依据**：
    - **IP 属地与出口**：HTTPS 双栈出口及前后复核；Gemini 显式地区码优先、YouTube 双标记一致才兜底；IPinfo、ipwho.is、ipapi.is、DB-IP 按实际出口绑定交叉验证，Cloudflare `loc` 仅作辅助、`colo` 不参与定国。普通强分歧不强改国旗；送中/受限地区污染沿用实际属地 + `_⚠️CN` 等标记，剥离 AI 全通资格。Net.Coffee 仅保留 IP 绑定成功的信誉信息。详见 [geolocation.md](references/geolocation.md)。
+   - **IP信誉与排序**：Net.Coffee `trust_score` 仅作为第三方 0–100 估计，不代表速度或解锁；严格校验 0–100 有限数值。多出口必须全部有绑定信誉证据，节点取已观测出口最低分；出口不稳定或缺证据记为未知。信誉只在用户主动要求重排序（`--resort`）时参与同标签内排位，未知排在有证据节点之后，不跨越地区、落地沉底或 Key/Fast/能力硬规则。
    - **AI 解锁**：ChatGPT/OpenAI（合规端点 200 + 移动端/模型端点连通）、Claude（模型端点 401 判通）、Gemini（页面可用性标志 `[45631641,null,true]` 实测）；三项通过且出口稳定非送中标记为“AI三大全通”。
    - **YouTube 免登录实播**：Playwright Chromium 真实无头环境，注入 HTML5 播放观察者（实播 >= 10 秒、非缓冲停滞、非人机验证 / bot_required），播放前后双向复核浏览器出口 IP，通过 2 个视频判定免登实播达标。
-   - **过盾 / 免盾**：HTTP 初查 + 浏览器针对 4 站（Cloudflare 官网、ChatGPT、Claude、Gemini）的质询检测，4 站观测齐全且至多 1 站遇到挑战（且自动解除）判定为免盾。
+   - **过盾 / 免盾**：HTTP 初查 + 浏览器针对 4 站（Cloudflare 官网、ChatGPT、Claude、Gemini）的质询检测，4 站中至少 2 站直接通过或质询自动解除即判定为免盾；未观测（`unknown`）、被阻断或质询未解除的站点不计入通过数。
    - **流媒体与防断流**：Netflix（非自制剧 200）、Disney+ 页面可用性；默认 3 秒流式下载窗口防断流检测，累计传输不足 16KB 判定为断流假死并淘汰。
    - **本地持续下载测速 (主动触发)**：基于 `curl` 与 `RateMeter` 逐秒采样，统计中位数（`median_mbps`）、P10 速率与最大卡顿。达标门槛：中位数 >= 5.0 Mbps、P10 >= 3.0 Mbps、卡顿 <= 1.0s。
 
@@ -36,22 +38,27 @@ description: 对代理节点执行服务能力测试（IP属地检测、AI解锁
      - 必须通过持续下载测速（中位数 >= 5.0 Mbps）。
    - **Key 优选与配额**：TLS-TCP 强加密加分，亚太核心区（`HK`, `TW`, `JP`, `SG`, `KR`）优先加分，并执行区域配额限制。
    - **打标与规范命名体系**：
-     - 前置标识顺序：严格为 `[国旗] [❇️] [✨️] [Key / Fast] [国家]_[编号][落地后缀][流媒体后缀][来源后缀]`。
-     - `❇️`：AI 三大全通。
+     - 前置标识顺序：严格为 `[国旗] [✨️] [❇️] [♥️] [Key / Fast] [国家][_城市]_[编号][落地后缀][流媒体后缀][来源后缀]`。
      - `✨️`：综合全通能力徽章（AI三大通过 + YouTube免登录实播通过 + 四站免盾）。
-     - `Key`：评选出的优质前置跳板节点（如 `🇯🇵 ❇️✨️Key日本_1`, `🇺🇸 ❇️Key美国_1_NF`）。
-     - `Key` 与 `Fast` 严格互斥；未开启测速或未达标节点不带 Key/Fast 标签。
-   - **地区内部位阶排序准则**：
+     - `❇️`：AI 三大全通。
+     - `♥️`：高信誉/纯净 IP 徽章（Net.Coffee IP 质量信誉评分 >= 80 分，且出口稳定、所有出口均有绑定证据；带 `_⚠️CN` 等污染标记的节点不授予）。
+     - `Key`：评选出的优质前置跳板节点（如 `🇯🇵 ✨️❇️♥️Key日本_1`, `🇺🇸 ❇️Key美国_1_NF`）。
+     - `Key` 与 `Fast` 严格互斥；仅主动完整测速达标才授予 Fast/Key，3 秒防断流快检不授予；未开启测速或未达标节点不带 Key/Fast 标签。
+   - **编号保留准则（默认流水线）**：
+     - 本技能规范命名的原节点，若本轮属地未变化，保留原编号；服务测试结果变化只更新徽章与后缀，编号不变；
+     - 新加入节点、属地已变化的节点（视为新节点）按国家从 1 开始补最小空号，不挤占原节点编号；
+     - 同地区内直连在前、落地沉底，其余按编号升序排列，不做能力重排。
+   - **重排序与重编号（仅用户主动要求时，`--resort`）**：重排序必定重编号，严格“先定位置、再编号”：
      - 同地区内严格按「直连优选 → 直连普通 → 落地沉底」排列；
-     - 直连优选顺位严格遵循：`✨️ > ❇️ > Key > Fast > _NF > _D+`；
+     - 直连优选顺位严格遵循：`✨️ > ❇️ > Key > Fast > _NF > _D+`；`♥️` 不跨越这些标签层级，只在标签完全相同的节点之间优先（如同为 `Fast` 时 `♥️` 在前），再按 Net.Coffee 信誉分降序，未知信誉排最后；
      - 所有落地节点（`_USAI`、`_Lnd`、`_家宽` 或配置了 `dialer-proxy`）一律置于该地区最末尾；
-     - 排序确定后，每个国家/地区严格从 1 开始依次递增重新编号（不改任何前缀与后缀）。
+     - 整个地区位置全部确定后，才从 1 开始依次递增重新编号（不改任何前缀与后缀）。
 
 4. **模版一致性与策略组规则同步 (严格同步 freenode 规范)**：
    - **`🛡️ Front前置`**：`["⚡ Fast自动选择", "DIRECT"] + [所有 Key 节点名称]`。若本批无 Key 节点则安全降级为可用直连节点。**落地节点绝对禁止进入前置跳板组**。
    - **`⚡ Fast自动选择`**：`url-test` 自动选优，成员仅包含 `[所有 Key 节点名称]`（回落为 `["DIRECT"]`）。
-   - **`🔒️ 落地节点`**：自动归集所有落地节点，并强制注入 `dialer-proxy: "🛡️ Front前置"`（或指定的前置跳板）。
-   - **双份配置一键同步导出**：每次测试流水线结束导出时，默认同时生成标准 sing-box 格式文件（`.json`）与标准 Clash/Mihomo 格式文件（`.yaml`）。两份配置文件结构完全同步，均包含完整的 17 个标准策略组（前置、自动、手动、综合全通、AI、Google、流媒体、落地节点等）与精细分流规则体系。
+   - **`🔒️ 落地节点`**：自动归集所有落地节点，Clash/Mihomo 注入 `dialer-proxy: "🛡️ Front前置"`，sing-box 注入 `detour: "🛡️ Front前置"`。
+   - **双份配置同步导出**：`probe_singbox.py` 结束时同时生成 sing-box（`.json`）与 Clash/Mihomo（`.yaml`）；`probe_services.py` 只导出 `.yaml`；`convert_dual.py` 可将现有 sing-box JSON 或 Clash/Mihomo YAML 规范化并同步导出两种格式。两份配置结构同步，均包含 17 个标准策略组（前置、自动、手动、综合全通、AI、Google、流媒体、落地节点等）与分流规则。
 
 ## 常用 CLI 命令
 
@@ -70,10 +77,17 @@ python <skill>/scripts/probe_services.py --input <输入源> --speed-test --ifac
 # 4. 轻量模式 (跳过浏览器，仅执行接口测试与防断流快检)
 python <skill>/scripts/probe_services.py --input <输入源> --output <输出.yaml> --no-browser
 
-# 5. sing-box 双轨全量服务测试与配置导出 (支持 --speed-test)
+# 5. sing-box 双轨全量服务测试与配置导出 (支持 --speed-test，仅直连节点参与测速与 Key 评选)
 python <skill>/scripts/probe_singbox.py --input <输入.json> --output <输出.json> --front-proxy 127.0.0.1:3067 --batch-size 20
-# 6. 用户仅要求属地抽查时：20节点多源复核（不测速、不改输入，ip.cx 作为留出来源）
+
+# 6. 用户主动要求重排序/重编号时 (两条流水线均支持；默认保留原节点编号)
+python <skill>/scripts/probe_services.py --input <输入源> --output <输出.yaml> --resort
+
+# 7. 用户仅要求属地抽查时：20节点多源复核（不测速、不改输入，ip.cx 作为留出来源）
 python <skill>/scripts/audit_geolocation.py --input <配置.yaml> --report <复核.json> --count 20 --mihomo <内核路径> --iface WLAN --include "🇸🇬 ❇️新加坡_4"
+
+# 8. 现有 sing-box JSON 或 Clash/Mihomo YAML 规范化并双份导出
+python <skill>/scripts/convert_dual.py --input <输入.json或.yaml> --output-json <输出.json> --output-yaml <输出.yaml>
 ```
 
 ## 按需查阅
@@ -82,3 +96,6 @@ python <skill>/scripts/audit_geolocation.py --input <配置.yaml> --report <复�
 - **测试判据与详细规范**：读 [testing-criteria.md](references/testing-criteria.md)。
 - **运行环境、内核配置与 TUN 共存**：读 [runner-environment.md](references/runner-environment.md)。
 - **策略组映射与 YAML 配置渲染**：读 [config-rendering.md](references/config-rendering.md)。
+- **用户明确要求检测真实出口 / 落地 IP（`probe.py`、`recheck.py`）**：读 [egress-probing.md](references/egress-probing.md)。
+- **不联网的本地排序、重命名与配置合并**：读 [local-operations.md](references/local-operations.md)。
+- **TUN 污染、出口重合等实战故障排查**：读 [troubleshooting.md](references/troubleshooting.md)。

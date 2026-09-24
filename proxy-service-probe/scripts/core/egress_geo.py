@@ -3,6 +3,7 @@
 import hashlib
 import ipaddress
 import json
+import math
 import os
 import re
 import sys
@@ -25,6 +26,24 @@ GEMINI_AVAILABILITY_PATTERN = re.compile(r'\[45631641\s*,\s*null\s*,\s*(true|fal
 YOUTUBE_GL_PATTERN = re.compile(r'"INNERTUBE_CONTEXT_GL"\s*:\s*"([A-Za-z]{2})"')
 YOUTUBE_COUNTRY_PATTERN = re.compile(r'"countryCode"\s*:\s*"([A-Za-z]{2})"')
 RESTRICTED_POISON_COUNTRIES = frozenset({"CN", "RU", "IR", "KP", "CU", "SY", "BY"})
+
+
+def valid_reputation_score(value):
+    """Net.Coffee trust_score is a 0-100 vendor estimate, not a measured success rate."""
+    return value if type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 100 else None
+
+
+def reputation_for_exits(info_by_ip, observed_ips):
+    """For rotating/dual-stack exits, use the worst measured score or stay unknown."""
+    ips = list(dict.fromkeys(observed_ips))
+    entries = {ip: (info_by_ip.get(ip) or {}).get('reputation') or {} for ip in ips}
+    values = [entry.get('score') for entry in entries.values()]
+    complete = bool(ips) and all(valid_reputation_score(score) is not None for score in values)
+    return {"score": min(values) if complete else None,
+            "status": "observed" if complete else "unknown",
+            "provider": "Net.Coffee", "by_ip": entries,
+            "reason": None if complete else "missing_exit_or_reputation_evidence"}
+
 
 # 保留现有渲染、排序接口。
 CATEGORY_ORDER = {
@@ -284,13 +303,18 @@ def query_ip_info(ip, timeout=(3.0, 6.0)):
     if not coffee:
         evidence.update(status='invalid' if evidence['status'] == 'ok' else evidence['status'],
                         error=evidence.get('error', 'ip_mismatch_or_missing'))
-    score = coffee.get('trust_score')
-    flags = {k: coffee.get(v) for k, v in {'residential': 'isResidential', 'datacenter': 'is_datacenter',
-             'vpn': 'is_vpn', 'proxy': 'is_proxy', 'tor': 'is_tor', 'crawler': 'is_crawler', 'abuser': 'is_abuser'}.items()}
+    score = valid_reputation_score(coffee.get('trust_score'))
+    flags = {k: coffee.get(v) if type(coffee.get(v)) is bool else None
+             for k, v in {'residential': 'isResidential', 'datacenter': 'is_datacenter',
+             'mobile': 'is_mobile', 'vpn': 'is_vpn', 'proxy': 'is_proxy', 'tor': 'is_tor',
+             'crawler': 'is_crawler', 'abuser': 'is_abuser'}.items()}
     connection = coffee.get('connection') if isinstance(coffee.get('connection'), dict) else {}
+    reputation = {"ip": target, "provider": "Net.Coffee", "score": score,
+                  "status": "observed" if score is not None else "unknown", "flags": flags,
+                  "checked_at": evidence.get('observed_at'), "source": evidence}
     return {**geo_consensus(records), "ip": target, "records": records,
-            "score": score if isinstance(score, (int, float)) and not isinstance(score, bool) else None,
-            "flags": flags, "asn": connection.get('asn'), "isp": connection.get('isp'), "reputation_source": evidence}
+            "score": score, "flags": flags, "asn": connection.get('asn'),
+            "isp": connection.get('isp'), "reputation": reputation, "reputation_source": evidence}
 
 
 def arbitrate_geo(cf_trace=None, google_region=None, ip_info=None, exit_ips=None, orig_cc=None):
@@ -387,5 +411,9 @@ def probe_geolocation(proxies, *, egress=None, timeout=(3.0, 6.0)):
             if not decision['google_cc']:
                 decision.update(cc='UNK', country_zh='未知', flag='🏳️', basis='cross_ip_country_conflict')
     decision['egress_stable'] = stable
+    reputation = reputation_for_exits(info_by_ip, ips)
+    if not stable:
+        reputation.update(score=None, status='unknown', reason='egress_unstable')
     return {"cc": decision['cc'], "exit_ip": primary, "egress": before, "egress_after": after,
-            "google_region": google, "ip_info": info, "ip_info_by_ip": info_by_ip, "geo_decision": decision}
+            "google_region": google, "ip_info": info, "ip_info_by_ip": info_by_ip,
+            "ip_reputation": reputation, "geo_decision": decision}

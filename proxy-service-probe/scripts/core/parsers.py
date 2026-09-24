@@ -228,6 +228,77 @@ def parse_node_uri(uri):
     return None
 
 
+def _copy_singbox_tls(outbound, proxy, use_sni=False):
+    tls = outbound.get("tls") or {}
+    if not tls.get("enabled"):
+        return
+    proxy["tls"] = True
+    if tls.get("server_name"):
+        proxy["sni" if use_sni else "servername"] = tls["server_name"]
+    if tls.get("insecure"):
+        proxy["skip-cert-verify"] = True
+    if tls.get("alpn"):
+        proxy["alpn"] = tls["alpn"]
+    utls = tls.get("utls") or {}
+    if utls.get("enabled"):
+        proxy["client-fingerprint"] = normalize_fingerprint(utls.get("fingerprint"))
+    reality = tls.get("reality") or {}
+    if reality.get("enabled"):
+        proxy["reality-opts"] = {
+            "public-key": reality.get("public_key", ""),
+            "short-id": reality.get("short_id", "")
+        }
+
+
+def _copy_singbox_transport(outbound, proxy):
+    transport = outbound.get("transport") or {}
+    tr_type = transport.get("type")
+    if tr_type == "ws":
+        proxy["network"] = "ws"
+        opts = {"path": transport.get("path", "/")}
+        if transport.get("headers"):
+            opts["headers"] = transport["headers"]
+        if transport.get("max_early_data"):
+            opts["max-early-data"] = transport["max_early_data"]
+            opts["early-data-header-name"] = transport.get("early_data_header_name")
+        proxy["ws-opts"] = opts
+    elif tr_type == "httpupgrade":
+        proxy["network"] = "ws"
+        opts = {"path": transport.get("path", "/"), "v2ray-http-upgrade": True}
+        headers = dict(transport.get("headers") or {})
+        if transport.get("host"):
+            headers["Host"] = transport["host"]
+        if headers:
+            opts["headers"] = headers
+        proxy["ws-opts"] = opts
+    elif tr_type == "grpc":
+        proxy["network"] = "grpc"
+        proxy["grpc-opts"] = {"grpc-service-name": transport.get("service_name", "")}
+    elif tr_type == "http":
+        proxy["network"] = "h2"
+        opts = {"path": transport.get("path", "/")}
+        if transport.get("host"):
+            opts["host"] = transport["host"]
+        proxy["h2-opts"] = opts
+
+
+def _copy_singbox_dial(outbound, proxy):
+    if outbound.get("detour"):
+        proxy["dialer-proxy"] = outbound["detour"]
+    if outbound.get("tcp_fast_open"):
+        proxy["tfo"] = True
+    if outbound.get("tcp_multi_path"):
+        proxy["mptcp"] = True
+    if outbound.get("bind_interface"):
+        proxy["interface-name"] = outbound["bind_interface"]
+    resolver = outbound.get("domain_resolver") or {}
+    strategy = resolver.get("strategy") if isinstance(resolver, dict) else None
+    reverse = {"ipv4_only": "ipv4", "ipv6_only": "ipv6",
+               "prefer_ipv4": "ipv4-prefer", "prefer_ipv6": "ipv6-prefer"}
+    if strategy in reverse:
+        proxy["ip-version"] = reverse[strategy]
+
+
 def parse_singbox_outbound(outbound):
     """把单个 sing-box outbound 转换为 Clash 节点字典。"""
     if not isinstance(outbound, dict):
@@ -238,49 +309,35 @@ def parse_singbox_outbound(outbound):
     name = outbound.get("tag") or f"{o_type}_{outbound.get('server')}:{outbound.get('server_port')}"
     server = outbound.get("server")
     port = outbound.get("server_port")
-    if not server or not port:
+    has_port_range = o_type in ("hysteria", "hysteria2") and outbound.get("server_ports")
+    if not server or (not port and not has_port_range):
         return None
 
-    p = {"name": name, "type": o_type, "server": server, "port": int(port), "udp": True}
+    p = {"name": name, "type": o_type, "server": server, "udp": True}
+    if port:
+        p["port"] = int(port)
+    if has_port_range:
+        ranges = []
+        for value in outbound["server_ports"]:
+            value = str(value)
+            ranges.append(value.replace(":", "-", 1) if ":" in value and value.split(":", 1)[0] != value.split(":", 1)[1] else value.split(":", 1)[0])
+        p["ports"] = ",".join(ranges)
+    _copy_singbox_dial(outbound, p)
 
     if o_type == "vless":
         p["uuid"] = outbound.get("uuid")
         if outbound.get("flow"):
             p["flow"] = outbound.get("flow")
-        tls = outbound.get("tls", {})
-        if tls.get("enabled"):
-            p["tls"] = True
-            p["servername"] = tls.get("server_name")
-            reality = tls.get("reality", {})
-            if reality.get("enabled"):
-                p["reality-opts"] = {"public-key": reality.get("public_key"), "short-id": reality.get("short_id")}
-            utls = tls.get("utls", {})
-            if utls.get("enabled"):
-                p["client-fingerprint"] = normalize_fingerprint(utls.get("fingerprint"))
-        transport = outbound.get("transport", {})
-        tr_type = transport.get("type")
-        if tr_type == "ws":
-            p["network"] = "ws"
-            p["ws-opts"] = {"path": transport.get("path", "/")}
-            if transport.get("headers"):
-                p["ws-opts"]["headers"] = transport.get("headers")
-        elif tr_type == "grpc":
-            p["network"] = "grpc"
-            p["grpc-opts"] = {"grpc-service-name": transport.get("service_name")}
+        _copy_singbox_tls(outbound, p)
+        _copy_singbox_transport(outbound, p)
         return p
 
     if o_type == "vmess":
         p["uuid"] = outbound.get("uuid")
         p["alterId"] = outbound.get("alter_id", 0)
         p["cipher"] = outbound.get("security", "auto")
-        tls = outbound.get("tls", {})
-        if tls.get("enabled"):
-            p["tls"] = True
-            p["servername"] = tls.get("server_name")
-        transport = outbound.get("transport", {})
-        if transport.get("type") == "ws":
-            p["network"] = "ws"
-            p["ws-opts"] = {"path": transport.get("path", "/")}
+        _copy_singbox_tls(outbound, p)
+        _copy_singbox_transport(outbound, p)
         return p
 
     if o_type == "shadowsocks":
@@ -291,16 +348,63 @@ def parse_singbox_outbound(outbound):
 
     if o_type == "trojan":
         p["password"] = outbound.get("password")
-        tls = outbound.get("tls", {})
-        if tls.get("enabled"):
-            p["sni"] = tls.get("server_name")
+        _copy_singbox_tls(outbound, p, use_sni=True)
+        _copy_singbox_transport(outbound, p)
         return p
 
     if o_type == "hysteria2":
         p["password"] = outbound.get("password")
-        tls = outbound.get("tls", {})
-        if tls.get("enabled"):
-            p["sni"] = tls.get("server_name")
+        if outbound.get("up_mbps") is not None:
+            p["up"] = outbound["up_mbps"]
+        if outbound.get("down_mbps") is not None:
+            p["down"] = outbound["down_mbps"]
+        if outbound.get("obfs"):
+            p["obfs"] = outbound["obfs"].get("type") if isinstance(outbound["obfs"], dict) else outbound["obfs"]
+            if isinstance(outbound["obfs"], dict) and outbound["obfs"].get("password"):
+                p["obfs-password"] = outbound["obfs"]["password"]
+        _copy_singbox_tls(outbound, p, use_sni=True)
+        return p
+
+    if o_type == "hysteria":
+        if outbound.get("up_mbps") is not None:
+            p["up"] = outbound["up_mbps"]
+        if outbound.get("down_mbps") is not None:
+            p["down"] = outbound["down_mbps"]
+        if outbound.get("auth_str"):
+            p["auth-str"] = outbound["auth_str"]
+        elif outbound.get("auth"):
+            p["auth"] = outbound["auth"]
+        _copy_singbox_tls(outbound, p, use_sni=True)
+        return p
+
+    if o_type == "tuic":
+        p["uuid"] = outbound.get("uuid")
+        p["password"] = outbound.get("password")
+        if outbound.get("congestion_control"):
+            p["congestion-controller"] = outbound["congestion_control"]
+        if outbound.get("udp_relay_mode"):
+            p["udp-relay-mode"] = outbound["udp_relay_mode"]
+        if outbound.get("udp_over_stream"):
+            p["udp-over-stream"] = True
+        if outbound.get("zero_rtt_handshake"):
+            p["reduce-rtt"] = True
+        _copy_singbox_tls(outbound, p, use_sni=True)
+        return p
+
+    if o_type == "anytls":
+        p["type"] = "anytls"
+        p["password"] = outbound.get("password")
+        _copy_singbox_tls(outbound, p)
+        return p
+
+    if o_type == "ssh":
+        p["type"] = "ssh"
+        p["username"] = outbound.get("user")
+        p["password"] = outbound.get("password")
+        if outbound.get("private_key"):
+            p["private-key"] = outbound["private_key"]
+        if outbound.get("private_key_path"):
+            p["private-key"] = outbound["private_key_path"]
         return p
 
     if o_type in ("http", "socks"):
@@ -309,9 +413,20 @@ def parse_singbox_outbound(outbound):
             p["username"] = outbound.get("username")
         if outbound.get("password"):
             p["password"] = outbound.get("password")
+        if outbound.get("headers"):
+            p["headers"] = outbound["headers"]
+        _copy_singbox_tls(outbound, p)
         return p
 
     return None
+
+
+def _proxy_has_server_port(item):
+    if not isinstance(item, dict) or not item.get("server"):
+        return False
+    if item.get("port"):
+        return True
+    return str(item.get("type", "")).lower() in ("hysteria", "hysteria2") and bool(item.get("ports") or item.get("mport"))
 
 
 def load_proxies(source):
@@ -347,13 +462,13 @@ def load_proxies(source):
         data = yaml.safe_load(text)
         if isinstance(data, dict) and "proxies" in data and isinstance(data["proxies"], list):
             for item in data["proxies"]:
-                if isinstance(item, dict) and item.get("server") and item.get("port"):
+                if isinstance(item, dict) and _proxy_has_server_port(item):
                     p = deepcopy(item)
                     p.setdefault("_orig_name", p.get("name", ""))
                     proxies.append(p)
             if proxies:
                 return proxies
-        elif isinstance(data, list) and all(isinstance(x, dict) and "server" in x for x in data):
+        elif isinstance(data, list) and all(_proxy_has_server_port(x) for x in data):
             for item in data:
                 p = deepcopy(item)
                 p.setdefault("_orig_name", p.get("name", ""))

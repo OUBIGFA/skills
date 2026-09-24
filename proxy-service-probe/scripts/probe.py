@@ -57,7 +57,7 @@ def build_config(nodes, base_port, iface, new_dns):
            'route': {'rules': rules, 'final': 'direct-out'}}
     if new_dns:  # sing-box >= 1.12 的新式 DNS 语法
         cfg['dns'] = {'servers': [{'type': 'udp', 'tag': 'dns-main',
-                                   'server': '223.5.5.5', 'detour': 'direct-out'}],
+                                   'server': '223.5.5.5'}],
                       'strategy': 'ipv4_only'}
         cfg['route']['default_domain_resolver'] = {'server': 'dns-main'}
     else:
