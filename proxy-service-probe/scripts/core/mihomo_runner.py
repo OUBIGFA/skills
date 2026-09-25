@@ -2,6 +2,7 @@
 """Mihomo 内核定位、临时监听生成与生命周期管理 (包含多客户端防冲突与物理网卡防 TUN 劫持)。"""
 import os
 import re
+import secrets
 import shutil
 import socket
 import subprocess
@@ -17,6 +18,8 @@ import yaml
 BLACKLIST_PORTS = frozenset({
     53, 1053, 2080, 2081, 3067, 5353, 7890, 7891, 7892, 7893, 7894, 7895, 9090, 10808, 10809, 24999
 })
+
+SKILL_CORE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "core")
 
 
 def find_mihomo_bin(custom_path=None):
@@ -34,9 +37,11 @@ def find_mihomo_bin(custom_path=None):
         os.path.join(os.getcwd(), "_temp", "mihomo"),
         os.path.join(os.path.dirname(os.getcwd()), "_temp", "mihomo.exe"),
         os.path.join(os.path.dirname(os.getcwd()), "_temp", "mihomo"),
+        # 技能自带内核: Windows 用 core/mihomo.exe，Linux (如 GitHub Actions) 用 core/mihomo
+        os.path.join(SKILL_CORE_DIR, "mihomo.exe" if sys.platform == "win32" else "mihomo"),
     ]
     for cand in candidates:
-        if os.path.isfile(cand):
+        if os.path.isfile(cand) and (sys.platform == "win32" or os.access(cand, os.X_OK)):
             return os.path.abspath(cand)
 
     # 环境变量 PATH 中查找
@@ -92,10 +97,12 @@ def detect_physical_interface():
     return None
 
 
-def wait_port_open(port, timeout=8.0):
-    """等待本地端口开始接受 TCP 连接。"""
+def wait_port_open(port, timeout=8.0, proc=None):
+    """等待本地端口开始接受 TCP 连接；给出 proc 时进程提前退出 (如配置被拒) 立即返回 False。"""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            return False
         try:
             with socket.create_connection(('127.0.0.1', port), timeout=0.3):
                 return True
@@ -138,9 +145,6 @@ def node_listeners(items, anchor_front=None, is_landing=False, iface=None, mihom
             rest = ()
         normalized.append((proxy, rest))
 
-    tmp_dir = tempfile.mkdtemp(prefix="mihomo_probe_")
-    cfg_path = os.path.join(tmp_dir, "config.yaml")
-
     # 分配端口与构造监听器
     targets = []
     listeners = []
@@ -177,8 +181,14 @@ def node_listeners(items, anchor_front=None, is_landing=False, iface=None, mihom
         })
         targets.append((port, proxy, *rest))
 
-    # 生成配置: 强制关闭 TUN、仅监听 127.0.0.1
-    config_dict = {
+    ports = [targets[0][0]] + ([targets[-1][0]] if len(targets) > 1 else [])
+    with _run_mihomo(binary, _mihomo_config(listeners, proxies_to_load, effective_iface), ports):
+        yield targets
+
+
+def _mihomo_config(listeners, proxies, iface):
+    """临时实例配置: 强制关闭 TUN、仅监听 127.0.0.1；指定网卡时所有出站 (含 DIRECT) 绑定该网卡以绕开本机 TUN。"""
+    config = {
         "port": 0,
         "socks-port": 0,
         "mode": "rule",
@@ -195,35 +205,63 @@ def node_listeners(items, anchor_front=None, is_landing=False, iface=None, mihom
             "default-nameserver": ["223.5.5.5", "119.29.29.29"]
         },
         "listeners": listeners,
-        "proxies": proxies_to_load,
+        "proxies": proxies,
         "rules": ["MATCH,DIRECT"]
     }
+    if iface:
+        config["interface-name"] = iface
+    return config
 
-    if effective_iface:
-        config_dict["interface-name"] = effective_iface
 
+class MihomoStartError(RuntimeError):
+    """临时 mihomo 未能启动 (多为某个节点配置被内核拒绝)，message 带内核日志末尾。"""
+
+
+def _log_tail(path, limit=300):
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            lines = [line.strip() for line in f if line.strip()]
+    except OSError:
+        return ""
+    errors = [line for line in lines if "level=error" in line or "level=fatal" in line]
+    return (errors or lines)[-1][-limit:] if (errors or lines) else ""
+
+
+@contextmanager
+def _run_mihomo(binary, config, ports, monitor=None):
+    """
+    写入配置并启动临时 mihomo，等待端口就绪；退出时先终止进程再删临时目录。
+    给出 monitor (TrafficMonitor) 时开启仅本机可达、带随机密钥的 external-controller，并接入 /traffic 流量统计。
+    """
+    config = dict(config)
+    controller = None
+    if monitor is not None:
+        controller = (get_free_port(avoid_ports=ports), secrets.token_hex(12))
+        config["external-controller"] = f"127.0.0.1:{controller[0]}"
+        config["secret"] = controller[1]
+    tmp_dir = tempfile.mkdtemp(prefix="mihomo_probe_")
+    cfg_path = os.path.join(tmp_dir, "config.yaml")
+    log_path = os.path.join(tmp_dir, "mihomo.log")
     with open(cfg_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(config_dict, f, allow_unicode=True)
+        yaml.safe_dump(config, f, allow_unicode=True)
 
     proc = None
+    log_file = open(log_path, "wb")
     try:
         proc = subprocess.Popen(
             [binary, "-d", tmp_dir, "-f", cfg_path],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            stdout=log_file,
+            stderr=subprocess.STDOUT
         )
-
-        # 检验首尾端口是否就绪
-        test_ports = [targets[0][0]]
-        if len(targets) > 1:
-            test_ports.append(targets[-1][0])
-
-        for p in test_ports:
-            if not wait_port_open(p, timeout=12.0):
-                raise TimeoutError(f"Mihomo 临时监听端口 {p} 启动超时")
-
-        yield targets
-
+        for p in list(ports) + ([controller[0]] if controller else []):
+            if not wait_port_open(p, timeout=12.0, proc=proc):
+                detail = _log_tail(log_path)
+                if proc.poll() is not None:
+                    raise MihomoStartError(f"Mihomo 启动失败: {detail or f'退出码 {proc.returncode}'}")
+                raise TimeoutError(f"Mihomo 临时监听端口 {p} 启动超时 {detail}".strip())
+        if controller:
+            monitor.watch(*controller)
+        yield
     finally:
         if proc:
             try:
@@ -235,7 +273,84 @@ def node_listeners(items, anchor_front=None, is_landing=False, iface=None, mihom
                     proc.wait(timeout=3)
                 except Exception:
                     pass
+        log_file.close()
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _listener_config(entries, iface):
+    """
+    entries: [(key, proxy, front)]，front 为 None 表示直连，否则为该节点经过的前置节点字典 (dialer-proxy 链)。
+    每个节点一个 mixed 监听；同一前置只加载一次。返回 (配置, {key: 端口})。
+    """
+    proxies, listeners, ports, fronts = [], [], {}, {}
+    used = set()
+    for idx, (key, proxy, front) in enumerate(entries):
+        node = deepcopy(proxy)
+        node["name"] = f"node_{idx}"
+        node.pop("dialer-proxy", None)
+        if front is not None:
+            front_id = id(front)
+            if front_id not in fronts:
+                front_copy = deepcopy(front)
+                front_copy["name"] = f"front_{len(fronts)}"
+                front_copy.pop("dialer-proxy", None)
+                fronts[front_id] = front_copy["name"]
+                proxies.append(front_copy)
+            node["dialer-proxy"] = fronts[front_id]
+        proxies.append(node)
+        port = get_free_port(avoid_ports=used)
+        used.add(port)
+        ports[key] = port
+        listeners.append({"name": f"mixed_{idx}", "type": "mixed", "listen": "127.0.0.1", "port": port,
+                          "proxy": node["name"]})
+    return _mihomo_config(listeners, proxies, iface), ports
+
+
+def start_node_group(stack, entries, iface=None, mihomo_bin=None, monitor=None, shard_size=64):
+    """
+    在 ExitStack 中为 entries 启动临时 mihomo 监听，存活到 stack 关闭为止 (供测活、服务检测、测速各阶段复用)。
+    每个实例最多承载 shard_size 个节点；某个节点配置被内核拒绝时整组二分重试，只把真正无法加载的节点单独剔除，
+    不连累同组其他节点。返回 ({key: 端口}, {key: 失败原因})。
+    """
+    binary = find_mihomo_bin(mihomo_bin)
+    if not binary:
+        raise RuntimeError("未检测到可用的 Mihomo 内核，请确认系统 PATH 或 _temp/mihomo.exe 存在。")
+    effective_iface = iface or detect_physical_interface()
+    ports, failed = {}, {}
+
+    def launch(group):
+        if not group:
+            return
+        config, group_ports = _listener_config(group, effective_iface)
         try:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-        except Exception:
-            pass
+            stack.enter_context(_run_mihomo(binary, config, list(group_ports.values()), monitor=monitor))
+            ports.update(group_ports)
+        except (MihomoStartError, TimeoutError) as error:
+            if len(group) == 1:
+                failed[group[0][0]] = f"内核无法加载该节点配置: {error}"
+                return
+            middle = len(group) // 2
+            launch(group[:middle])
+            launch(group[middle:])
+
+    entries = list(entries)
+    size = max(1, shard_size)
+    for start in range(0, len(entries), size):
+        launch(entries[start:start + size])
+    return ports, failed
+
+
+@contextmanager
+def direct_listener(iface=None, mihomo_bin=None):
+    """
+    启动只走 DIRECT 的临时监听，出站与节点测试绑定同一物理网卡 (未指定时自动探测)。
+    经它测得的是本机真实的物理直连出口：即使本机客户端开着 TUN/系统代理并正在使用某个节点，
+    也不会把该节点的出口误当成本机出口。yields 监听端口。
+    """
+    binary = find_mihomo_bin(mihomo_bin)
+    if not binary:
+        raise RuntimeError("未检测到可用的 Mihomo 内核，请确认系统 PATH 或 _temp/mihomo.exe 存在。")
+    port = get_free_port()
+    listeners = [{"name": "direct_baseline", "type": "mixed", "listen": "127.0.0.1", "port": port, "proxy": "DIRECT"}]
+    with _run_mihomo(binary, _mihomo_config(listeners, [], iface or detect_physical_interface()), [port]):
+        yield port

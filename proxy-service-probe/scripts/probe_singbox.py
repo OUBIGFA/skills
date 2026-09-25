@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-sing-box 订阅节点双轨服务能力测试、智能打标与配置导出命令行工具 (probe_singbox.py)。
-支持对 sing-box JSON 执行全量直连与前置跳板双轨探测、严格 Schema 清洗与导出。
+sing-box 订阅节点服务能力测试、智能打标与配置导出命令行工具 (probe_singbox.py，备用流水线)。
+主流水线为 probe_services.py (mihomo 内核)；本流水线以 sing-box 内核测试，用于 sing-box 兼容性验证与导出 sing-box JSON。
+直连测试后，直连不可达的节点经前置 (Key -> 备用前置 -> 本机客户端端口) 重测以区分落地节点。
 """
 import sys
 import os
@@ -10,12 +11,14 @@ import io
 import json
 import time
 import re
-import shutil
 import socket
 import argparse
-import tempfile
+from contextlib import ExitStack
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
+
+# 直连初筛整批兜底上限：仅防线程卡死；属地多源复核经慢链路可达 20 秒左右，各探测自身均有超时
+BATCH_HARD_TIMEOUT = 120.0
 
 # 全局底层套接字保护 (>=6.0s 杜绝多跳 TLS Reality 握手被掐断)
 socket.setdefaulttimeout(6.0)
@@ -29,14 +32,17 @@ if sys.platform == "win32":
 
 from core.singbox_runner import find_singbox_bin, clean_node_for_singbox, singbox_dual_listeners, singbox_active_listeners, export_singbox_json
 from core.egress_geo import probe_egress, probe_geolocation, country_name_zh, flag_emoji
+from core.mihomo_runner import direct_listener
 from core.ai_probe import probe_all_ai
 from core.media_probe import probe_all_media
-from core.speed_probe import DEFAULT_STALL_MIN_BYTES, DEFAULT_SUSTAINED_TARGETS, precheck_target, measure_download_sustained, speed_qualified
-from core.key_evaluator import select_key_nodes
+from core.speed_probe import (DEFAULT_STALL_MIN_BYTES, DEFAULT_SUSTAINED_TARGETS, FRONT_FALLBACK_TIER, describe_speed,
+                              measure_rows_speed, speed_options, speed_verdict_text)
+from core.run_profile import add_speed_arguments, apply_profile, validate_speed_options
+from core.key_evaluator import pick_front_nodes, select_key_nodes
 from core.youtube_probe import probe_youtube
 from core.shield_probe import probe_sites_http, probe_sites_browser, shield_passed
 from core.parsers import parse_singbox_outbound
-from core.renderer import export_clash_yaml
+from core.renderer import check_template, export_clash_yaml
 # 命名与编号规则与 Mihomo 流水线共用 core.tagger，此处导出 format_node_name 保持脚本接口不变
 from core.tagger import format_node_name, tag_and_rename_nodes
 
@@ -122,51 +128,19 @@ def run_fast_speed(proxies, max_sec=3.0, min_bytes=DEFAULT_STALL_MIN_BYTES, time
     }
 
 
-def test_target_node(target, baseline_ip=None):
-    raw_node = target['raw']
-    orig_name = raw_node.get('tag', 'unknown')
-    dp = target['direct_proxies']
-    fp = target['front_proxies']
-
-    res = {
-        'raw_node': raw_node,
-        'orig_name': orig_name,
-        'is_landing': False,
-        'exit_ip': None,
-        'eliminated_reason': None
-    }
-
-    # 1. 直连探测 (2.0s)
-    direct_ip = fast_probe_ip(dp, timeout=2.0)
-    active_proxies = None
-
-    if direct_ip:
-        res['exit_ip'] = direct_ip
-        res['is_landing'] = False
-        active_proxies = dp
-    else:
-        # 2. 前置落地跳板探测 (4.0s，为多跳握手给予充分时间)
-        front_ip = fast_probe_ip(fp, timeout=4.0)
-        if front_ip:
-            if baseline_ip and front_ip == baseline_ip:
-                res['eliminated_reason'] = "前置穿透失败(出口等于前置本地出口)"
-                return res
-            res['exit_ip'] = front_ip
-            res['is_landing'] = True
-            active_proxies = fp
-        else:
-            res['eliminated_reason'] = "直连与前置均不可达"
-            return res
+def probe_path(res, proxies):
+    """在已确定的路径 (直连或经前置) 上执行防断流快检、属地、AI 与流媒体测试。"""
+    orig_name = res['orig_name']
 
     # 3. 测速与断流
-    sp = run_fast_speed(active_proxies)
+    sp = run_fast_speed(proxies)
     res.update(sp)
     if sp.get("eliminated_reason"):
         res['eliminated_reason'] = sp["eliminated_reason"]
         return res
 
     # 4. 与 Mihomo 共用属地判定，Google 可用时也查询第三方，不制造同源“共识”。
-    res.update(probe_geolocation(active_proxies))
+    res.update(probe_geolocation(proxies))
     g_region = res['google_region']
     if not res['exit_ip']:
         res['eliminated_reason'] = "属地复核时未验证到公网出口"
@@ -174,13 +148,13 @@ def test_target_node(target, baseline_ip=None):
     res['city'] = parse_city_from_name(orig_name) if res['cc'] == parse_info_from_tag(orig_name)['cc'] else ''
 
     # 5. AI 解锁
-    ai_res = probe_all_ai(active_proxies, google_region_info=g_region, timeout=(2.0, 3.5))
+    ai_res = probe_all_ai(proxies, google_region_info=g_region, timeout=(2.0, 3.5))
     res['ai_supported'] = bool(ai_res.get("ai_supported", False) and res['geo_decision']['egress_stable']
                                and not res['geo_decision']['is_pool'])
     res['ai_details'] = ai_res.get("details", {})
 
     # 6. 流媒体
-    media_res = probe_all_media(active_proxies, timeout=(2.0, 3.5))
+    media_res = probe_all_media(proxies, timeout=(2.0, 3.5))
     res['media_details'] = media_res.get("details", {})
 
     # Fast/Key 只由主动测速授予；快检吞吐只用于断流淘汰
@@ -189,49 +163,175 @@ def test_target_node(target, baseline_ip=None):
     return res
 
 
-def run_speed_stage(qualified, args, front_proxy):
-    """主动完整下载测速：仅直连节点参与 Fast/Key 评选；测速失败只取消资格，不淘汰已通过初筛的节点。"""
-    directs = [r for r in qualified if not r.get('is_landing')]
-    print(f"\n[3.5/6] 主动完整下载测速 (限速 {args.rate_limit_mbps}Mbps，窗口 {args.speed_duration}s，"
-          f"阈值 {args.min_speed_mbps}Mbps，共 {len(directs)} 个直连节点)...")
+def test_target_node(target):
+    """第一轮直连测试；直连拿不到公网出口的节点标记 direct_unreachable，留待选出前置后经前置重测。"""
+    raw_node = target['raw']
+    res = {
+        'raw_node': raw_node,
+        'orig_name': raw_node.get('tag', 'unknown'),
+        'is_landing': False,
+        'path': 'direct',
+        'exit_ip': None,
+        'eliminated_reason': None
+    }
 
-    def measure(target):
-        r = target['result_ref']
-        pre_err = precheck_target(args.speed_target, target['proxy_url'], timeout=3.0)
-        if pre_err:
-            r['speed_result'] = {"complete": False, "status": pre_err.get("status"), "error": pre_err.get("error")}
-            return
-        shard_dir = tempfile.mkdtemp(prefix="speed_probe_shard_")
-        try:
-            r['speed_result'] = measure_download_sustained(
-                url=args.speed_target, proxy_url=target['proxy_url'], work_dir=shard_dir,
-                duration_seconds=args.speed_duration, warmup_seconds=1.0,
-                rate_limit_mbps=args.rate_limit_mbps)
-        except Exception as e:
-            r['speed_result'] = {"complete": False, "status": "error", "error": f"{type(e).__name__}: {e}"}
-        finally:
-            shutil.rmtree(shard_dir, ignore_errors=True)
+    # 1. 直连探测 (2.0s)
+    direct_ip = fast_probe_ip(target['direct_proxies'], timeout=2.0)
+    if not direct_ip:
+        res['eliminated_reason'] = "直连不可达"
+        res['direct_unreachable'] = True
+        return res
+    res['exit_ip'] = direct_ip
+    return probe_path(res, target['direct_proxies'])
+
+
+def test_via_front(target, blocked_ips, front_label):
+    """经前置重测直连不可达的节点 (4.0s，为多跳握手留足时间)；出口不得与前置自身出口相同。"""
+    res = target['result_ref']
+    proxies = {"http": target['proxy_url'], "https": target['proxy_url']}
+    front_ip = fast_probe_ip(proxies, timeout=4.0)
+    if not front_ip:
+        res['eliminated_reason'] = f"直连与经前置({front_label})均不可达"
+        return res
+    if front_ip in blocked_ips:
+        res['eliminated_reason'] = "出口与前置出口重合(流量未经该节点转发)"
+        return res
+    res['exit_ip'] = front_ip
+    return probe_path(res, proxies)
+
+
+def run_speed_stage(qualified, eliminated, args):
+    """
+    主动完整下载测速：直连节点参与 Fast/Key 评选；稳态速度低于淘汰线的节点从合格列表移入淘汰列表。
+    """
+    directs = [r for r in qualified if not r.get('is_landing')]
+    for r in directs:
+        r['proxy'] = parse_singbox_outbound(deepcopy(r['raw_node'])) or {}
+    opts = speed_options(args)
+    targets_urls = [args.speed_target] if args.speed_target else DEFAULT_SUSTAINED_TARGETS
+    print(f"\n[3.5/6] 主动完整下载测速 [Profile: {args.profile}] (单连接，观测 10~{args.speed_duration:.0f}s 取最后 6 秒稳态："
+          f"Key/Fast 稳态≥{args.min_speed_mbps}Mbps 且最低≥{args.min_floor_mbps}Mbps，稳态<{args.drop_below_mbps}Mbps 淘汰；"
+          f"上限 {args.rate_limit_mbps}Mbps，并发 {args.speed_concurrency}，共 {len(directs)} 个直连节点)...")
 
     for start in range(0, len(directs), 10):
         chunk = directs[start:start + 10]
         try:
-            with singbox_active_listeners(chunk, front_proxy=front_proxy, singbox_bin=args.singbox_bin) as targets:
-                with ThreadPoolExecutor(max_workers=max(1, min(4, len(targets)))) as pool:
-                    list(pool.map(measure, targets))
+            with singbox_active_listeners(chunk, singbox_bin=args.singbox_bin,
+                                          relay=getattr(args, 'physical_relay', None)) as targets:
+                measure_rows_speed([(target['proxy_url'], target['result_ref']) for target in targets], opts,
+                                   targets=targets_urls, concurrency=args.speed_concurrency)
         except Exception as e:
             print(f"      测速批次 {start // 10 + 1} 异常: {e}")
             for r in chunk:
                 r.setdefault('speed_result', {"complete": False, "status": "listener_error", "error": str(e)})
 
     for r in directs:
-        measured = r.get('speed_result') or {}
-        r['speed_mbps'] = measured.get('median_mbps') or 0.0
-        r['is_fast'] = bool(measured.get('complete') and
-                            speed_qualified(measured, min_median_mbps=args.min_speed_mbps))
-        r['proxy'] = parse_singbox_outbound(deepcopy(r['raw_node'])) or {}
-    chosen = select_key_nodes([r for r in directs if r['proxy']], max_keys=10, per_country_cap=3,
-                              min_median_mbps=args.min_speed_mbps)
-    print(f"      测速达标: {sum(1 for r in directs if r['is_fast'])} 个 | 评选 Key 优质前置跳板: {len(chosen)} 个")
+        r['speed_mbps'] = (r.get('speed_result') or {}).get('stable_mbps') or 0.0
+        r['is_fast'] = bool(r.get('is_fast'))
+        print(f"      [测速] {r.get('orig_name')}: {speed_verdict_text(r)} | {describe_speed(r.get('speed_result'))}")
+        if r.get('speed_drop'):
+            qualified.remove(r)
+            r['eliminated_reason'] = r['speed_drop']
+            eliminated.append(r)
+    kept = [r for r in directs if not r.get('speed_drop')]
+    chosen = select_key_nodes([r for r in kept if r['proxy']], max_keys=10, per_country_cap=3,
+                              min_stable_mbps=args.min_speed_mbps, min_floor_mbps=args.min_floor_mbps)
+    print(f"      Key/Fast 级: {sum(1 for r in kept if r['is_fast'])} 个 | 测速淘汰: {len(directs) - len(kept)} 个 | "
+          f"评选 Key 优质前置跳板: {len(chosen)} 个")
+
+
+def resolve_client_front(front_proxy):
+    """解析本机客户端前置端口 (如 Karing 127.0.0.1:3067)；端口未监听时返回 None，不拿死端口去测。"""
+    if not front_proxy:
+        return None
+    host, _, port = front_proxy.rpartition(":")
+    try:
+        address = (host or "127.0.0.1", int(port))
+        socket.create_connection(address, timeout=1.0).close()
+    except (OSError, ValueError):
+        print(f"      本机客户端前置端口 {front_proxy} 未监听，不作兜底前置")
+        return None
+    exit_ip = None
+    try:
+        socks = f"socks5://{address[0]}:{address[1]}"
+        exit_ip = fast_probe_ip({"http": socks, "https": socks}, timeout=4.0)
+    except Exception:
+        pass
+    print(f"      本机客户端前置端口 {front_proxy} 可用，出口: {exit_ip or '未检测到'}")
+    return {"address": address, "exit_ip": exit_ip, "label": f"本机客户端 {front_proxy}"}
+
+
+def run_landing_stage(qualified, eliminated, args, client_front):
+    """
+    直连不可达节点经前置重测，区分"需前置的落地节点"与"彻底失效节点"。
+    前置优先级：评分最高的 Key -> 未被淘汰的最佳可前置节点 (均需 --speed-test) -> 本机客户端前置端口。
+    返回 (前置, 说明)：前置为 sing-box 节点出站 dict 或 (host, port)，供后续浏览器实测复用；无重测时为 (None, None)。
+    """
+    unreachable = [e for e in eliminated if e.get('direct_unreachable')]
+    if not unreachable:
+        return None, None
+
+    front, label, blocked, kind = None, None, set(), None
+    if args.speed_test and not args.no_landing_probe:
+        directs = [r for r in qualified if not r.get('is_landing') and r.get('proxy')]
+        fronts, kind = pick_front_nodes(directs, FRONT_FALLBACK_TIER)
+        if fronts:
+            front_row = fronts[0]
+            front = front_row['raw_node']
+            label = f"{'Key' if kind == 'key' else '备用前置'} {front_row['orig_name']}"
+            if kind == 'fallback':
+                for r in fronts:
+                    r['is_front_fallback'] = True
+            blocked = set((front_row.get('egress') or {}).get('observed_ips') or []) | {front_row.get('exit_ip')}
+    if front is None and client_front and not args.no_landing_probe:
+        front, label, blocked = client_front["address"], client_front["label"], {client_front["exit_ip"]}
+    blocked.discard(None)
+
+    if front is None:
+        reason = ("直连不可达，且无合格前置可用于验证是否为落地节点" if args.speed_test and not args.no_landing_probe
+                  else "直连不可达 (未经前置验证)")
+        for e in unreachable:
+            e['eliminated_reason'] = reason
+        print(f"\n[3.6/6] {len(unreachable)} 个节点直连不可达，无可用前置，未经前置验证"
+              + ("" if args.speed_test else " (开启 --speed-test 可用评出的 Key 或备用前置)"))
+        return None, None
+
+    print(f"\n[3.6/6] {len(unreachable)} 个节点直连不可达，经前置 [{label}] 重测...")
+    eliminated[:] = [e for e in eliminated if not e.get('direct_unreachable')]
+    rows = [{'raw_node': e['raw_node'], 'orig_name': e['orig_name'], 'is_landing': True, 'path': 'front',
+             'front_node': label, 'exit_ip': None, 'eliminated_reason': None} for e in unreachable]
+    opts = speed_options(args) if args.speed_test else None
+    targets_urls = [args.speed_target] if args.speed_target else DEFAULT_SUSTAINED_TARGETS
+
+    for start in range(0, len(rows), 10):
+        chunk = rows[start:start + 10]
+        failure = "经前置重测未完成"
+        try:
+            with singbox_active_listeners(chunk, front_proxy=front, singbox_bin=args.singbox_bin,
+                                          relay=getattr(args, 'physical_relay', None)) as targets:
+                with ThreadPoolExecutor(max_workers=max(1, min(args.workers, len(targets) or 1))) as pool:
+                    list(pool.map(lambda target: test_via_front(target, blocked, label), targets))
+                passed = [t for t in targets if not t['result_ref'].get('eliminated_reason')]
+                if opts and passed:
+                    measure_rows_speed([(t['proxy_url'], t['result_ref']) for t in passed], opts,
+                                       targets=targets_urls, concurrency=args.speed_concurrency)
+        except Exception as e:
+            failure = f"前置重测批次异常:{e}"
+            print(f"      前置重测批次 {start // 10 + 1} 异常: {e}")
+        for r in chunk:
+            if not r.get('eliminated_reason') and not r.get('exit_ip'):
+                r['eliminated_reason'] = failure
+            # 只有经 Key 前置时链路速度才代表落地节点能力；经备用前置/本机客户端时只记录、不按速度淘汰
+            if not r.get('eliminated_reason') and r.get('speed_drop') and kind == 'key':
+                r['eliminated_reason'] = r['speed_drop']
+            if r.get('eliminated_reason'):
+                eliminated.append(r)
+                print(f"      [淘汰] {r['orig_name']}: {r['eliminated_reason']}")
+            else:
+                qualified.append(r)
+                speed_text = f" | 测速 {speed_verdict_text(r)} {describe_speed(r.get('speed_result'))}" if opts else ""
+                print(f"      [落地合格] {r['orig_name']} | IP: {r['exit_ip']}{speed_text}")
+    return front, label
 
 
 def parse_args():
@@ -239,7 +339,10 @@ def parse_args():
     parser.add_argument("--input", "-i", required=True, help="输入 sing-box JSON 文件路径")
     parser.add_argument("--output", "-o", required=True, help="输出最终去重、打标与排序的 sing-box JSON 配置文件路径")
     parser.add_argument("--yaml-output", "-y", help="显式指定输出的 Clash/Mihomo YAML 配置文件路径 (默认自动生成与 -o 同名的 .yaml 文件)")
-    parser.add_argument("--front-proxy", default="127.0.0.1:3067", help="本地前置跳板代理地址 (默认: 127.0.0.1:3067)")
+    parser.add_argument("--front-proxy", default="127.0.0.1:3067",
+                        help="本机客户端前置 SOCKS 端口 (默认 127.0.0.1:3067)：无 Key/备用前置时 (如未测速) "
+                             "兜底用于验证直连不可达节点；端口未监听时跳过")
+    parser.add_argument("--iface", help="物理网卡名称 (如 WLAN)；本机 TUN 接管系统路由时用于物理直连中继，不指定则自动探测")
     parser.add_argument("--singbox-bin", help="显式指定 sing-box 可执行文件路径")
     parser.add_argument("--batch-size", type=int, default=20, help="每批并发探测的节点数量 (默认: 20)")
     parser.add_argument("--workers", type=int, default=20, help="单批并发线程数 (默认: 20)")
@@ -249,26 +352,57 @@ def parse_args():
                         help="跳过阶段一基础初筛，直接对输入配置中的代理节点执行阶段二全量深度浏览器实测 (YouTube免登实播 + 4站免盾)")
     parser.add_argument("--browser-workers", type=int, default=6,
                         help="浏览器实测并发进程数 (默认: 6)")
-    parser.add_argument("--speed-test", action="store_true", default=False,
-                        help="主动开启本地完整下载测速 (非主动技能，仅在显式要求时执行)")
-    parser.add_argument("--rate-limit-mbps", type=float, default=10.0,
-                        help="测速带宽上限 (Mbps)，防止跑满本地网络导致卡顿 (默认: 10.0)")
-    parser.add_argument("--speed-duration", type=float, default=5.0, help="单节点持续下载测速时长 (秒，默认: 5.0)")
-    parser.add_argument("--min-speed-mbps", type=float, default=5.0, help="测速合格中位数速率门槛 (Mbps，默认: 5.0)")
-    parser.add_argument("--speed-target", default=DEFAULT_SUSTAINED_TARGETS[0], help="持续测速目标 URL")
+    add_speed_arguments(parser)
     parser.add_argument("--resort", action="store_true", default=False,
                         help="仅在用户主动要求重排序时使用: 同地区按标签与信誉重排并从 1 重新编号 (默认保留原节点编号)")
     parser.add_argument("--report", "-r", help="保存测试详情报告的 JSON 路径")
     return parser.parse_args()
 
 
+def start_physical_relay(stack, args):
+    """
+    检测本机客户端 TUN/系统代理是否接管了系统路由 (系统出口 != 物理网卡直连出口)。
+    接管时返回绑定物理网卡的 mihomo DIRECT 中继地址，供 sing-box 节点出站经其出网；未接管返回 None。
+    """
+    try:
+        port = stack.enter_context(direct_listener(args.iface))
+    except Exception as e:
+        print(f"      [警告] 无法启动物理直连中继 ({e})；若本机开着 TUN，测试流量会经过本机客户端当前使用的节点")
+        return None
+    url = f"http://127.0.0.1:{port}"
+    physical = set(probe_egress({"http": url, "https": url})["observed_ips"])
+    system = set(probe_egress(None)["observed_ips"])
+    if physical and system and physical != system:
+        print(f"      检测到本机 TUN/系统代理接管系统路由 (系统出口 {sorted(system)}，物理直连出口 {sorted(physical)})："
+              f"sing-box 节点出站改经物理直连中继，正在使用的节点也照常测试")
+        return ("127.0.0.1", port)
+    return None
+
+
 def main():
     args = parse_args()
+    with ExitStack() as stack:
+        args.physical_relay = start_physical_relay(stack, args)
+        return run_pipeline(args)
+
+
+def run_pipeline(args):
     start_time = time.time()
+    apply_profile(args)
+    option_error = validate_speed_options(args) if args.speed_test else None
+    if option_error:
+        print(f"错误: {option_error}")
+        return 2
+    try:
+        template_path = check_template()
+    except (OSError, ValueError) as e:
+        print(f"错误: {e}")
+        return 2
 
     print("=" * 80)
-    print(">>> 启动 sing-box 订阅双轨服务探测与智能导出流水线")
+    print(">>> 启动 sing-box 备用流水线：服务探测与智能导出 (主流水线为 probe_services.py)")
     print("=" * 80)
+    print(f"Clash 母版校验通过: {template_path}")
 
     if not os.path.isfile(args.input):
         print(f"错误: 输入文件不存在: {args.input}")
@@ -289,18 +423,9 @@ def main():
 
     print(f"      有效待测候选节点: {len(candidates)} 个 (已清洗过滤不支持的协议与私有扩展)")
 
-    front_parts = args.front_proxy.split(":")
-    front_host = front_parts[0]
-    front_port = int(front_parts[1]) if len(front_parts) > 1 else 3067
-
-    # 获取前置基线出口
-    baseline_ip = None
-    try:
-        baseline_proxies = {"http": f"socks5://{front_host}:{front_port}", "https": f"socks5://{front_host}:{front_port}"}
-        baseline_ip = fast_probe_ip(baseline_proxies, timeout=4.0)
-        print(f"      本地前置跳板基线出口: {baseline_ip or '未检测到'}")
-    except Exception:
-        pass
+    # 本机客户端前置端口仅作兜底前置 (无 Key / 备用前置时)
+    client_front = resolve_client_front(args.front_proxy)
+    landing_front, landing_front_label = None, None
 
     batch_size = max(5, args.batch_size)
     total = len(candidates)
@@ -335,8 +460,14 @@ def main():
                 'speed_kbs': 500 if info['is_fast'] else 120
             })
         total = len(qualified)
+        # 浏览器复测沿用标签中的 Key 作落地节点前置，没有 Key 时用本机客户端前置端口
+        key_row = next((r for r in qualified if r['is_key'] and not r['is_landing']), None)
+        if key_row:
+            landing_front, landing_front_label = key_row['raw_node'], f"Key {key_row['orig_name']}"
+        elif client_front:
+            landing_front, landing_front_label = client_front['address'], client_front['label']
     else:
-        print(f"[2/6] 启动分批双轨探测 (共 {total_batches} 批，每批 {batch_size} 节点，as_completed 非阻塞保护)...")
+        print(f"[2/6] 启动分批直连探测 (共 {total_batches} 批，每批 {batch_size} 节点，as_completed 非阻塞保护)...")
 
         for b_idx in range(total_batches):
             chunk = candidates[b_idx * batch_size: (b_idx + 1) * batch_size]
@@ -344,13 +475,13 @@ def main():
             t_b0 = time.time()
             b_results = []
             try:
-                with singbox_dual_listeners(chunk, front_proxy=(front_host, front_port),
-                                           singbox_bin=args.singbox_bin) as targets:
+                with singbox_dual_listeners(chunk, singbox_bin=args.singbox_bin,
+                                            relay=args.physical_relay) as targets:
                     pool = ThreadPoolExecutor(max_workers=min(args.workers, len(targets)))
-                    futures = {pool.submit(test_target_node, t, baseline_ip): t for t in targets}
+                    futures = {pool.submit(test_target_node, t): t for t in targets}
                     completed = set()
                     try:
-                        for fut in as_completed(futures, timeout=24.0):
+                        for fut in as_completed(futures, timeout=BATCH_HARD_TIMEOUT):
                             completed.add(fut)
                             try:
                                 res = fut.result()
@@ -363,7 +494,7 @@ def main():
                     finally:
                         for fut, t_info in futures.items():
                             if fut not in completed:
-                                b_results.append({'raw_node': t_info['raw'], 'orig_name': t_info['raw'].get('tag'), 'eliminated_reason': "探测整体硬超时(>24s)"})
+                                b_results.append({'raw_node': t_info['raw'], 'orig_name': t_info['raw'].get('tag'), 'eliminated_reason': f"探测整体硬超时(>{BATCH_HARD_TIMEOUT:.0f}s)"})
                         pool.shutdown(wait=False, cancel_futures=True)
             except Exception as e:
                 print(f"      批次 {b_num} 异常: {e}")
@@ -381,28 +512,42 @@ def main():
             b_dur = time.time() - t_b0
             print(f"      批次 {b_num:02d}/{total_batches:02d} [{len(chunk)}节点] ({b_dur:.1f}s) | 本批合格: {len(b_qual)} | 累计合格: {len(qualified)}")
 
-    print(f"\n[3/6] 基础双轨初筛完毕！耗时: {round(time.time() - start_time, 1)}s | 初筛合格: {len(qualified)}/{total}")
+        unreachable_count = sum(1 for e in eliminated if e.get('direct_unreachable'))
+        print(f"\n[3/6] 直连初筛完毕！耗时: {round(time.time() - start_time, 1)}s | 直连合格: {len(qualified)}/{total}"
+              f" | 直连不可达: {unreachable_count}")
+
+        if args.speed_test and qualified:
+            run_speed_stage(qualified, eliminated, args)
+        landing_front, landing_front_label = run_landing_stage(qualified, eliminated, args, client_front)
+
     if not qualified:
         print("错误: 本轮无节点通过基础测试。")
         return 1
 
-    if args.speed_test:
-        run_speed_stage(qualified, args, (front_host, front_port))
-
     # [4/6] 全量深度浏览器实测 (YouTube 免登实播 + 4 站免盾)
     if not args.no_browser:
-        print(f"\n[4/6] 启动全量深度浏览器实测 (YouTube 免登实播 + 4 站免盾，共 {len(qualified)} 个合格节点)...")
+        # 落地节点经选定的前置实测；没有可用前置时无法为落地节点建立链路，跳过其浏览器实测
+        browser_rows = [r for r in qualified if landing_front is not None or not r.get('is_landing')]
+        browser_ids = {id(r) for r in browser_rows}
+        for r in qualified:
+            if id(r) not in browser_ids:
+                r['youtube_passed'] = False
+                r['shield_passed'] = False
+                r['comprehensive_sparkle'] = False
+                r['youtube_details'] = {"error": "无可用前置，未做浏览器实测"}
+        print(f"\n[4/6] 启动全量深度浏览器实测 (YouTube 免登实播 + 4 站免盾，共 {len(browser_rows)} 个合格节点"
+              + (f"，落地节点经前置 [{landing_front_label}]" if landing_front is not None else "") + ")...")
         qual_batch_size = 10
-        qual_total_batches = (len(qualified) + qual_batch_size - 1) // qual_batch_size
+        qual_total_batches = (len(browser_rows) + qual_batch_size - 1) // qual_batch_size
 
         for qb_idx in range(qual_total_batches):
-            q_chunk = qualified[qb_idx * qual_batch_size: (qb_idx + 1) * qual_batch_size]
+            q_chunk = browser_rows[qb_idx * qual_batch_size: (qb_idx + 1) * qual_batch_size]
             qb_num = qb_idx + 1
             t_qb0 = time.time()
 
             try:
-                with singbox_active_listeners(q_chunk, front_proxy=(front_host, front_port),
-                                              singbox_bin=args.singbox_bin) as active_targets:
+                with singbox_active_listeners(q_chunk, front_proxy=landing_front, singbox_bin=args.singbox_bin,
+                                              relay=args.physical_relay) as active_targets:
                     def test_browser_node(target_info):
                         r = target_info['result_ref']
                         p_url = target_info['proxy_url']
@@ -488,9 +633,7 @@ def main():
         yaml_path = args.yaml_output or (os.path.splitext(out_target)[0] + ".yaml")
 
     # 1. 导出标准 sing-box JSON 配置文件
-    exp_res = export_singbox_json(config_data, qualified, sb_path,
-                                 front_proxy=(front_host, front_port),
-                                 singbox_bin=args.singbox_bin)
+    exp_res = export_singbox_json(config_data, qualified, sb_path, singbox_bin=args.singbox_bin)
 
     print(f"      [1/2] sing-box JSON 导出成功: {sb_path} (节点数: {exp_res['total_nodes']})")
     if exp_res['check_ok']:
@@ -505,6 +648,8 @@ def main():
         ob['tag'] = r['final_name']
         cp = parse_singbox_outbound(ob)
         if cp:
+            if r.get('is_front_fallback'):
+                cp['_front_fallback'] = True
             clash_proxies.append(cp)
 
     export_clash_yaml(clash_proxies, yaml_path)
@@ -517,7 +662,7 @@ def main():
         name = r['final_name']
         if len(name) > 36:
             name = name[:34] + ".."
-        path_type = "落地" if r['is_landing'] else "直连"
+        path_type = "落地" if r['is_landing'] else "备用前置" if r.get('is_front_fallback') else "直连"
         ip = r.get('exit_ip') or "未知"
         ai = "✓" if r.get('ai_supported') else "✗"
         yt = "✓" if r.get('youtube_passed') else "✗"
@@ -539,10 +684,14 @@ def main():
             "total_candidates": total,
             "qualified_count": len(qualified),
             "eliminated_count": len(eliminated),
+            "landing_front": landing_front_label,
             "qualified": [
                 {
                     "final_name": r['final_name'],
                     "is_landing": r['is_landing'],
+                    "path": r.get('path'),
+                    "front_node": r.get('front_node'),
+                    "is_front_fallback": r.get('is_front_fallback', False),
                     "exit_ip": r.get('exit_ip'),
                     "cc": r.get('cc'),
                     "speed_kbs": r.get('speed_kbs'),

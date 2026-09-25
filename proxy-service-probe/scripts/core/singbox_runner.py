@@ -116,12 +116,49 @@ def wait_port_ready(port, timeout=3.0):
     return False
 
 
-@contextmanager
-def singbox_dual_listeners(batch_nodes, front_proxy=("127.0.0.1", 3067), singbox_bin=None):
+def front_outbound(front):
     """
-    为一组待测节点构建临时 sing-box 双轨混合监听实例（端口均为动态空闲端口）：
+    前置出站 (tag 固定为 front-anchor)：
+    - dict: 节点出站 (评出的 Key 或备用前置)；
+    - (host, port): 本机客户端的 SOCKS 端口 (如 Karing 127.0.0.1:3067)；
+    - None: 无前置。
+    """
+    if front is None:
+        return None
+    if isinstance(front, dict):
+        out = deepcopy(clean_node_for_singbox(front) or front)
+        out["tag"] = "front-anchor"
+        out.pop("detour", None)
+        return out
+    return {"type": "socks", "tag": "front-anchor", "server": front[0], "server_port": int(front[1])}
+
+
+def apply_physical_relay(outbounds, relay):
+    """
+    本机 TUN 接管系统路由时，让节点出站 (含节点前置) 经绑定物理网卡的本地 SOCKS 中继出网。
+    sing-box 1.14 在 Windows 上开着外部 TUN 时 bind_interface/default_interface 不生效 (实测连不通)，
+    不经中继则测试流量会先经过本机客户端正在使用的节点，测速与属地都会失真。
+    已有 detour 的落地节点经前置出网；回环地址上的本机客户端前置无需中继。
+    """
+    if not relay:
+        return outbounds
+    for out in outbounds:
+        if out.get("detour") or out.get("type") in ("direct", "wireguard"):
+            continue
+        if str(out.get("server", "")).startswith("127."):
+            continue
+        out["detour"] = "physical-relay"
+    outbounds.append({"type": "socks", "tag": "physical-relay", "server": relay[0], "server_port": int(relay[1])})
+    return outbounds
+
+
+@contextmanager
+def singbox_dual_listeners(batch_nodes, front_proxy=None, singbox_bin=None, relay=None):
+    """
+    为一组待测节点构建临时 sing-box 混合监听实例（端口均为动态空闲端口）：
     - node-{i}-direct: 纯直连测试
-    - node-{i}-front: 经前置 SOCKS5 跳板测试
+    - node-{i}-front: 经前置测试 (仅 front_proxy 非 None 时建立，见 front_outbound)
+    relay: 本机 TUN 接管系统路由时的物理直连 SOCKS 中继 (host, port)，见 apply_physical_relay
     """
     binary = find_singbox_bin(singbox_bin)
     if not binary:
@@ -139,13 +176,9 @@ def singbox_dual_listeners(batch_nodes, front_proxy=("127.0.0.1", 3067), singbox
     outs = []
 
     # 1. 注入前置出站
-    front_host, front_port = front_proxy[0], int(front_proxy[1])
-    outs.append({
-        "type": "socks",
-        "tag": "front-anchor",
-        "server": front_host,
-        "server_port": front_port
-    })
+    anchor = front_outbound(front_proxy)
+    if anchor:
+        outs.append(anchor)
 
     targets = []
     ports = []
@@ -156,8 +189,7 @@ def singbox_dual_listeners(batch_nodes, front_proxy=("127.0.0.1", 3067), singbox
             continue
 
         d_port = next_port()
-        f_port = next_port()
-        ports += [d_port, f_port]
+        ports.append(d_port)
 
         # 直连出站
         cd = deepcopy(cleaned)
@@ -172,26 +204,32 @@ def singbox_dual_listeners(batch_nodes, front_proxy=("127.0.0.1", 3067), singbox
         rules.append({"inbound": [f"in-{i}-d"], "outbound": f"node-{i}-direct"})
 
         # 前置跳板出站
-        cf = deepcopy(cleaned)
-        cf['tag'] = f"node-{i}-front"
-        cf['detour'] = "front-anchor"
-        outs.append(cf)
-        inbounds.append({
-            "type": "mixed",
-            "tag": f"in-{i}-f",
-            "listen": "127.0.0.1",
-            "listen_port": f_port
-        })
-        rules.append({"inbound": [f"in-{i}-f"], "outbound": f"node-{i}-front"})
+        front_proxies = None
+        if anchor:
+            f_port = next_port()
+            ports.append(f_port)
+            cf = deepcopy(cleaned)
+            cf['tag'] = f"node-{i}-front"
+            cf['detour'] = "front-anchor"
+            outs.append(cf)
+            inbounds.append({
+                "type": "mixed",
+                "tag": f"in-{i}-f",
+                "listen": "127.0.0.1",
+                "listen_port": f_port
+            })
+            rules.append({"inbound": [f"in-{i}-f"], "outbound": f"node-{i}-front"})
+            front_proxies = {"http": f"http://127.0.0.1:{f_port}", "https": f"http://127.0.0.1:{f_port}"}
 
         targets.append({
             "index": i,
             "raw": node.get("raw", node),
             "cleaned": cleaned,
             "direct_proxies": {"http": f"http://127.0.0.1:{d_port}", "https": f"http://127.0.0.1:{d_port}"},
-            "front_proxies": {"http": f"http://127.0.0.1:{f_port}", "https": f"http://127.0.0.1:{f_port}"}
+            "front_proxies": front_proxies
         })
 
+    apply_physical_relay(outs, relay)
     outs.append({"type": "direct", "tag": "direct-out"})
     cfg = {
         "log": {"level": "warn"},
@@ -222,9 +260,9 @@ def singbox_dual_listeners(batch_nodes, front_proxy=("127.0.0.1", 3067), singbox
 
 
 @contextmanager
-def singbox_active_listeners(qualified_nodes, front_proxy=("127.0.0.1", 3067), singbox_bin=None):
+def singbox_active_listeners(qualified_nodes, front_proxy=None, singbox_bin=None, relay=None):
     """
-    为一组已确定路径（直连 or 落地经由 front_proxy）的合格节点建立单端口独享监听：
+    为一组已确定路径（直连 or 落地经由 front_proxy，取值见 front_outbound）的合格节点建立单端口独享监听：
     - node-{i}: 监听 127.0.0.1 上的动态空闲端口，
     方便 Playwright 浏览器、测速或深度探针通过 target["proxy_url"] 访问。
     """
@@ -243,13 +281,12 @@ def singbox_active_listeners(qualified_nodes, front_proxy=("127.0.0.1", 3067), s
     rules = []
     outs = []
 
-    front_host, front_port = front_proxy[0], int(front_proxy[1])
-    outs.append({
-        "type": "socks",
-        "tag": "front-anchor",
-        "server": front_host,
-        "server_port": front_port
-    })
+    anchor = front_outbound(front_proxy)
+    if anchor:
+        outs.append(anchor)
+    elif any(r.get("is_landing") for r in qualified_nodes):
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise ValueError("落地节点必须经前置测试，但未提供前置")
 
     targets = []
     next_port = _port_allocator()
@@ -282,6 +319,7 @@ def singbox_active_listeners(qualified_nodes, front_proxy=("127.0.0.1", 3067), s
             "proxy_url": f"http://127.0.0.1:{port}"
         })
 
+    apply_physical_relay(outs, relay)
     outs.append({"type": "direct", "tag": "direct-out"})
     cfg = {
         "log": {"level": "warn"},
@@ -339,8 +377,9 @@ def make_standard_singbox_config(cleaned_proxies, qualified_tags=None, sparkle_t
             cp["_is_landing"] = True
         clash_proxies.append(cp)
 
-    # 1. 严格使用与 Clash/Mihomo 完全一致的标准策略组构建器
-    clash_groups = build_proxy_groups(clash_proxies)
+    # 1. 严格使用与 Clash/Mihomo 完全一致的标准策略组构建器 (无 Key 时前置池用备用前置)
+    front_fallback = [p.get("tag") for p in sorted_proxies if p.get("_front_fallback")]
+    clash_groups = build_proxy_groups(clash_proxies, front_fallback=front_fallback)
 
     # 2. 转换为 sing-box 1.14+ 现代 outbounds 策略组 (selector / urltest)
     sb_group_outbounds = convert_clash_groups_to_singbox(clash_groups)
@@ -478,6 +517,8 @@ def export_singbox_json(base_config, qualified_results, output_path,
             clean_obj['_is_landing'] = bool(r.get('is_landing'))
         if r.get('is_key') is not None:
             clean_obj['_is_key'] = bool(r.get('is_key'))
+        if r.get('is_front_fallback'):
+            clean_obj['_front_fallback'] = True
         cleaned_proxies.append(clean_obj)
         qualified_tags.append(name)
         if '✨' in name:

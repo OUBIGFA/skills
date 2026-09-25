@@ -1,0 +1,107 @@
+# proxy-service-probe 云端完整测试工作流 (GitHub Actions 模板)
+#
+# 用法: 复制到 **私有** 仓库的 .github/workflows/node-probe.yml，并把 SKILL_DIR 改成技能所在目录。
+# 前置: 仓库 Settings -> Secrets 新建 NODE_SOURCE，内容为订阅 URL 或节点原文 (Clash YAML / URI 列表)。
+#
+# 云端测速与本地测速是两套独立的完整流程，门槛与判据相同，只是观测位置不同:
+# 这里测的是 "云端机房 -> 节点 -> CDN"，不包含国内网络到节点这一段，报告 speed_profile.vantage 会注明。
+# 日志与产物含节点名与出口 IP；公开仓库的日志和 Artifact 任何人可见，因此公开仓库会直接拒绝运行。
+name: node-probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      speed_test:
+        description: "执行完整下载测速与 Key 评选 (稳态低于 6 Mbps 的节点删除)"
+        type: boolean
+        default: true
+      no_browser:
+        description: "跳过 Playwright 浏览器实测 (YouTube 免登与浏览器免盾)"
+        type: boolean
+        default: false
+      resort:
+        description: "重排序并从 1 重新编号"
+        type: boolean
+        default: false
+  # 需要定时运行时取消注释 (UTC)
+  # schedule:
+  #   - cron: "0 */6 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: node-probe
+  cancel-in-progress: false
+
+env:
+  SKILL_DIR: proxy-service-probe
+  MIHOMO_VERSION: v1.19.31
+  # 官方 release 资产 mihomo-linux-amd64-compatible-v1.19.31.gz 的 sha256；升级版本时同步更新
+  MIHOMO_SHA256: 04cf9f09671704f839ddbee2e93069dc831a4123a75281e725d1d96ab9ac1afc
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: 拒绝在公开仓库运行
+        if: ${{ !github.event.repository.private }}
+        run: |
+          echo "::error::公开仓库的日志与产物会泄露节点信息，请在私有仓库运行此工作流。"
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖与 Playwright Chromium
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyyaml requests pycountry playwright
+          python -m playwright install --with-deps chromium
+
+      - name: 下载并校验 Linux 版 Mihomo 内核
+        run: |
+          asset="mihomo-linux-amd64-compatible-${MIHOMO_VERSION}.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$asset" \
+            "https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VERSION}/${asset}"
+          echo "${MIHOMO_SHA256}  $RUNNER_TEMP/$asset" | sha256sum -c -
+          gzip -dc "$RUNNER_TEMP/$asset" > "$SKILL_DIR/core/mihomo"
+          chmod +x "$SKILL_DIR/core/mihomo"
+          "$SKILL_DIR/core/mihomo" -v
+
+      - name: 执行节点服务测试与测速
+        env:
+          NODE_SOURCE: ${{ secrets.NODE_SOURCE }}
+          # 定时触发没有 inputs：测速开、浏览器实测开、不重排
+          SPEED_TEST: ${{ github.event_name == 'schedule' && 'true' || inputs.speed_test }}
+          NO_BROWSER: ${{ github.event_name == 'schedule' && 'false' || inputs.no_browser }}
+          RESORT: ${{ github.event_name == 'schedule' && 'false' || inputs.resort }}
+        run: |
+          if [ -z "$NODE_SOURCE" ]; then
+            echo "::error::未配置 secrets.NODE_SOURCE"
+            exit 1
+          fi
+          flags=()
+          [ "$SPEED_TEST" = "true" ] && flags+=(--speed-test)
+          [ "$NO_BROWSER" = "true" ] && flags+=(--no-browser)
+          [ "$RESORT" = "true" ] && flags+=(--resort)
+          mkdir -p dist
+          # --profile auto 在 Actions 中自动切换为 ci (测速 2 路并发、上限 50 Mbps；Runner 在海外，不做前置链式测活)，其余判据与本地一致
+          python "$SKILL_DIR/scripts/probe_services.py" \
+            --input "$NODE_SOURCE" \
+            --output dist/clash_config.yaml \
+            --report dist/probe_report.json \
+            "${flags[@]}"
+
+      - name: 上传结果 (仅仓库成员可下载)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-probe-${{ github.run_id }}
+          path: dist/
+          retention-days: 7
+          if-no-files-found: warn

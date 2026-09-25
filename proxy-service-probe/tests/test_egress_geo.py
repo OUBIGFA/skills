@@ -3,7 +3,6 @@ import json
 import sys
 import tempfile
 import unittest
-from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
@@ -175,6 +174,59 @@ class GeoEvidenceTests(unittest.TestCase):
         self.assertTrue(result['geo_decision']['needs_review'])
         self.assertEqual(google.call_count, 2)
 
+    @staticmethod
+    def google_obs(gemini=None, youtube=None):
+        return {'country_code': gemini or youtube, 'details': {'gemini': gemini, 'youtube': youtube},
+                'source': 'gemini_page' if gemini else 'youtube_premium' if youtube else None}
+
+    @patch.object(geo, 'query_ip_info', return_value=info('SG'))
+    @patch.object(geo, 'probe_google_region')
+    @patch.object(geo, 'probe_egress', return_value=egress())
+    def test_google_geoip_conflict_falls_back_to_gemini(self, probe, google, lookup):
+        google.return_value = self.google_obs(gemini='JP', youtube='SG')
+        decision = geo.probe_geolocation({})['geo_decision']
+        self.assertEqual((decision['cc'], decision['flag']), ('JP', geo.flag_emoji('JP')))
+        self.assertEqual(decision['basis'], 'google_fallback_gemini')
+        self.assertEqual(decision['unknown_basis'], 'google_geoip_conflict')
+        self.assertTrue(decision['needs_review'])
+
+    @patch.object(geo, 'query_ip_info', return_value=geo.empty_ip_info())
+    @patch.object(geo, 'probe_google_region')
+    @patch.object(geo, 'probe_egress', return_value=egress())
+    def test_unstable_gemini_without_geoip_uses_latest_gemini(self, probe, google, lookup):
+        google.side_effect = [{**self.google_obs(gemini='TW', youtube='US'), 'conflict': True},
+                              self.google_obs(gemini='US')]
+        result = geo.probe_geolocation({})
+        self.assertEqual(result['google_region']['status'], 'unstable')
+        self.assertEqual(result['cc'], 'US')
+        self.assertEqual(result['geo_decision']['unknown_basis'], 'insufficient_or_conflicting_evidence')
+
+    @patch.object(geo, 'query_ip_info', return_value=info('SG'))
+    @patch.object(geo, 'probe_google_region')
+    @patch.object(geo, 'probe_egress', return_value=egress())
+    def test_youtube_region_is_fallback_when_gemini_missing(self, probe, google, lookup):
+        google.return_value = self.google_obs(youtube='DE')
+        decision = geo.probe_geolocation({})['geo_decision']
+        self.assertEqual((decision['cc'], decision['basis']), ('DE', 'google_fallback_youtube'))
+
+    @patch.object(geo, 'query_ip_info', return_value=geo.empty_ip_info())
+    @patch.object(geo, 'probe_google_region')
+    @patch.object(geo, 'probe_egress', return_value=egress())
+    def test_without_any_google_region_stays_unknown(self, probe, google, lookup):
+        google.return_value = self.google_obs()
+        result = geo.probe_geolocation({})
+        self.assertEqual(result['cc'], 'UNK')
+        self.assertNotIn('unknown_basis', result['geo_decision'])
+
+    @patch.object(geo, 'query_ip_info', return_value=info('KR'))
+    @patch.object(geo, 'probe_google_region')
+    @patch.object(geo, 'probe_egress', return_value=egress())
+    def test_known_geoip_country_is_not_overridden(self, probe, google, lookup):
+        google.return_value = self.google_obs(gemini='KR')
+        decision = geo.probe_geolocation({})['geo_decision']
+        self.assertEqual(decision['cc'], 'KR')
+        self.assertNotIn('unknown_basis', decision)
+
     def test_dual_stack_is_not_rotation(self):
         self.assertFalse(geo.arbitrate_geo(exit_ips=[IP, V6])['is_pool'])
         self.assertTrue(geo.arbitrate_geo(exit_ips=[IP, IP2])['is_pool'])
@@ -260,14 +312,15 @@ class PipelineIntegrationTests(unittest.TestCase):
                   'geo_decision': {'egress_stable': True, 'is_pool': False}, 'ip_info': info(),
                   'ip_info_by_ip': {IP: info()}, 'egress': egress(), 'egress_after': egress()}
 
-        @contextmanager
-        def listeners(*args, **kwargs):
-            yield [(12345, node)]
+        def listeners(stack, entries, **kwargs):
+            return {key: 12345 for key, _, _ in entries}, {}
 
         with tempfile.TemporaryDirectory() as temp, patch.object(module, 'load_proxies', return_value=[node]), \
                 patch.object(module, 'find_mihomo_bin', return_value='test-kernel'), \
-                patch.object(module, 'node_listeners', listeners), \
-                patch.object(module, 'probe_egress', side_effect=[egress(IP2), egress()]), \
+                patch.object(module, 'start_node_group', listeners), \
+                patch.object(module, 'check_alive', return_value={'alive': True, 'latency_ms': 80.0, 'attempts': []}), \
+                patch.object(module, 'probe_runner_baseline', return_value={IP2}), \
+                patch.object(module, 'probe_egress', side_effect=[egress()]), \
                 patch.object(module, 'probe_geolocation', return_value=result) as shared, \
                 patch('builtins.print'):
             report = Path(temp) / 'report.json'

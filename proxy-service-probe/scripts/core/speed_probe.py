@@ -1,28 +1,43 @@
 # -*- coding: utf-8 -*-
 """
 测速模块:
-1. 持续流式下载测速 (基于 curl、RateMeter 逐秒采样与带宽限速防网络拥塞，移植自 freenode 核心)
-2. 目标快速轻量预检 (Range: bytes=0-1023)
-3. 3 秒轻量防断流快速初测 (保留供默认模式使用)
+1. 持续流式下载测速 (内存计数零落盘、单连接、RateMeter 逐秒采样、带宽上限保护、稳态判定)
+2. 3 秒轻量防断流快速初测 (保留供默认模式使用)
+
+准确性设计 (以真实 YouTube 播放校准):
+- 跨境高延迟链路上新建连接爬升慢 (实测 10~20 秒才到稳态，与 YouTube "connection speed" 先低后稳一致)，
+  因此不设固定预热，而是至少观测 10 秒、最多 20 秒，以"最后 6 秒"作为稳态窗口；
+- 稳态速度 = 稳态窗口平均速度 (单秒按窗口中位数 2 倍封顶，削平孤立尖峰)；
+  最低速度 = 稳态窗口内 2 秒滑动平均的最小值 (容忍 1 秒抖动，抓连续下滑)；
+- 先突发后限速的节点：限速后的秒数进入稳态窗口，最低速度随之跌落而不达标；
+- 单连接测量：YouTube 播放器按顺序拉分段，节点常按单连接限速，多连接聚合会虚高；
+- 目标为 CDN 域名：经代理由节点侧解析，自动命中离出口最近的边缘；Google 下载 CDN 与 YouTube 同属 Google 边缘网络。
 """
 import math
-import os
-from pathlib import Path
-import re
-import shutil
 import statistics
-import subprocess
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+
 import requests
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
-# 默认测速目标 (首选 proof.ovh.us，备选 cloudflare 与 google)
+# 持续测速目标: 依次尝试，仅在目标尚未返回有效载荷时换下一个 (已开始传输即以该目标定论，杜绝挑目标凑高速)
 DEFAULT_SUSTAINED_TARGETS = [
-    "https://proof.ovh.us/files/100Mb.dat",
-    "https://speed.cloudflare.com/__down?bytes=50000000",
-    "https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg",
+    "https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg",  # ~280MB，支持 Range
+    "https://speed.cloudflare.com/__down?bytes=50000000",  # 单次上限 < 100MB，忽略 Range
 ]
+
+# 门槛 (按实测校准：YouTube 连接速度稳定在 15 Mbps 左右的节点可流畅播放 4K，应能入选 Key)
+DEFAULT_MIN_STABLE_MBPS = 12.0   # Key / Fast：稳态速度下限 (新建连接测得，较播放器热连接留余量)
+DEFAULT_MIN_FLOOR_MBPS = 6.0     # Key / Fast：稳态窗口内 2 秒滑动平均的最低值下限
+DEFAULT_DROP_BELOW_MBPS = 6.0    # 稳态速度低于此值直接淘汰 (删除)
+STEADY_WINDOW_SECONDS = 6        # 稳态窗口：观测的最后 N 秒
+MIN_OBSERVE_SECONDS = 10         # 至少观测 N 秒才下结论 (排除只在开头突发的假高速)
+DEFAULT_MAX_OBSERVE_SECONDS = 20  # 爬升慢的节点最多观测 N 秒
+# 无 Key 时的备用前置档：未被淘汰 (稳态 >= 6 Mbps，约 1080p 流畅) 且最低速度不低于其一半
+FRONT_FALLBACK_TIER = (DEFAULT_DROP_BELOW_MBPS, DEFAULT_DROP_BELOW_MBPS / 2)
 
 # 3秒轻量防断流目标
 SPEED_TEST_URLS = [
@@ -40,7 +55,7 @@ PAYLOAD_TYPES = {
 
 
 class RateMeter:
-    """按秒切片的下载速率计量器，排除 TCP 慢启动并统计平均/中位数/P10与卡顿时长。"""
+    """按秒切片的下载字节计量器 (按时间比例分摊到各秒)，并记录最长无进展时长。"""
 
     def __init__(self, started_at, warmup_seconds, duration_seconds):
         if warmup_seconds < 0 or duration_seconds <= 0:
@@ -73,270 +88,426 @@ class RateMeter:
             self.max_stall = max(self.max_stall, min(when, self.end) - max(self.last_progress, self.sample_start))
         self.last_time, self.total = when, total_bytes
 
-    def report(self, status, ended_at):
-        measured = min(self.duration, max(0.0, ended_at - self.sample_start))
-        complete = status == "complete" and measured >= self.duration - 1e-6
-        if status == "complete" and not complete:
-            status = "incomplete"
-        rates, measured_bytes = [], 0.0
-        for index, count in enumerate(self.buckets):
-            width = min(1.0, measured - index)
-            if width <= 0:
-                break
-            measured_bytes += count
-            rates.append(count * 8 / width / 1_000_000)
-        ordered = sorted(rates)
-        return {
-            "status": status,
-            "complete": complete,
-            "bytes_received": self.total,
-            "measured_seconds": round(measured, 3),
-            "mean_mbps": round(measured_bytes * 8 / measured / 1_000_000, 3) if measured > 0 else None,
-            "median_mbps": round(statistics.median(rates), 3) if rates else None,
-            "p10_mbps": round(ordered[math.floor((len(ordered) - 1) * 0.1)], 3) if ordered else None,
-            "max_stall_seconds": round(max(0.0, self.max_stall), 3),
-            "sample_mbps": [round(rate, 3) for rate in rates],
-        }
 
-
-def parse_response_headers(raw):
-    """解析 HTTP 响应头字节流"""
-    result = None
-    for block in raw.replace(b"\r\n", b"\n").split(b"\n\n")[:-1]:
-        lines = block.decode("iso-8859-1", errors="replace").splitlines()
-        if not lines or not lines[0].startswith("HTTP/"):
-            continue
-        parts = lines[0].split()
-        if len(parts) < 2 or not parts[1].isdigit():
-            continue
-        result = {"status": int(parts[1])}
-        for line in lines[1:]:
-            if ":" in line:
-                key, value = line.split(":", 1)
-                result[key.strip().lower()] = value.strip()
-    return result
-
-
-def validate_payload(headers):
-    """校验响应类型，确保非压缩有效载荷。"""
-    if not headers or headers.get("status") not in (200, 206):
-        raise ValueError("unexpected HTTP response status")
-    content_type = headers.get("content-type", "").split(";", 1)[0].strip().lower()
+def validate_payload(status_code, headers):
+    """校验响应状态与类型，确保是未压缩的二进制载荷。"""
+    if status_code not in (200, 206):
+        raise ValueError(f"unexpected HTTP response status {status_code}")
+    content_type = (headers.get("content-type") or "").split(";", 1)[0].strip().lower()
     if content_type and content_type not in PAYLOAD_TYPES:
         # 部分 CDN 不带严格 content-type 或为 text/plain，宽容放行只要不是 html
         if "text/html" in content_type:
             raise ValueError(f"unexpected HTML content type: {content_type}")
-    if headers.get("content-encoding", "identity").strip().lower() not in ("", "identity"):
+    if (headers.get("content-encoding") or "identity").strip().lower() not in ("", "identity"):
         raise ValueError("compressed responses are not valid bandwidth samples")
 
 
-def _stop_process(process):
-    """确保子进程彻底退出，杜绝残留句柄或端口占用。"""
-    if process and process.poll() is None:
-        process.terminate()
-        try:
-            process.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            try:
-                process.wait(timeout=3)
-            except Exception:
-                pass
+class _StreamCounter:
+    """后台读取线程与计量主线程之间的共享计数 (单写者，无需加锁)。"""
+
+    def __init__(self):
+        self.total = 0
+        self.eof = False
+        self.error = None
+        self.stop = False
 
 
-def precheck_target(url, proxy_url, timeout=3.0):
+def _pump(response, counter, chunk_size, rate_limit_bps):
+    """读取响应体并丢弃，只累计字节数；按带宽上限节流 (读慢即经 TCP 背压让发送端降速)。"""
+    budget_start, budget_bytes = time.monotonic(), 0
+    try:
+        for chunk in response.iter_content(chunk_size=chunk_size):
+            if counter.stop:
+                return
+            counter.total += len(chunk)
+            if not rate_limit_bps:
+                continue
+            budget_bytes += len(chunk)
+            now = time.monotonic()
+            lag = budget_bytes / rate_limit_bps - (now - budget_start)
+            if lag > 0:
+                time.sleep(lag)
+            elif lag < -0.25:
+                # 节点慢于上限时不积攒突发额度，避免之后以超过上限的速率补读
+                budget_start, budget_bytes = now, 0
+        counter.eof = True
+    except Exception as error:
+        if not counter.stop:
+            counter.error = error
+
+
+def default_criteria():
+    return {
+        "min_stable_mbps": DEFAULT_MIN_STABLE_MBPS,
+        "min_floor_mbps": DEFAULT_MIN_FLOOR_MBPS,
+        "drop_below_mbps": DEFAULT_DROP_BELOW_MBPS,
+        "window_seconds": STEADY_WINDOW_SECONDS,
+        "min_observe_seconds": MIN_OBSERVE_SECONDS,
+        "max_observe_seconds": DEFAULT_MAX_OBSERVE_SECONDS,
+    }
+
+
+def steady_stats(rates, window=STEADY_WINDOW_SECONDS):
     """
-    轻量快速预检: Range: bytes=0-1023，确认目标通过此节点连通后再执行完整下载测速，
-    避免在断流/死节点上浪费完整观测时间窗。
+    取逐秒速率的最后 window 秒：返回 (稳态平均速度, 2 秒滑动平均最低值)。
+    单秒速率按窗口中位数的 2 倍封顶后计入，孤立尖峰 (突发缓存/测量抖动) 不能拉高稳态速度。
     """
-    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
-    with requests.Session() as session:
-        session.trust_env = False
-        try:
-            with session.get(
-                url,
-                proxies=proxies,
-                timeout=timeout,
-                stream=True,
-                allow_redirects=True,
-                headers={"Range": "bytes=0-1023", "User-Agent": "proxy-speed-precheck/1"}
-            ) as response:
-                if response.status_code not in (200, 206):
-                    return {"status": "invalid_response", "error": f"http_{response.status_code}", "http_status": response.status_code}
-                chunk = next(response.iter_content(chunk_size=1024), b"")
-                if not chunk:
-                    return {"status": "short_response", "error": "empty_body", "http_status": response.status_code}
-                return None
-        except Exception as error:
-            return {"status": "transfer_error", "error": f"precheck:{type(error).__name__}", "http_status": None}
+    tail = rates[-window:]
+    if not tail:
+        return None, None
+    cap = statistics.median(tail) * 2
+    tail = [min(rate, cap) for rate in tail]
+    moving = [(tail[i] + tail[i + 1]) / 2 for i in range(len(tail) - 1)] or tail
+    return statistics.fmean(tail), min(moving)
+
+
+def classify_steady(stable, floor, criteria):
+    """qualified: 达到 Key/Fast 门槛；drop: 低于淘汰线；keep: 介于两者之间 (保留但不授标)。"""
+    if stable is None:
+        return "drop"
+    if stable >= criteria["min_stable_mbps"] and floor >= criteria["min_floor_mbps"]:
+        return "qualified"
+    if criteria["drop_below_mbps"] and stable < criteria["drop_below_mbps"]:
+        return "drop"
+    return "keep"
+
+
+def steady_verdict(rates, criteria):
+    """
+    按已定型的逐秒速率决定是否结束观测，返回 (结论, 原因) 或 None (继续观测)。
+    - 观测满 min_observe 秒、稳态达标且稳态窗口内不在下滑 (后半段 >= 前半段 75%)：立即结束，qualified；
+      正在下滑的节点 (慢慢限速型假高速) 继续观测，由下滑后的稳态决定；
+    - 观测满 min_observe 秒、稳态低于淘汰线、最近 3 秒也明显偏低 (< 淘汰线 75%) 且不在爬升：结束，drop；
+      仍在缓慢爬升或贴近淘汰线的节点一律观测到上限，避免误删；
+    - 观测满 max_observe 秒：按稳态窗口给出最终结论。
+    """
+    count = len(rates)
+    if count < max(criteria["min_observe_seconds"], criteria["window_seconds"]):
+        return None
+    stable, floor = steady_stats(rates, criteria["window_seconds"])
+    verdict = classify_steady(stable, floor, criteria)
+    if verdict == "qualified":
+        tail = rates[-criteria["window_seconds"]:]
+        half = len(tail) // 2
+        if statistics.fmean(tail[-half:]) >= statistics.fmean(tail[:half]) * 0.75:
+            return verdict, "稳态达标"
+        if count >= criteria["max_observe_seconds"]:
+            return verdict, "观测到上限"
+        return None
+    if verdict == "drop" and count >= 6:
+        recent, previous = statistics.fmean(rates[-3:]), statistics.fmean(rates[-6:-3])
+        hopeless = recent < criteria["drop_below_mbps"] * 0.75
+        if hopeless and recent <= max(previous * 1.2, previous + 0.5):
+            return verdict, "稳态明显低于淘汰线且未见爬升"
+    if count >= criteria["max_observe_seconds"]:
+        return verdict, "观测到上限"
+    return None
 
 
 def measure_download_sustained(
     url,
     proxy_url,
-    work_dir,
     *,
-    duration_seconds=5.0,
-    warmup_seconds=1.0,
-    max_bytes=35 * 1024 * 1024,
+    rate_limit_mbps=40.0,
+    criteria=None,
+    max_bytes=None,
     deadline=None,
-    curl_bin=None,
     poll_interval=0.1,
-    rate_limit_mbps=10.0
+    read_timeout=5.0,
+    chunk_size=16384,
 ):
     """
-    执行一段受约束的流式 HTTP 下载测速。
-    使用 curl 子进程，实时读取临时文件增量，杜绝内存占用；
-    严格支持 --limit-rate，防止跑满本地家宽影响其他应用。
+    经代理执行单连接流式 HTTP 下载测速，字节只在内存计数、不落盘。
+    逐秒采样，按 steady_verdict 在 min_observe~max_observe 秒之间给出结论：
+    返回的 verdict 为 qualified (Key/Fast 级) / keep (保留) / drop (淘汰)；中途断流按已测秒数判定，不会给 qualified。
     """
-    if not proxy_url or max_bytes <= 0 or duration_seconds <= 0 or warmup_seconds < 0:
+    criteria = {**default_criteria(), **(criteria or {})}
+    max_observe = criteria["max_observe_seconds"]
+    if not proxy_url or max_observe <= 0:
         raise ValueError("invalid download measurement options")
+    rate_limit_bps = rate_limit_mbps * 125_000 if rate_limit_mbps and rate_limit_mbps > 0 else None
+    if max_bytes is None:
+        # 按上限估算整段传输量并留余量；无上限时不设字节上限，以观测上限与期限约束
+        max_bytes = int(rate_limit_bps * (max_observe + 3)) if rate_limit_bps else math.inf
 
-    curl_bin = curl_bin or shutil.which("curl")
-    if not curl_bin:
-        raise ValueError("curl is not installed")
+    requested = time.monotonic()
+    deadline = min(deadline if deadline is not None else math.inf, requested + max_observe + 12)
+    status, error, http_status, ttfb_ms = "transfer_error", None, None, None
+    verdict, reason, decided_rates = None, None, None
+    meter, counter = None, _StreamCounter()
 
-    directory = Path(work_dir)
-    directory.mkdir(parents=True, exist_ok=True)
-    payload_file = directory / "payload.bin"
-    header_file = directory / "headers.txt"
-    error_file = directory / "curl.log"
+    def settled_rates(now):
+        seconds = min(math.floor(max(0.0, now - meter.sample_start)), len(meter.buckets))
+        return [meter.buckets[i] * 8 / 1_000_000 for i in range(seconds)]
 
-    started = time.monotonic()
-    deadline = min(deadline if deadline is not None else math.inf, started + warmup_seconds + duration_seconds + 8)
-
-    # 隔离环境变量，严防继承系统全局代理
-    environment = {
-        k: v for k, v in os.environ.items()
-        if k.lower() not in {"http_proxy", "https_proxy", "all_proxy", "no_proxy"}
-    }
-
-    meter = None
-    total = 0
-    status = "budget_exhausted"
-    error = None
-    metadata = None
-
-    for path in (payload_file, header_file, error_file):
-        path.write_bytes(b"")
-
-    remaining = max(0.1, deadline - time.monotonic())
-    command = [
-        curl_bin, "--fail", "--location", "--max-redirs", "3", "--silent", "--show-error",
-        "--suppress-connect-headers", "--proxy", proxy_url, "--noproxy", "",
-        "--connect-timeout", str(min(5, int(remaining))), "--max-time", str(int(remaining)),
-        "--speed-limit", "1", "--speed-time", "3", "--header", "Accept-Encoding: identity",
-        "--user-agent", "proxy-probe-speed/1.0", "--output", str(payload_file),
-        "--dump-header", str(header_file)
-    ]
-
-    if rate_limit_mbps is not None and rate_limit_mbps > 0:
-        # 1 Mbps = 125,000 bytes/sec
-        command.extend(["--limit-rate", str(int(rate_limit_mbps * 125000))])
-
-    command.extend(["--url", url])
-
-    with error_file.open("wb") as errors:
-        process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=errors, env=environment)
-        try:
-            while True:
-                now = time.monotonic()
-                size = payload_file.stat().st_size if payload_file.exists() else 0
-
-                if size > 0 and metadata is None and header_file.exists():
-                    try:
-                        with header_file.open("rb") as src:
-                            candidate = parse_response_headers(src.read(65536))
-                        if candidate and candidate.get("status") not in range(100, 200) and candidate.get("status") not in range(300, 400):
-                            metadata = candidate
-                            validate_payload(candidate)
-                    except ValueError as exc:
-                        status, error = "invalid_response", str(exc)
+    session = requests.Session()
+    session.trust_env = False  # 严防继承系统全局代理
+    try:
+        with session.get(
+            url,
+            proxies={"http": proxy_url, "https": proxy_url},
+            stream=True,
+            allow_redirects=True,
+            timeout=(min(5.0, max(0.5, deadline - requested)), read_timeout),
+            headers={"User-Agent": "proxy-probe-speed/2.0", "Accept-Encoding": "identity"},
+        ) as response:
+            http_status = response.status_code
+            validate_payload(response.status_code, response.headers)
+            started = time.monotonic()
+            ttfb_ms = round((started - requested) * 1000, 1)
+            meter = RateMeter(started, 0.0, max_observe)
+            reader = threading.Thread(target=_pump, args=(response, counter, chunk_size, rate_limit_bps), daemon=True)
+            reader.start()
+            try:
+                while True:
+                    now = time.monotonic()
+                    meter.record(now, counter.total)
+                    if counter.error is not None:
+                        status, error = "stalled", f"{type(counter.error).__name__}: {counter.error}"[:300]
                         break
-
-                if size > 0 and metadata and meter is None:
-                    meter = RateMeter(now, warmup_seconds, duration_seconds)
-
-                if meter:
-                    meter.record(now, size)
-
-                return_code = process.poll()
-                if return_code is not None and return_code != 0:
-                    status = "transfer_error"
-                    break
-                if size >= max_bytes:
-                    status = "byte_limit"
-                    break
-                if meter and now >= meter.end:
-                    status = "complete"
-                    break
-                if now >= deadline:
-                    break
-                if return_code is not None:
-                    break
-
-                stop_at = min(deadline, meter.end if meter else deadline)
-                time.sleep(min(poll_interval, max(0.01, stop_at - now)))
-        finally:
-            _stop_process(process)
-
-    final_size = payload_file.stat().st_size if payload_file.exists() else 0
-    total = final_size
-    if status == "transfer_error":
-        error = error_file.read_text(encoding="utf-8", errors="replace")[-300:].strip() if error_file.exists() else "curl error"
-    elif status == "budget_exhausted" and time.monotonic() < deadline:
-        if not final_size or metadata is None:
-            status, error = "invalid_response", "no verified payload received"
-        else:
-            status, error = "short_response", "ended before observation window"
+                    if counter.total >= max_bytes:
+                        status, error = "byte_limit", "reached byte budget"
+                        break
+                    if counter.eof:
+                        status, error = "short_response", "target file ended"
+                        break
+                    rates_now = settled_rates(now)
+                    decided = steady_verdict(rates_now, criteria)
+                    if decided:
+                        status = "complete"
+                        verdict, reason = decided
+                        decided_rates = rates_now
+                        break
+                    if now >= deadline:
+                        status = "budget_exhausted"
+                        break
+                    time.sleep(poll_interval)
+            finally:
+                counter.stop = True
+                response.close()
+                reader.join(timeout=2)
+    except ValueError as exc:
+        status, error = "invalid_response", str(exc)
+    except requests.RequestException as exc:
+        status, error = "transfer_error", f"{type(exc).__name__}: {exc}"[:300]
+    finally:
+        session.close()
 
     finished = time.monotonic()
-    meter = meter or RateMeter(finished, warmup_seconds, duration_seconds)
-    report = meter.report(status, finished)
+    if decided_rates is not None:
+        rates = decided_rates  # 报告与结论使用同一组已定型样本
+    else:
+        rates = settled_rates(finished) if meter else []
+        width = finished - meter.sample_start - len(rates) if meter else 0.0
+        if meter and width >= 0.5 and len(rates) < len(meter.buckets):
+            # 中途结束时计入最后不足 1 秒的片段，避免丢掉末尾的下滑/断流
+            rates.append(meter.buckets[len(rates)] * 8 / 1_000_000 / width)
+    stable, floor = steady_stats(rates, criteria["window_seconds"])
+    if verdict is None:
+        if status in ("short_response", "byte_limit") and len(rates) >= criteria["window_seconds"]:
+            # 测速文件读完或达到字节预算时已有完整稳态窗口：按窗口正常判定
+            status = "complete"
+            verdict, reason = classify_steady(stable, floor, criteria), "测速文件读完"
+        elif rates:
+            # 中途断流/超时：只能判保留或淘汰，不授予 Key/Fast
+            verdict = "drop" if classify_steady(stable, floor, criteria) == "drop" else "keep"
+            reason = error or status
+        else:
+            verdict, reason = "drop", error or status
 
-    if metadata is None and header_file.exists():
-        with header_file.open("rb") as src:
-            metadata = parse_response_headers(src.read(65536))
-
-    report.update({
-        "bytes_received": total,
-        "http_status": metadata.get("status") if metadata else None,
+    return {
+        "status": status,
+        "complete": status == "complete",
+        "verdict": verdict,
+        "reason": reason,
         "error": error,
+        "observed_seconds": len(rates),
+        "stable_mbps": round(stable, 3) if stable is not None else None,
+        "floor_mbps": round(floor, 3) if floor is not None else None,
+        "peak_mbps": round(max(rates), 3) if rates else None,
+        "mean_mbps": round(statistics.fmean(rates), 3) if rates else None,
+        "sample_mbps": [round(rate, 3) for rate in rates],
+        "max_stall_seconds": round(meter.max_stall, 3) if meter else None,
+        "bytes_received": counter.total,
+        "http_status": http_status,
+        "ttfb_ms": ttfb_ms,
         "rate_limit_mbps": rate_limit_mbps,
-        "target": url
-    })
-
-    # 清理临时下载载荷文件以节省磁盘
-    try:
-        if payload_file.exists():
-            payload_file.unlink()
-    except Exception:
-        pass
-
-    return report
+        # 稳态窗口每 2 秒都接近上限，说明真实能力不低于上限
+        "capped": bool(rate_limit_mbps and floor is not None and floor >= rate_limit_mbps * 0.9),
+        "target": url,
+        # 观测第 0 秒的起点 (monotonic)，用于把逐秒速率与并行测试的流量统计对齐；进程内有效，不作跨进程比较
+        "started_monotonic": meter.sample_start if meter else None,
+    }
 
 
-def speed_qualified(measured, min_median_mbps=5.0, min_p10_mbps=3.0, max_stall_seconds=1.0):
+def measure_node_speed(proxy_url, targets=None, **options):
     """
-    测速通过准入评判:
-    1. 测速状态为 complete；
-    2. 中位数速率 median_mbps >= min_median_mbps (默认 5.0 Mbps)；
-    3. P10 速率底线 >= min_p10_mbps (默认 3.0 Mbps)；
-    4. 最大卡顿停滞时间 <= max_stall_seconds (默认 1.0 秒)。
+    依次尝试测速目标：目标在返回有效载荷前失败 (连不上/非二进制响应) 才换下一个；
+    一旦开始传输即以该目标的结果定论，不因速度低而换目标重测。
     """
-    if not measured or not measured.get("complete") or measured.get("status") != "complete":
-        return False
-    median = measured.get("median_mbps")
-    p10 = measured.get("p10_mbps")
-    stall = measured.get("max_stall_seconds", 0.0)
+    attempts = []
+    for url in targets or DEFAULT_SUSTAINED_TARGETS:
+        measured = measure_download_sustained(url, proxy_url, **options)
+        if measured["bytes_received"] > 0 or measured["status"] not in ("transfer_error", "invalid_response"):
+            if attempts:
+                measured["failed_targets"] = attempts
+            return measured
+        attempts.append({"target": url, "status": measured["status"], "error": measured["error"]})
+    measured["failed_targets"] = attempts[:-1]
+    return measured
 
-    if median is None or median < min_median_mbps:
+
+def speed_qualified(measured, min_stable_mbps=DEFAULT_MIN_STABLE_MBPS, min_floor_mbps=DEFAULT_MIN_FLOOR_MBPS):
+    """
+    测速准入 (Key / Fast)：观测正常结束 (status=complete) 且稳态窗口满足
+    稳态速度 >= min_stable_mbps、2 秒滑动平均最低值 >= min_floor_mbps。中途断流的测量不授予资格。
+    """
+    if not measured or measured.get("status") != "complete":
         return False
-    if p10 is None or p10 < min_p10_mbps:
-        return False
-    if stall is not None and stall > max_stall_seconds:
-        return False
-    return True
+    stable, floor = measured.get("stable_mbps"), measured.get("floor_mbps")
+    return stable is not None and floor is not None and stable >= min_stable_mbps and floor >= min_floor_mbps
+
+
+def speed_drop_reason(measured):
+    """测速结论为淘汰时返回淘汰原因，否则 None。"""
+    if not measured or measured.get("verdict") != "drop":
+        return None
+    if measured.get("stable_mbps") is None:
+        return f"测速失败，无法取得稳定速度({measured.get('reason') or measured.get('status')})"
+    return f"稳态速度 {measured['stable_mbps']:.1f}Mbps 低于淘汰线({measured.get('reason')})"
+
+
+def speed_options(args):
+    """由 CLI 参数构造测速选项 (两条流水线共用同一套门槛与观测规则)。"""
+    return {
+        "rate_limit_mbps": args.rate_limit_mbps,
+        "criteria": {
+            **default_criteria(),
+            "min_stable_mbps": args.min_speed_mbps,
+            "min_floor_mbps": args.min_floor_mbps,
+            "drop_below_mbps": args.drop_below_mbps,
+            "max_observe_seconds": args.speed_duration,
+        },
+    }
+
+
+def measure_with_retry(proxy_url, options, targets=None, assess=None):
+    """
+    单节点完整测速：结论贴近门槛或没有样本时用新连接重测一次，取较好结论 (每次独立做稳态与防突发判定)。
+    assess(measured) 给出时判断每次测量是否受并行测试流量干扰 (返回含 contended 的 dict，写入 measured["contention"])：
+    受干扰且未达标的测量不做立即重测，返回 deferred=True，交由调用方在链路空闲时重测。
+    返回 (measured, deferred)。
+    """
+    criteria = options["criteria"]
+
+    def attempt():
+        try:
+            measured = measure_node_speed(proxy_url, targets, **options)
+        except Exception as error:
+            measured = {"status": "error", "complete": False, "verdict": "drop", "stable_mbps": None,
+                        "reason": f"{type(error).__name__}: {error}", "error": f"{type(error).__name__}: {error}"}
+        if assess is not None:
+            measured["contention"] = assess(measured)
+        return measured
+
+    def disturbed(measured):
+        return measured.get("verdict") != "qualified" and bool((measured.get("contention") or {}).get("contended"))
+
+    measured = attempt()
+    if disturbed(measured):
+        return measured, True
+    if needs_retry(measured, criteria):
+        second = attempt()
+        first_summary, second_summary = _attempt_summary(measured), _attempt_summary(second)
+        measured = max((measured, second), key=_verdict_rank)
+        measured["attempts"] = [first_summary, second_summary]
+        if disturbed(measured):
+            return measured, True
+    return measured, False
+
+
+def better_measurement(previous, current):
+    """链路空闲时的重测与此前受干扰的测量取较好结论 (干扰只会测低，不会测高)，并保留两次摘要。"""
+    best = max((previous, current), key=_verdict_rank)
+    best = dict(best)
+    best["quiet_retest"] = {"previous": _attempt_summary(previous), "retest": _attempt_summary(current)}
+    return best
+
+
+def apply_speed_result(row, measured, criteria):
+    """把测量结论写回 row：speed_result / speed_mbps (稳态速度) / is_fast (Key/Fast 级) / speed_drop (淘汰原因或 None)。"""
+    row["speed_result"] = measured
+    row["speed_mbps"] = measured.get("stable_mbps") or 0.0
+    row["speed_kbs"] = round(row["speed_mbps"] * 1_000_000 / 8 / 1024, 1)
+    row["is_fast"] = speed_qualified(measured, criteria["min_stable_mbps"], criteria["min_floor_mbps"])
+    row["speed_drop"] = speed_drop_reason(measured)
+
+
+def measure_rows_speed(jobs, options, targets=None, concurrency=1):
+    """
+    独立测速阶段 (sing-box 备用流水线使用)：jobs 为 [(proxy_url, row)]，以受控并发逐个测速并把结果写回 row。
+    本地 concurrency=1 严格串行，避免多个节点同时下载互相挤占本机带宽而整体测低。
+    """
+    def measure(job):
+        proxy_url, row = job
+        measured, _ = measure_with_retry(proxy_url, options, targets)
+        apply_speed_result(row, measured, options["criteria"])
+
+    if not jobs:
+        return
+    with ThreadPoolExecutor(max_workers=max(1, min(concurrency, len(jobs)))) as pool:
+        list(pool.map(measure, jobs))
+
+
+VERDICT_ORDER = {"drop": 0, "keep": 1, "qualified": 2}
+
+
+def needs_retry(measured, criteria):
+    """单次测量波动大 (同一节点实测稳态 6~16 Mbps)：结论贴近门槛或没有样本时重测一次。"""
+    stable, verdict = measured.get("stable_mbps"), measured.get("verdict")
+    if stable is None:
+        return True
+    if verdict == "drop":
+        return stable >= criteria["drop_below_mbps"] * 0.6
+    if verdict == "keep":
+        return stable >= criteria["min_stable_mbps"] * 0.8
+    return False
+
+
+def _verdict_rank(measured):
+    return VERDICT_ORDER.get(measured.get("verdict"), 0), measured.get("stable_mbps") or 0.0
+
+
+def _attempt_summary(measured):
+    summary = {key: measured.get(key) for key in
+               ("verdict", "status", "stable_mbps", "floor_mbps", "observed_seconds", "reason", "target")}
+    if measured.get("contention"):
+        summary["contention"] = measured["contention"]
+    return summary
+
+
+def speed_verdict_text(row):
+    """进度输出用的测速结论。"""
+    if row.get("is_fast"):
+        return "✓ Key/Fast 级"
+    return "✗ 淘汰" if row.get("speed_drop") else "○ 保留"
+
+
+def describe_speed(measured):
+    """单行测速摘要，用于进度输出。"""
+    if not measured:
+        return "未测速"
+    if measured.get("stable_mbps") is None:
+        return f"无有效样本 [{measured.get('status')}: {measured.get('reason') or measured.get('error')}]"
+    text = (f"稳态 {measured['stable_mbps']}Mbps / 最低 {measured.get('floor_mbps')}Mbps / "
+            f"峰值 {measured.get('peak_mbps')}Mbps / {measured.get('observed_seconds')}s")
+    if measured.get("capped"):
+        text += " (已达上限)"
+    if measured.get("status") != "complete":
+        text += f" [{measured.get('status')}: {measured.get('error')}]"
+    if measured.get("quiet_retest"):
+        text += " (链路空闲时重测)"
+    return text
 
 
 def measure_speed_and_stall(proxies, window_sec=3.0, timeout=(3.0, 5.0), stall_min_bytes=None):

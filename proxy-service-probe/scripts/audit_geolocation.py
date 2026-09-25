@@ -91,7 +91,8 @@ def review_status(row):
     if decision.get('is_poisoned') and ipcx.get('country_code') == row['cc'] and \
             gemini.get('country_code') == decision.get('poisoned_cc'):
         return 'verified_sent_to_china' if decision['poisoned_cc'] == 'CN' else 'verified_geo_poisoning'
-    if row['cc'] == 'UNK' and ipcx.get('country_code') == decision.get('geoip_cc') and \
+    if decision.get('unknown_basis') == 'google_geoip_conflict' and \
+            ipcx.get('country_code') == decision.get('geoip_cc') and \
             gemini.get('country_code') == row['google_region'].get('country_code') and gemini.get('country_code'):
         return 'region_conflict_confirmed'
     if ipcx.get('country_code') and ipcx['country_code'] != row['cc']:
@@ -160,7 +161,7 @@ def markdown_report(report):
               '- `verified_with_db_conflict`：以上复核一致，但第三方库或 Google 子服务仍有分歧，保留待复核标志。',
               '- `verified_sent_to_china`：ip.cx 确认实际属地，Gemini 确认送中；保留属地，标 `_⚠️CN` 并剥离 AI 全通资格。',
               '- `verified_geo_poisoning`：同类受限地区污染，沿用已有污染标记。',
-              '- `region_conflict_confirmed`：IP 库属地与非受限 Google 服务地区的分歧被复核重现，自动国别保留未知，不强改国旗。',
+              '- `region_conflict_confirmed`：IP 库属地与非受限 Google 服务地区的分歧被复核重现；自动国别按 Google/Gemini 地区兜底，仍标待复核。',
               '- `disagreement` / `google_changed`：复核分歧，不算通过。',
               '- `offline` / `insufficient_review_evidence`：不可达或证据不足，不算准确。',
               '- `unstable_egress` / `different_review_egress`：出口轮换或按目的站分流，不能混合不同 IP 投票。',

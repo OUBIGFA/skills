@@ -18,17 +18,105 @@ STREAMING_RULES = [
 ]
 
 
+GENERATED_SECTIONS = ("proxies", "proxy-groups")
+# 技能母版 (格式与 freenode/template.yaml 对齐，由用户手动维护)
+SKILL_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+BUNDLED_TEMPLATE = os.path.join(SKILL_ROOT, "templates", "template.yaml")
+BUILTIN_POLICIES = frozenset({"DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE", "GLOBAL"})
+
+
+class _NoAliasDumper(yaml.SafeDumper):
+    """多个策略组共用同一节点列表时不输出 &id001 / *id001 锚点，逐组展开。"""
+
+    def ignore_aliases(self, data):
+        return True
+
+
+def dump_yaml(data):
+    return yaml.dump(data, Dumper=_NoAliasDumper, allow_unicode=True, sort_keys=False)
+
+
+def resolve_template_path(template_path=None):
+    """母版路径: 显式指定 (--template) 优先，否则用技能母版 templates/template.yaml。"""
+    path = template_path or BUNDLED_TEMPLATE
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"未找到 Clash 模版文件: {path}")
+    return path
+
+
+def read_template_text(template_path=None):
+    """读取母版原文 (兼容记事本保存的 UTF-8 BOM 与 CRLF)，返回 (路径, 原文, 解析结果)；语法错误带行列号报出。"""
+    path = resolve_template_path(template_path)
+    with open(path, "r", encoding="utf-8-sig") as f:
+        text = f.read()
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        raise ValueError(f"母版 YAML 语法错误 ({path}):\n{e}") from e
+    if not isinstance(data, dict):
+        raise ValueError(f"母版顶层必须是键值映射 ({path})")
+    return path, text, data
+
+
 def load_template(template_path=None):
-    """加载母版模版，默认采用技能内置的 template.yaml。"""
-    if not template_path:
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        template_path = os.path.join(base_dir, "templates", "template.yaml")
+    """加载母版模版 (默认技能母版 templates/template.yaml)。"""
+    return read_template_text(template_path)[2]
 
-    if not os.path.isfile(template_path):
-        raise FileNotFoundError(f"未找到 Clash 模版文件: {template_path}")
 
-    with open(template_path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+def _split_rule(rule):
+    """按顶层逗号切分规则，AND/OR/NOT 逻辑规则括号内的逗号不切。"""
+    parts, depth, current = [], 0, ""
+    for ch in rule:
+        depth += (ch == "(") - (ch == ")")
+        if ch == "," and depth == 0:
+            parts.append(current.strip())
+            current = ""
+        else:
+            current += ch
+    parts.append(current.strip())
+    return parts
+
+
+def template_problems(template, group_names, proxy_names=()):
+    """母版引用检查: 规则指向的策略组/节点必须存在，RULE-SET 必须在 rule-providers 中定义。"""
+    problems = []
+    rules = template.get("rules")
+    if not isinstance(rules, list) or not rules:
+        return ["缺少 rules 列表"]
+    providers = template.get("rule-providers") or {}
+    if not isinstance(providers, dict):
+        problems.append("rule-providers 必须是键值映射")
+        providers = {}
+    policies = BUILTIN_POLICIES | set(group_names) | set(proxy_names)
+    for no, rule in enumerate(rules, 1):
+        if not isinstance(rule, str):
+            problems.append(f"rules 第 {no} 条不是字符串: {rule!r}")
+            continue
+        parts = _split_rule(rule)
+        kind = parts[0].upper()
+        if kind == "SUB-RULE":
+            continue
+        policy_at = 1 if kind == "MATCH" else 2
+        policy = parts[policy_at] if len(parts) > policy_at else None
+        if policy is None:
+            problems.append(f"rules 第 {no} 条缺少策略: {rule}")
+        elif policy not in policies:
+            problems.append(f"rules 第 {no} 条指向不存在的策略组: {rule}")
+        if kind == "RULE-SET" and parts[1] not in providers:
+            problems.append(f"rules 第 {no} 条引用未定义的 rule-providers: {rule}")
+    return problems
+
+
+def check_template(template_path=None):
+    """测试开始前校验母版，问题一次性报出，避免跑完整轮测试才在导出时失败。返回实际使用的母版路径。"""
+    path, _, template = read_template_text(template_path)
+    # 用带 ✨️ 的示例节点把按需生成的「✨️ 综合全通」组也算进可用策略组
+    groups = [g["name"] for g in build_proxy_groups([{"name": "✨️示例", "type": "direct"}])]
+    problems = template_problems(template, groups)
+    if problems:
+        raise ValueError(f"母版校验未通过 ({path})，proxy-groups 由脚本生成，可用策略组: {'、'.join(groups)}\n  - "
+                         + "\n  - ".join(problems))
+    return path
 
 
 def clean_proxy_dict(proxy):
@@ -250,10 +338,11 @@ def sort_nodes_by_region_and_landing(items, resort=False):
     return sorted_items
 
 
-def build_proxy_groups(proxies):
+def build_proxy_groups(proxies, front_fallback=None):
     """
     根据节点的能力和属性构造标准策略组结构 (严格同步 freenode 分组规则)。
     1. 🛡️ Front前置：仅允许 Key 优质前置节点进组，严禁落地节点充当前置跳板！
+       无 Key 时优先使用 front_fallback (测速达到备用档、实际用于验证落地节点的前置)，再退守可用直连节点。
     2. ⚡ Fast自动选择：仅在 Key 优质前置跳板节点中执行 url-test 延迟选优。
     3. 落地节点：所有落地节点默认绑定 dialer-proxy: 🛡️ Front前置。
     """
@@ -295,8 +384,9 @@ def build_proxy_groups(proxies):
         else:
             p.pop("dialer-proxy", None)
 
-    # 构造前置跳板池选项: 优先 Key 节点池；若本批次无 Key 节点则退守可用直连节点
-    front_members = keys if keys else directs
+    # 构造前置跳板池选项: 优先 Key 节点池；无 Key 时用备用前置 (排除落地)，再退守可用直连节点
+    fallback = [name for name in (front_fallback or []) if name in directs]
+    front_members = keys or fallback or directs
     front_proxies = [fast_group_name, "DIRECT"]
     if front_members:
         front_proxies.extend(front_members)
@@ -455,24 +545,18 @@ def build_singbox_rules_from_template(template_path=None):
     return base_rules + optimized
 
 
-def inject_streaming_rules(rules):
-    """注入流媒体专属分流规则。"""
-    has_streaming = any("🎬 国际流媒体" in r for r in rules)
-    if has_streaming:
+def inject_streaming_rules(rules, providers=None):
+    """
+    母版没有 🎬 国际流媒体 分流时补上: 插在首条 TikTok/YouTube/OpenAI 规则前，没有则插在 MATCH 兜底前。
+    RULE-SET 规则只补母版 rule-providers 中已定义的，避免导出引用不存在规则集、客户端加载失败的配置。
+    """
+    if any("🎬 国际流媒体" in r for r in rules):
         return rules
-
-    final_rules = []
-    inserted = False
-    for r in rules:
-        if not inserted and ("TikTok" in r or "YouTube" in r or "OpenAI" in r):
-            final_rules.extend(STREAMING_RULES)
-            inserted = True
-        final_rules.append(r)
-
-    if not inserted:
-        final_rules.extend(STREAMING_RULES)
-
-    return final_rules
+    providers = providers or {}
+    streaming = [r for r in STREAMING_RULES if not r.startswith("RULE-SET,") or r.split(",")[1] in providers]
+    at = next((i for i, r in enumerate(rules) if "TikTok" in r or "YouTube" in r or "OpenAI" in r),
+              next((i for i, r in enumerate(rules) if r.split(",")[0].strip().upper() == "MATCH"), len(rules)))
+    return rules[:at] + streaming + rules[at:]
 
 
 def render_clash_config(proxies, template_path=None):
@@ -480,22 +564,105 @@ def render_clash_config(proxies, template_path=None):
     sorted_proxies = sort_nodes_by_region_and_landing(proxies)
     template = load_template(template_path)
     clean_proxies = [clean_proxy_dict(p) for p in sorted_proxies]
-    groups = build_proxy_groups(clean_proxies)
+    front_fallback = [p.get("name") for p in sorted_proxies if p.get("_front_fallback")]
+    groups = build_proxy_groups(clean_proxies, front_fallback=front_fallback)
 
     config = deepcopy(template)
     config["proxies"] = clean_proxies
     config["proxy-groups"] = groups
-    config["rules"] = inject_streaming_rules(template.get("rules", []))
+    config["rules"] = inject_streaming_rules(template.get("rules", []), template.get("rule-providers"))
 
     return config
 
 
+TOP_LEVEL_KEY = re.compile(r"^([^\s#-][^:#]*?)[ \t]*:(?:[ \t]|$)")
+RULE_ITEM = re.compile(r"^(\s*)- ")
+
+
+def _top_level_block(lines, key):
+    """母版原文中顶层键 key 的行区间 [start, end): 键行及其缩进/列表续行；段尾空行与注释留给后面的段落。"""
+    starts = [i for i, line in enumerate(lines)
+              if (m := TOP_LEVEL_KEY.match(line)) and m.group(1).strip("'\"") == key]
+    if not starts:
+        return None
+    if len(starts) > 1:
+        raise ValueError(f"母版中顶层键 {key} 出现了 {len(starts)} 次")
+    start = end = starts[0]
+    for i in range(start + 1, len(lines)):
+        line = lines[i]
+        if not line.strip() or line.startswith("#"):
+            continue
+        if line[0] not in " \t-":
+            break
+        end = i
+    return start, end + 1
+
+
+def _insert_rules_text(lines, template_rules, rules):
+    """规则与母版相同则原样返回；母版规则中被插入一段连续规则 (补流媒体分流) 时在原文对应位置插入；否则返回 None。"""
+    if rules == template_rules:
+        return list(lines)
+    n = len(rules) - len(template_rules)
+    k = next((i for i, (a, b) in enumerate(zip(template_rules, rules)) if a != b), len(template_rules))
+    block = _top_level_block(lines, "rules")
+    if n <= 0 or block is None or rules[:k] != template_rules[:k] or rules[k + n:] != template_rules[k:]:
+        return None
+    items = [i for i in range(*block) if RULE_ITEM.match(lines[i])]
+    if len(items) != len(template_rules):
+        return None  # 规则写法 (如跨行条目) 无法与解析结果逐行对应
+    indent = RULE_ITEM.match(lines[items[0]]).group(1) if items else ""
+    inserted = [indent + row + "\n" for row in dump_yaml(rules[k:k + n]).splitlines()]
+    at = items[k] if k < len(items) else block[1]
+    return lines[:at] + inserted + lines[at:]
+
+
+def render_clash_yaml_text(cfg, template_path=None):
+    """
+    在母版原文上只替换 proxies / proxy-groups 两段为生成内容，其余注释、空行与排版逐字保留。
+    母版里这两段写成 `[]` 占位、留有旧节点或被删掉都可以 (删掉时插到 rules 之前)；需补流媒体规则时按原位置插行。
+    结果必须解析回与目标配置完全一致；做不到逐行保留时整体输出并提示，不静默丢格式。
+    """
+    path, text, template = read_template_text(template_path)
+    problems = template_problems(cfg, [g["name"] for g in cfg.get("proxy-groups", [])],
+                                 [p["name"] for p in cfg.get("proxies", [])])
+    if problems:
+        raise ValueError(f"渲染结果引用检查未通过 (母版 {path}):\n  - " + "\n  - ".join(problems))
+    lines = text.splitlines(keepends=True)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    fixed = GENERATED_SECTIONS + ("rules",)
+    same = {k: v for k, v in cfg.items() if k not in fixed} == {k: v for k, v in template.items() if k not in fixed}
+    out_lines = _insert_rules_text(lines, template.get("rules") or [], cfg.get("rules") or []) if same else None
+    if out_lines is not None:
+        missing = []
+        for key in GENERATED_SECTIONS:
+            block = _top_level_block(out_lines, key)
+            generated = dump_yaml({key: cfg[key]}).splitlines(keepends=True)
+            if block is None:
+                missing += generated
+            else:
+                out_lines[block[0]:block[1]] = generated
+        if missing:
+            rules_block = _top_level_block(out_lines, "rules")
+            at = rules_block[0] if rules_block else len(out_lines)
+            out_lines[at:at] = missing + ["\n"]
+        out = "".join(out_lines)
+        if yaml.safe_load(out) == cfg:
+            return out
+    print(f"      [提示] 母版 {path} 的写法无法逐行保留，已整体输出配置，母版注释与空行未保留")
+    out = dump_yaml(cfg)
+    if yaml.safe_load(out) != cfg:
+        raise ValueError("渲染后的配置与目标配置不一致")
+    return out
+
+
 def export_clash_yaml(proxies, output_path, template_path=None):
-    """导出最终配置到指定 YAML 文件。"""
+    """导出最终配置到指定 YAML 文件 (保留母版注释与空行)。"""
     cfg = render_clash_config(proxies, template_path=template_path)
+    content = render_clash_yaml_text(cfg, template_path)
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(cfg, f, allow_unicode=True, sort_keys=False)
+        f.write(content)
     return output_path
 
 

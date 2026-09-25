@@ -9,7 +9,7 @@ SCRIPTS_DIR = os.path.join(os.path.dirname(BASE_DIR), "scripts")
 if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 
-from core.speed_probe import RateMeter, speed_qualified, precheck_target
+from core.speed_probe import RateMeter, speed_qualified
 from core.key_evaluator import (
     is_key_protocol_allowed,
     protocol_class,
@@ -23,73 +23,29 @@ from core.mihomo_runner import get_free_port, detect_physical_interface, BLACKLI
 
 
 class TestSpeedProbe(unittest.TestCase):
-    """测试 RateMeter 采样与达标判定"""
+    """测试 RateMeter 逐秒分桶与达标判定"""
 
-    def test_rate_meter_calculations(self):
-        # 模拟 1 秒 warmup，5 秒观测
-        started = 100.0
-        meter = RateMeter(started_at=started, warmup_seconds=1.0, duration_seconds=5.0)
-
-        # 0~1秒 (warmup 阶段): 收到 200KB (不计入测速有效时间窗的速率)
-        meter.record(when=100.5, total_bytes=100 * 1024)
-        meter.record(when=101.0, total_bytes=200 * 1024)
-
-        # 1~6秒 (测速窗口): 每秒稳定传输 1.25 MB = 10 Mbps
-        # 101.0 -> 106.0: 累计增加 5 * 1.25 * 10^6 bytes
+    def test_rate_meter_buckets_bytes_per_second(self):
+        # 起点 100 秒，观测 5 秒；每秒稳定传输 1.25 MB = 10 Mbps
+        meter = RateMeter(started_at=100.0, warmup_seconds=0.0, duration_seconds=5.0)
         for sec in range(1, 6):
-            t = 101.0 + sec
-            meter.record(when=t, total_bytes=200 * 1024 + int(sec * 1.25 * 1000 * 1000))
-
-        report = meter.report(status="complete", ended_at=106.0)
-        self.assertTrue(report["complete"])
-        self.assertEqual(report["status"], "complete")
-        self.assertEqual(report["measured_seconds"], 5.0)
-        self.assertIsNotNone(report["median_mbps"])
-        # 预期约 10 Mbps 左右
-        self.assertGreaterEqual(report["median_mbps"], 9.0)
-        self.assertLessEqual(report["median_mbps"], 11.0)
-        self.assertEqual(report["max_stall_seconds"], 0.0)
+            meter.record(when=100.0 + sec, total_bytes=int(sec * 1.25 * 1000 * 1000))
+        rates = [count * 8 / 1_000_000 for count in meter.buckets]
+        for rate in rates:
+            self.assertAlmostEqual(rate, 10.0, delta=0.01)
+        self.assertEqual(meter.max_stall, 0.0)
 
     def test_speed_qualified_criteria(self):
-        # 1. 达标案例
-        valid_res = {
-            "complete": True,
-            "status": "complete",
-            "median_mbps": 12.5,
-            "p10_mbps": 8.0,
-            "max_stall_seconds": 0.2
-        }
-        self.assertTrue(speed_qualified(valid_res, min_median_mbps=5.0))
-
-        # 2. 中位数不足 5 Mbps
-        slow_res = {
-            "complete": True,
-            "status": "complete",
-            "median_mbps": 3.2,
-            "p10_mbps": 2.0,
-            "max_stall_seconds": 0.0
-        }
-        self.assertFalse(speed_qualified(slow_res, min_median_mbps=5.0))
-
-        # 3. 卡顿超时 (> 1.0s)
-        stall_res = {
-            "complete": True,
-            "status": "complete",
-            "median_mbps": 15.0,
-            "p10_mbps": 5.0,
-            "max_stall_seconds": 1.8
-        }
-        self.assertFalse(speed_qualified(stall_res, min_median_mbps=5.0, max_stall_seconds=1.0))
-
-        # 4. 未完整测完
-        incomp_res = {
-            "complete": False,
-            "status": "short_response",
-            "median_mbps": 20.0,
-            "p10_mbps": 15.0,
-            "max_stall_seconds": 0.0
-        }
-        self.assertFalse(speed_qualified(incomp_res))
+        valid = {"status": "complete", "stable_mbps": 15.0, "floor_mbps": 9.0}
+        self.assertTrue(speed_qualified(valid))
+        # 稳态不足 12 Mbps
+        self.assertFalse(speed_qualified({**valid, "stable_mbps": 10.0}))
+        # 稳态窗口内出现连续下滑 (2 秒滑动最低 < 6 Mbps)
+        self.assertFalse(speed_qualified({**valid, "floor_mbps": 4.0}))
+        # 中途断流的测量不授予资格
+        self.assertFalse(speed_qualified({**valid, "status": "stalled"}))
+        # 自定义门槛
+        self.assertTrue(speed_qualified({**valid, "stable_mbps": 10.0}, min_stable_mbps=8.0))
 
 
 class TestKeyEvaluator(unittest.TestCase):
@@ -113,13 +69,7 @@ class TestKeyEvaluator(unittest.TestCase):
         self.assertFalse(is_key_protocol_allowed({"type": "vless", "network": "tcp"}))
 
     def test_evaluate_key_node(self):
-        speed_ok = {
-            "complete": True,
-            "status": "complete",
-            "median_mbps": 15.0,
-            "p10_mbps": 10.0,
-            "max_stall_seconds": 0.0
-        }
+        speed_ok = {"status": "complete", "verdict": "qualified", "stable_mbps": 20.0, "floor_mbps": 15.0}
         egress_ok = {
             "exit_ip": "1.2.3.4",
             "runner_ip_match": False,
@@ -158,7 +108,7 @@ class TestKeyEvaluator(unittest.TestCase):
             {
                 "proxy": {"name": "node_jp", "type": "trojan", "_country_code": "JP"},
                 "cc": "JP",
-                "speed_result": {"complete": True, "status": "complete", "median_mbps": 20.0, "p10_mbps": 15.0, "max_stall_seconds": 0.0},
+                "speed_result": {"status": "complete", "verdict": "qualified", "stable_mbps": 45.0, "floor_mbps": 38.0},
                 "egress_result": {"exit_ip": "1.1.1.1", "runner_ip_match": False, "country": "JP"},
                 "delay": 50.0
             },
@@ -166,7 +116,7 @@ class TestKeyEvaluator(unittest.TestCase):
             {
                 "proxy": {"name": "node_hk", "type": "vmess", "tls": True, "_country_code": "HK"},
                 "cc": "HK",
-                "speed_result": {"complete": True, "status": "complete", "median_mbps": 18.0, "p10_mbps": 12.0, "max_stall_seconds": 0.0},
+                "speed_result": {"status": "complete", "verdict": "qualified", "stable_mbps": 40.0, "floor_mbps": 33.0},
                 "egress_result": {"exit_ip": "2.2.2.2", "runner_ip_match": False, "country": "HK"},
                 "delay": 40.0
             },
@@ -174,7 +124,7 @@ class TestKeyEvaluator(unittest.TestCase):
             {
                 "proxy": {"name": "node_us_http", "type": "http", "_country_code": "US"},
                 "cc": "US",
-                "speed_result": {"complete": True, "status": "complete", "median_mbps": 50.0, "p10_mbps": 40.0, "max_stall_seconds": 0.0},
+                "speed_result": {"status": "complete", "verdict": "qualified", "stable_mbps": 50.0, "floor_mbps": 40.0},
                 "egress_result": {"exit_ip": "3.3.3.3", "runner_ip_match": False, "country": "US"},
                 "delay": 150.0
             },
@@ -182,7 +132,7 @@ class TestKeyEvaluator(unittest.TestCase):
             {
                 "proxy": {"name": "node_tw_lnd", "type": "ss", "_is_landing": True, "_country_code": "TW"},
                 "cc": "TW",
-                "speed_result": {"complete": True, "status": "complete", "median_mbps": 25.0, "p10_mbps": 20.0, "max_stall_seconds": 0.0},
+                "speed_result": {"status": "complete", "verdict": "qualified", "stable_mbps": 25.0, "floor_mbps": 20.0},
                 "egress_result": {"exit_ip": "4.4.4.4", "runner_ip_match": False, "country": "TW"},
                 "delay": 60.0
             }
@@ -198,23 +148,22 @@ class TestKeyEvaluator(unittest.TestCase):
         self.assertFalse(nodes[2]["proxy"].get("_is_key", False))
 
     def test_key_selection_honors_raised_speed_threshold(self):
-        # 用户调高 --min-speed-mbps 后，Key 与 Fast 使用同一门槛，不再固定按 5 Mbps 放行
+        # 用户调高 --min-speed-mbps 后，Key 与 Fast 使用同一门槛，不再固定按默认门槛放行
         row = {
             "proxy": {"name": "node_jp", "type": "trojan"}, "cc": "JP",
-            "speed_result": {"complete": True, "status": "complete", "median_mbps": 6.0,
-                             "p10_mbps": 5.0, "max_stall_seconds": 0.0},
+            "speed_result": {"status": "complete", "verdict": "qualified", "stable_mbps": 14.0, "floor_mbps": 10.0},
             "egress_result": {"exit_ip": "1.1.1.1", "runner_ip_match": False},
         }
-        self.assertEqual(select_key_nodes([row], min_median_mbps=8.0), [])
-        self.assertEqual(len(select_key_nodes([row], min_median_mbps=5.0)), 1)
+        self.assertEqual(select_key_nodes([row], min_stable_mbps=16.0), [])
+        self.assertEqual(len(select_key_nodes([row], min_stable_mbps=12.0)), 1)
 
     def test_asia_bonus_uses_pipeline_country_code(self):
         # 流水线结果行只有 cc（无 _country_code / country），亚太加分仍需生效
-        speed = {"complete": True, "status": "complete", "median_mbps": 20.0, "p10_mbps": 15.0, "max_stall_seconds": 0.0}
+        speed = {"status": "complete", "verdict": "qualified", "stable_mbps": 40.0, "floor_mbps": 35.0}
         row = {"exit_ip": "1.1.1.1", "cc": "JP"}
         _, jp_score, _ = evaluate_key_node({"name": "a", "type": "trojan"}, speed, row, delay=50.0)
         _, us_score, _ = evaluate_key_node({"name": "b", "type": "trojan"}, speed, {**row, "cc": "US"}, delay=50.0)
-        self.assertEqual(jp_score - us_score, 8.0)
+        self.assertAlmostEqual(jp_score - us_score, 8.0, places=6)
 
 
 class TestTaggerAndNaming(unittest.TestCase):

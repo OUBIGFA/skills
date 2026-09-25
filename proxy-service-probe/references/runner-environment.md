@@ -16,7 +16,7 @@
   python -m playwright install chromium
   ```
   > **注意**：必须安装完整 Chromium（新无头模式，`channel="chromium"`），不能仅安装 `headless-shell`，否则容易触发 Google / YouTube 的机器人风控。
-- **命令行工具**：系统需内置 `curl`（Windows 10/11 自带或 Git 附带）。
+- **测速不依赖外部命令行工具**：持续下载测速由 Python 单连接流式读取完成，不再调用 `curl`、不写临时文件。
 
 ---
 
@@ -28,7 +28,8 @@
 1. 命令行参数 `--mihomo <path>` 显式指定。
 2. 环境变量 `MIHOMO_BIN` 指定的路径。
 3. 工作目录或上级目录的 `_temp/mihomo.exe` 或 `_temp/mihomo`。
-4. 环境变量 `PATH` 中的 `mihomo.exe` 或 `mihomo`。
+4. 技能自带内核：Windows 为 `<skill>/core/mihomo.exe`，Linux（如 GitHub Actions）为 `<skill>/core/mihomo`（需可执行权限）。
+5. 环境变量 `PATH` 中的 `mihomo.exe` 或 `mihomo`。
 
 ---
 
@@ -50,7 +51,7 @@
 ### 3.2 零修改系统代理与注册表
 - 绝不碰触 Windows 注册表 IE 代理设置（`ProxyEnable` / `ProxyServer`）。
 - 绝不修改系统路由表（`route add/delete`）。
-- 所有 Python 测试请求显式声明 `trust_env = False`，curl 命令行显式指定 `--noproxy ""` 并清除代理环境变量，确保仅走本次指定的临时端口。
+- 所有 Python 测试请求（含持续下载测速）显式声明 `trust_env = False`，不继承系统代理环境变量，确保仅走本次指定的临时端口。
 
 ### 3.3 TUN 模式穿透与物理网卡自动绑定
 - **TUN 劫持隐患**：
@@ -59,14 +60,14 @@
   1. 测试内核配置强制关闭 TUN（`tun: {enable: false}`）；
   2. **活跃物理网卡自动探测**：脚本在 Windows 下通过 PowerShell 自动扫描当前状态为 `Up` 的物理网卡名称（如 `WLAN` 或 `以太网`，自动排除含 `TUN`、`Virtual`、`Karing`、`Sing-box`、`Clash` 的虚拟网卡）；
   3. 将物理网卡名称写入内核配置的 `interface-name`（如 `interface-name: WLAN`），强制节点测试流量直接从物理网卡发出，彻底穿透并绕开系统 TUN 虚拟网卡；
-  4. 支持 `--direct-proxy http://127.0.0.1:24999`：对于基线出口探测，可指定走独立的本地直连监听，杜绝任何 TUN 污染。
+  4. **跑机基线同路径测得**：基线出口经 mihomo DIRECT 监听（绑定同一物理网卡）探测；系统路由出口若与之不同，说明本机客户端正经 TUN/系统代理使用某个节点，该出口只记录、不作基线，正在使用的节点照常测试。`--direct-proxy` 可显式指定基线探测代理。
+  5. **sing-box 备用流水线的物理直连中继**：sing-box 1.14 在 Windows 上开着外部 TUN 时 `bind_interface` / `default_interface` 不生效（实测连不通）。检测到系统出口与物理直连出口不同时，自动启动绑定物理网卡的 mihomo DIRECT 监听作 SOCKS 中继，sing-box 的节点出站（及节点前置）经其出网；落地节点经前置、回环地址上的本机客户端前置不经中继。未开 TUN 时不启用。
 
-### 3.4 宽带限速保护 (防 Bufferbloat 与应用卡顿)
-- 当用户主动要求测速时（`--speed-test`），若不加限制地全速下载，极易把家庭宽带（28~100 Mbps）打满，导致用户正在进行的即时通信、视频会议或网页浏览丢包卡顿。
-- **防护措施**：
-  - 默认强制开启 `--rate-limit-mbps 10.0`（通过 curl `--limit-rate` 控制）；
-  - 单节点测速时间窗口限制为 5.0 秒，单节点最大下载流量限制为 35 MB；
-  - 既能测出节点是否具备高速中继能力，又对家庭网络总体负载控制在 20%~30% 以内，完全不影响正常使用。
+### 3.4 带宽上限与测速隔离 (准确性优先，兼顾本机网络)
+- 带宽上限必须不低于 Key 门槛：本地默认 `--rate-limit-mbps 40`（Key 门槛 12 Mbps），低于门槛直接报错，不会静默给出"全部不达标"。
+- 本地测速严格串行，且在每批服务测试（含浏览器实播）结束后独立进行，节点之间、测速与其他探测流量之间不互相挤占带宽。
+- 单节点观测 10~20 秒（快节点与明显过慢的节点约 10 秒，爬升慢或贴近门槛的节点到 20 秒，贴近门槛再重测一次），40 Mbps 上限下单次最多约 100MB。
+- 本机宽带下行低于带宽上限时，测速结果受本地线路限制；运行结束若无节点达标会给出提示。
 
 ### 3.5 进程生命周期守护
 - 上下文管理器 + `atexit` 钩子双保险。
@@ -83,7 +84,7 @@
   - 符合标准的节点授予 `✨️` 徽章。
 
 - **完整测速模式（主动要求 `--speed-test`）**：
-  - 在全量服务测试基础上，激活持续下载测速流水线与目标快速轻量预检（Range: 0-1023）。
+  - 在全量服务测试基础上，每批服务测试结束后进入独立测速阶段（稳态 < 6 Mbps 删除、>= 12 Mbps 授 Key/Fast，详见 testing-criteria.md 5.3）。
   - 激活 Key 优质前置跳板遴选与配额分配（过滤 HTTP/SOCKS，按强加密与亚太核心区优先打分）。
   - 节点前置标识自动注入 `Key`（前置跳板）或 `Fast`（高速直连/落地节点）。
   - 策略组同步生成包含 Key 节点的 `🛡️ Front前置` 与 `⚡ Fast自动选择`。
@@ -91,3 +92,24 @@
 - **轻量降级模式（仅限显式指定 `--no-browser`）**：
   - 跳过 Playwright Chromium 浏览器实测（省略 YouTube 与 4 站浏览器免盾）。
   - 保留 IP 属地、AI 接口、流媒体与防断流快检。
+
+---
+
+## 5. 运行环境 Profile：本地与 GitHub Actions
+
+同一套代码、测试项目与合格判据，`--profile auto`（默认）按环境自动选择资源参数：检测到 `GITHUB_ACTIONS=true` 或 `CI=true` 时为 `ci`，否则为 `local`。命令行显式参数始终优先。两种运行方式各自完整执行，不拆分为"云端粗筛 + 本地精测"。
+
+| 项目 | local（本地） | ci（GitHub Actions） |
+|---|---|---|
+| 测速带宽上限 | 40 Mbps | 50 Mbps（受 Cloudflare 备用目标 50MB 载荷约束） |
+| 测速并发 | 1（严格串行） | 2 |
+| 物理网卡绑定 | Windows 自动探测防 TUN 劫持 | Linux 无 TUN，不绑定 |
+| 观测位置 (`vantage`) | 本机网络 → 节点 → CDN | 云端机房 → 节点 → CDN |
+| 门槛 / 观测窗 / 评选规则 | 相同 | 相同 |
+
+### 5.1 GitHub Actions 运行
+- 模板：[assets/github-actions/node-probe.yml](../assets/github-actions/node-probe.yml)，复制到**私有**仓库的 `.github/workflows/`，按实际目录修改 `SKILL_DIR`。
+- 订阅放在仓库 Secret `NODE_SOURCE`（订阅 URL 或节点原文）。
+- 工作流安装 Python 依赖与 Playwright Chromium，下载固定版本的 Linux Mihomo 并做 sha256 校验后放到 `<skill>/core/mihomo`。
+- 公开仓库的日志与 Artifact 会泄露节点名与出口 IP，工作流在公开仓库中直接失败；结果以 Artifact 形式保存 7 天，不发布到 Release。
+- 云端结论反映节点出口到 CDN 的能力（能否稳定承载高码率视频、是否先突发后限速），不代表国内网络到节点的线路质量；需要反映本机线路时在本地运行。

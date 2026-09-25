@@ -364,6 +364,30 @@ def arbitrate_geo(cf_trace=None, google_region=None, ip_info=None, exit_ips=None
             "poison_tag": f'_⚠️{restricted}' if poisoned else None}
 
 
+def google_fallback_region(google):
+    """未知属地的兜底地区: Gemini 优先于 YouTube，最近一次观测优先；只取已校验的显式地区码。"""
+    google = google or {}
+    observations = [google.get('confirmation'), google, google.get('initial_observation')]
+    for source in ('gemini', 'youtube'):
+        for obs in observations:
+            cc = normalize_country_code(((obs or {}).get('details') or {}).get(source))
+            if cc:
+                return cc, source
+    return None, None
+
+
+def apply_google_fallback(decision, google):
+    """所有判为未知的节点最终以 Google/Gemini 观测地区为准，保留原未知原因与待复核标志。"""
+    if decision['cc'] != 'UNK':
+        return
+    cc, source = google_fallback_region(google)
+    if not cc:
+        return
+    decision.update(cc=cc, country_zh=country_name_zh(cc), flag=flag_emoji(cc), scope='google_service_region',
+                    basis=f'google_fallback_{source}', unknown_basis=decision['basis'], needs_review=True,
+                    confidence='low' if decision['confidence'] != 'none' else 'none')
+
+
 def probe_geolocation(proxies, *, egress=None, timeout=(3.0, 6.0)):
     """两条服务流水线和抽查工具共用；检测前后出口，分别查询每个实际出口。"""
     before = egress if egress is not None else probe_egress(proxies, timeout)
@@ -410,6 +434,7 @@ def probe_geolocation(proxies, *, egress=None, timeout=(3.0, 6.0)):
             decision['conflict'] = True
             if not decision['google_cc']:
                 decision.update(cc='UNK', country_zh='未知', flag='🏳️', basis='cross_ip_country_conflict')
+    apply_google_fallback(decision, google)
     decision['egress_stable'] = stable
     reputation = reputation_for_exits(info_by_ip, ips)
     if not stable:

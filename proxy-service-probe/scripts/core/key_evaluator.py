@@ -6,11 +6,12 @@ Key (优质前置跳板) 节点判定、评分与优选模块 (移植自 freenod
 1. 严禁 HTTP/HTTPS 与 SOCKS 协议作为 Key 前置跳板 (无加密易被干扰，且 CONNECT 无法中转非标端口落地节点)。
 2. 落地节点 (_Lnd, _USAI, dialer-proxy) 绝不可作为前置跳板。
 3. 必须具备可核实的真实代理出网出口，绝不可与本地跑机基线出口重合。
-4. 必须通过完整 Sustained Download 测速 (中位数 >= 5.0 Mbps)。
+4. 必须通过完整持续下载测速 (默认: 稳态速度 >= 12 Mbps 且 2 秒滑动最低 >= 6 Mbps)。
 5. 亚太核心地区 (HK/TW/JP/SG/KR) 优先，TLS-TCP 强加密协议优先。
 """
 import math
-from copy import deepcopy
+
+from .speed_probe import DEFAULT_MIN_FLOOR_MBPS, DEFAULT_MIN_STABLE_MBPS, speed_qualified
 
 # 严禁作为前置跳板的协议 (无法胜任落地中转)
 KEY_DISALLOWED_PROTOCOLS = frozenset({"http", "https", "socks", "socks5"})
@@ -66,7 +67,8 @@ def is_landing_role(proxy):
     )
 
 
-def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None, min_median_mbps=5.0):
+def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None,
+                      min_stable_mbps=DEFAULT_MIN_STABLE_MBPS, min_floor_mbps=DEFAULT_MIN_FLOOR_MBPS):
     """
     对单个节点进行 Key 前置跳板资格判定与综合打分。
     返回: (eligible: bool, score: float, reason: str)
@@ -88,11 +90,9 @@ def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None, 
     # 测速硬门槛
     speed_mbps = 0.0
     if speed_result is not None:
-        from .speed_probe import speed_qualified
-        if not speed_qualified(speed_result, min_median_mbps=min_median_mbps):
-            med = speed_result.get("median_mbps", 0.0)
-            return False, 0.0, f"测速未达标({med}Mbps)"
-        speed_mbps = float(speed_result.get("median_mbps") or 0.0)
+        if not speed_qualified(speed_result, min_stable_mbps, min_floor_mbps):
+            return False, 0.0, f"测速未达标(稳态 {speed_result.get('stable_mbps')}Mbps)"
+        speed_mbps = float(speed_result.get("stable_mbps") or 0.0)
     else:
         # 未开启测速时不支持评选为 Key (必须有实测带宽证据)
         return False, 0.0, "缺少下载测速达标证据"
@@ -109,9 +109,9 @@ def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None, 
     if cc in ASIA_CORE:
         score += 8.0
 
-    # 3. 带宽速率对数分 (5 ~ 20 分)
+    # 3. 带宽速率对数分 (按超出合格门槛的倍数计分，0 ~ 15 分)
     if speed_mbps > 0:
-        rate_ratio = max(speed_mbps, 1.0) / 5.0
+        rate_ratio = speed_mbps / min_stable_mbps
         score += 15.0 * min(1.0, math.log10(rate_ratio + 1) / math.log10(20.0))
 
     # 4. 延迟加分 (0 ~ 10 分)
@@ -123,7 +123,8 @@ def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None, 
     return True, score, "ok"
 
 
-def select_key_nodes(results, max_keys=10, per_country_cap=3, min_median_mbps=5.0):
+def select_key_nodes(results, max_keys=10, per_country_cap=3, min_stable_mbps=DEFAULT_MIN_STABLE_MBPS,
+                     min_floor_mbps=DEFAULT_MIN_FLOOR_MBPS):
     """
     从一组检测结果中优选 Key 节点，并根据国家配额进行分配。
     results 列表中每个 dict 应包含:
@@ -140,7 +141,8 @@ def select_key_nodes(results, max_keys=10, per_country_cap=3, min_median_mbps=5.
             speed_result=r.get("speed_result"),
             egress_result=r.get("egress_result") or r,
             delay=r.get("delay"),
-            min_median_mbps=min_median_mbps
+            min_stable_mbps=min_stable_mbps,
+            min_floor_mbps=min_floor_mbps
         )
         r["is_key"] = False
         r["key_score"] = score
@@ -152,7 +154,7 @@ def select_key_nodes(results, max_keys=10, per_country_cap=3, min_median_mbps=5.
     candidates.sort(
         key=lambda item: (
             -float(item.get("key_score") or 0.0),
-            -float((item.get("speed_result") or {}).get("median_mbps") or 0.0),
+            -float((item.get("speed_result") or {}).get("stable_mbps") or 0.0),
             float(item.get("delay") or 9999.0)
         )
     )
@@ -175,3 +177,39 @@ def select_key_nodes(results, max_keys=10, per_country_cap=3, min_median_mbps=5.
         chosen.append(r)
 
     return chosen
+
+
+def is_front_capable(proxy):
+    """协议与角色上可以充当前置跳板 (不看测速)，用于决定是否需要为其判出备用前置档。"""
+    return not is_landing_role(proxy) and is_key_protocol_allowed(proxy)
+
+
+def rank_front_candidates(results, min_stable_mbps, min_floor_mbps):
+    """按 Key 评分规则给达到指定测速档的可前置节点排序 (只读，不改动 results)；返回 [(评分, 稳态速度, row)] 降序。"""
+    ranked = []
+    for r in results:
+        eligible, score, _ = evaluate_key_node(
+            proxy=r["proxy"], speed_result=r.get("speed_result"), egress_result=r.get("egress_result") or r,
+            delay=r.get("delay"), min_stable_mbps=min_stable_mbps, min_floor_mbps=min_floor_mbps)
+        if eligible:
+            ranked.append((score, float((r.get("speed_result") or {}).get("stable_mbps") or 0.0), r))
+    ranked.sort(key=lambda item: (-item[0], -item[1]))
+    return ranked
+
+
+def pick_front_nodes(results, fallback_tier, max_count=10):
+    """
+    为"直连不可达、需经前置"的节点挑选测试前置与配置前置池。
+    优先已评出的 Key (按评分)；没有 Key 时，从达到备用档 (fallback_tier=(稳态, 最低)，约 1080p 流畅) 且
+    具备前置资格的直连节点中按同一评分规则取前 max_count 个。
+    返回 (前置行列表, "key" | "fallback" | None)，列表首个即测试用前置。
+    """
+    keys = [r for r in results if r.get("is_key")]
+    if keys:
+        keys.sort(key=lambda item: -float(item.get("key_score") or 0.0))
+        return keys, "key"
+
+    ranked = rank_front_candidates(results, *fallback_tier)
+    if not ranked:
+        return [], None
+    return [r for _, _, r in ranked[:max_count]], "fallback"
