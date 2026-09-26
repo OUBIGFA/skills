@@ -79,25 +79,19 @@ async def _probe_one_browser(browser, proxy_url, target, wait_sec=8):
         content = await page.content()
         lower = content.lower()
 
-        is_challenged = any(m in lower for m in CHALLENGE_MARKERS)
-        if is_challenged:
+        classified = classify_http_response(status, resp.headers if resp else {}, content, target)
+        if classified["status"] == "challenge":
             # 宽容等待自动解除挑战
             start_wait = time.monotonic()
             while time.monotonic() - start_wait < wait_sec:
                 await asyncio.sleep(1.0)
                 content = await page.content()
                 lower = content.lower()
-                if not any(m in lower for m in CHALLENGE_MARKERS) and any(m in lower for m in target["markers"]):
+                if classify_http_response(200, {}, content, target)["status"] == "passed":
                     return {"status": "auto_passed", "reason": "challenge_resolved", "method": "browser"}
             return {"status": "challenge", "reason": "challenge_persisted", "method": "browser"}
 
-        if status in (403, 451) or any(m in lower for m in ("access denied", "you have been blocked")):
-            return {"status": "blocked", "reason": f"http_{status}", "method": "browser"}
-
-        if any(m in lower for m in target["markers"]):
-            return {"status": "passed", "reason": "clean_page", "method": "browser"}
-
-        return {"status": "unknown", "reason": "marker_missing", "method": "browser"}
+        return {**classified, "http_status": status, "method": "browser"}
     except Exception as e:
         return {"status": "unknown", "reason": f"browser_error:{type(e).__name__}", "method": "browser"}
     finally:
@@ -113,7 +107,7 @@ async def probe_sites_browser_async(proxy_url, targets=None):
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=True,
+            headless=True, channel="chromium",
             args=["--disable-quic", "--disable-blink-features=AutomationControlled"]
         )
         try:

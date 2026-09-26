@@ -159,13 +159,36 @@ def tag_and_rename_nodes(results, resort=False):
         poison_tag = (r.get("geo_decision") or {}).get("poison_tag")
         ai_sup = bool(r.get("ai_supported", False) and not poison_tag)
         r["ai_supported"] = ai_sup
+        orig_has_sparkle = bool("✨️" in orig or "✨" in orig)
+        orig_has_hq = bool("♥️" in orig or "♥" in orig)
+        orig_has_key = bool(re.search(r'(?i)\bkey(?![a-z])', orig))
+        orig_has_fast = bool(re.search(r'(?i)\bfast(?![a-z])', orig))
+        orig_has_nf = bool("_NF" in orig)
+        orig_has_dp = bool("_D+" in orig)
+
+        # Groq 解锁状态: 独立作为 ✨️ 综合全通的硬性门槛
+        if "ai_details" in r and r["ai_details"]:
+            groq_pass = bool(r["ai_details"].get("groq", False))
+        else:
+            groq_pass = bool(ai_sup)
+
         yt_pass = r.get("youtube_passed", False)
         cf_pass = r.get("shield_passed", False)
-        # 综合全通: AI三大全通 + YouTube免登实播 + 目标网站免盾
-        sparkle = bool(ai_sup and yt_pass and cf_pass)
+        # 综合全通 ✨️: 必须同时满足 AI五大全通 + Groq解锁 + YouTube免登实播 + 四站免盾 (只有解锁Groq才能给✨️)
+        if r.get("youtube_details") or r.get("shield_details"):
+            sparkle = bool(ai_sup and groq_pass and yt_pass and cf_pass)
+        elif "youtube_passed" in r and "shield_passed" in r and (yt_pass or cf_pass):
+            sparkle = bool(ai_sup and groq_pass and yt_pass and cf_pass)
+        else:
+            sparkle = bool(ai_sup and groq_pass and orig_has_sparkle and not poison_tag)
 
-        is_key = bool(r.get("is_key", False) or p.get("_is_key", False))
-        is_fast = bool((r.get("is_fast", False) or p.get("_is_fast", False)) and not is_key)
+        # 测速相关：实测以实测为准，未测速继承原 Key / Fast
+        if r.get("speed_result") is not None or r.get("is_key") is True or r.get("is_fast") is True:
+            is_key = bool(r.get("is_key", False) or p.get("_is_key", False))
+            is_fast = bool((r.get("is_fast", False) or p.get("_is_fast", False)) and not is_key)
+        else:
+            is_key = bool(orig_has_key)
+            is_fast = bool(orig_has_fast and not is_key)
 
         # 流水线已实测判定直连/落地时以实测为准，不让原名里的 _Lnd/_USAI 覆盖本轮结果
         if isinstance(r.get("is_landing"), bool):
@@ -178,9 +201,22 @@ def tag_and_rename_nodes(results, resort=False):
 
         rep = r.get("ip_reputation") or p.get("_ip_reputation") or {}
         sc = valid_reputation_score(rep.get("score"))
-        # 本轮有绑定信誉证据时按分数授予；仅浏览器复测等沿用已有 ♥️ 的场景由调用方显式传入 is_high_quality
-        is_hq = bool((r.get("is_high_quality") is True or
-                      (sc is not None and sc >= 80 and rep.get("status") == "observed")) and not poison_tag)
+        if r.get("is_high_quality") is True:
+            is_hq = bool(not poison_tag)
+        elif rep.get("status") == "observed" and sc is not None:
+            is_hq = bool(sc >= 80 and not poison_tag)
+        else:
+            is_hq = bool(orig_has_hq and not poison_tag)
+
+        # 流媒体：实测以实测为准，未测继承原 _NF / _D+
+        if r.get("media_details"):
+            media_details = r.get("media_details")
+        else:
+            media_details = {}
+            if orig_has_nf:
+                media_details["nf"] = True
+            if orig_has_dp:
+                media_details["dp"] = True
 
         new_name = format_node_name(
             cc=cc,
@@ -192,7 +228,7 @@ def tag_and_rename_nodes(results, resort=False):
             is_fast=is_fast,
             is_landing=is_landing,
             is_usai=is_usai,
-            media_details=r.get("media_details", {}),
+            media_details=media_details,
             is_chromego=is_cg,
             poison_tag=poison_tag,
             city=city
@@ -211,7 +247,7 @@ def tag_and_rename_nodes(results, resort=False):
                 is_fast=is_fast,
                 is_landing=is_landing,
                 is_usai=is_usai,
-                media_details=r.get("media_details", {}),
+                media_details=media_details,
                 is_chromego=is_cg,
                 poison_tag=poison_tag,
                 city=city

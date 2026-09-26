@@ -186,7 +186,7 @@ ANCHORS = {
 
 
 # 地区展示顺序：按使用习惯从近到远排列（亚太 → 北美 → 欧洲 → 其他）。
-# 未列出的已知地区排在列表之后，未识别地区永远垫底。
+# 未列出的已知地区排在列表之后；中国排在所有国家/地区之后（含未列出的地区），未识别地区永远垫底。
 REGION_ORDER = [
     'HK', 'TW', 'MO', 'JP', 'KR', 'SG',
     'MY', 'TH', 'VN', 'PH', 'ID', 'KH', 'LA', 'MM', 'BN',
@@ -204,16 +204,21 @@ REGION_ORDER = [
     'CR', 'PA', 'GT', 'DO', 'JM', 'CU', 'PR', 'TT', 'BS',
     'ZA', 'EG', 'NG', 'KE', 'MA', 'SC', 'MU', 'GH', 'TZ', 'UG', 'ET',
     'DZ', 'TN', 'SN', 'CI', 'ZW', 'ZM', 'AO', 'MZ', 'RE', 'YT',
-    'CN',
 ]
 _RANK = {cc: i for i, cc in enumerate(REGION_ORDER)}
+UNLISTED_RANK, CHINA_RANK, UNKNOWN_RANK = 900, 950, 9999
 
 
 def region_rank(cc):
-    """地区排序权重：越小越靠前。未列出的已知地区居中，未识别地区垫底。"""
+    """地区排序权重：越小越靠前。未列出的已知地区排在列表之后，中国在所有国家/地区之后，未识别地区垫底。"""
     if not cc:
-        return 9999
-    return _RANK.get(cc.upper(), 900)
+        return UNKNOWN_RANK
+    cc = cc.upper()
+    if cc not in COUNTRY_ZH:
+        return UNKNOWN_RANK
+    if cc == 'CN':
+        return CHINA_RANK
+    return _RANK.get(cc, UNLISTED_RANK)
 
 
 # 行政区划尾缀：让「首尔特别市」「达卡专区」「北荷兰省」回到常用地名。

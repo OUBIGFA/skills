@@ -1,0 +1,26 @@
+{
+  "command": [
+    "C:\\Users\\BIGFA\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+    "-u",
+    "scripts/probe_singbox.py",
+    "--input",
+    "D:\\Data\\Desktop\\_scratch\\test.json",
+    "--output",
+    "_temp\\sb-clashapi-20260926\\resume_run2.json",
+    "--report",
+    "_temp\\sb-clashapi-20260926\\resume_run2_report.json",
+    "--speed-test",
+    "--profile",
+    "local",
+    "--workers",
+    "4",
+    "--speed-concurrency",
+    "1",
+    "--iface",
+    "WLAN"
+  ],
+  "exit_code": 0,
+  "started": 1790389170.1415331,
+  "finished": 1790389305.6846836,
+  "seconds": 135.5
+}

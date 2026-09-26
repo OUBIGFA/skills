@@ -1,0 +1,935 @@
+port: 7890
+socks-port: 7891
+allow-lan: false
+mode: rule
+log-level: info
+ipv6: false
+unified-delay: true
+tcp-concurrent: true
+geodata-mode: true
+geox-url:
+  geoip: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat
+  geosite: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat
+  mmdb: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb
+geo-auto-update: true
+geo-update-interval: 24
+global-client-fingerprint: chrome
+find-process-mode: strict
+
+# 流量域名嗅探模块（从 TLS/HTTP 流量中提取域名，阻断纯 IP 访问造成的泄露）
+sniffer:
+  enable: true
+  force-dns-mapping: true
+  parse-pure-ip: true
+  override-destination: true
+  sniff:
+    HTTP:
+      ports:
+      - 80
+      - 8080-8880
+      override-destination: true
+    TLS:
+      ports:
+      - 443
+      - 8443
+    QUIC:
+      ports:
+      - 443
+      - 8443
+  skip-domain:
+  - Mijia Cloud
+  - dlg.io.mi.com
+  - +.push.apple.com
+
+# 权威防 DNS 泄露模块（基于 Fake-IP 虚拟映射、分流隔离与代理隧道内加密解析架构）
+dns:
+  enable: true
+  listen: 0.0.0.0:1053
+  ipv6: false
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter-mode: blacklist
+  fake-ip-filter:
+  - '*.lan'
+  - '*.local'
+  - '*.arpa'
+  - '*.msftncsi.com'
+  - '*.msftconnecttest.com'
+  - localhost.ptlogin2.qq.com
+  - time.*.com
+  - ntp.*.com
+  - '*.time.edu.cn'
+  - '*.ntp.org.cn'
+  - +.pool.ntp.org
+  - +.market.xiaomi.com
+  - +.push.apple.com
+  - +.network-test.debian.org
+  - +.bestcf.eu.cc
+  cache-algorithm: arc
+  use-hosts: true
+  use-system-hosts: false
+  respect-rules: true
+
+  # 基础引导 DNS（仅用于启动时解析加密 DNS 服务器本身的域名，必须为纯 IP 直连）
+  default-nameserver:
+  - 223.5.5.5
+  - 119.29.29.29
+
+  # 代理节点域名专属解析器（仅用于获取落地节点服务器 IP，纯直连解析，杜绝死锁）
+  proxy-server-nameserver:
+  - 223.5.5.5
+  - 119.29.29.29
+
+  # 直连域名专属 DNS（当连接被判定为 DIRECT 时使用，保证国内访问获得最佳 CDN 延迟）
+  direct-nameserver:
+  - https://doh.pub/dns-query
+  - https://dns.alidns.com/dns-query
+  - 223.5.5.5
+  - 119.29.29.29
+
+  # 默认境外/未匹配域名解析：100% 走【🌏️ 节点选择】代理隧道，本地运营商 0 记录（杜绝国内并发抢答泄露）
+  nameserver:
+  - https://8.8.8.8/dns-query#🌏️ 节点选择
+  - https://1.1.1.1/dns-query#🌏️ 节点选择
+
+  # 精准策略分流（优先于 nameserver 生效）：国内域名与私有域走国内加密 DoH
+  nameserver-policy:
+    geosite:private:
+    - https://doh.pub/dns-query
+    - https://dns.alidns.com/dns-query
+    geosite:cn:
+    - https://doh.pub/dns-query
+    - https://dns.alidns.com/dns-query
+
+proxies:
+- name: 🇯🇵 ✨️❇️日本_2_NF_D+
+  type: vless
+  server: 3.39.4.109
+  udp: true
+  port: 13672
+  uuid: 814bd064-544d-4255-a070-5705c03f6da9
+  flow: xtls-rprx-vision
+  tls: true
+  servername: www.apple.com
+  skip-cert-verify: true
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: k2hPp0tTW0Da-HK94wYpSCLbuK44LfGqC2MSJIM1Ti0
+    short-id: 48050fab
+- name: 🇯🇵 ✨️❇️日本_4_NF_D+
+  type: http
+  server: 102.217.70.166
+  udp: true
+  port: 443
+  tls: true
+  skip-cert-verify: true
+- name: 🇯🇵 ✨️❇️日本_5_NF_D+
+  type: trojan
+  server: 45.80.111.7
+  udp: true
+  port: 443
+  password: humanity
+  tls: true
+  sni: www.calmlunch.com
+  skip-cert-verify: true
+  client-fingerprint: chrome
+  network: ws
+  ws-opts:
+    path: /assignment
+    headers:
+      Host: www.calmlunch.com
+- name: 🇯🇵 ✨️❇️日本_99_NF_D+
+  type: trojan
+  server: 203.0.113.88
+  udp: true
+  port: 443
+  password: fake-invalid-password-203011388
+  tls: true
+  sni: jp-fake.invalid
+  skip-cert-verify: true
+- name: 🇯🇵 ✨️❇️Fast日本_1_Lnd_NF_D+
+  type: vless
+  server: hk3n.wxgqlfx.vip
+  udp: true
+  port: 35193
+  dialer-proxy: 🛡️ Front前置
+  uuid: 35cbae61-ee10-4cb9-abb8-4950b35e9851
+  flow: xtls-rprx-vision
+  tls: true
+  servername: www.apple.com
+  skip-cert-verify: true
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: d_pn_DMaIxhCkNh80h0Mc7nP94hrlN--I8liOIREDxE
+    short-id: e8daed2d
+- name: 🇯🇵 ✨️❇️日本_3_Lnd_NF_D+
+  type: ss
+  server: 65.49.197.121
+  udp: true
+  port: 51888
+  dialer-proxy: 🛡️ Front前置
+  cipher: 2022-blake3-aes-128-gcm
+  password: dL9x9OXRTXbpHpd726Gtdg==
+- name: 🇺🇸 ✨️❇️Key美国_1_NF_D+
+  type: vless
+  server: 198.51.100.21
+  udp: true
+  port: 443
+  uuid: 00000000-0000-0000-0000-000000000001
+  tls: true
+  servername: hk-fake.invalid
+  skip-cert-verify: true
+- name: 🇺🇸 ✨️❇️美国_3_NF_D+
+  type: vmess
+  server: tw1.dinopaws.top
+  udp: true
+  port: 443
+  uuid: 318129e6-f028-11f0-b3a2-2f19ebaf05f9
+  alterId: 0
+  cipher: auto
+  tls: true
+  servername: tw1.dinopaws.top
+  skip-cert-verify: true
+  client-fingerprint: chrome
+  network: grpc
+  grpc-opts:
+    grpc-service-name: 5f94d7e5-b9ea-46b0-b1b3-b5f069a9e87f
+- name: 🇺🇸 ✨️❇️美国_4_NF_D+
+  type: vless
+  server: 172.64.145.202
+  udp: true
+  port: 2087
+  uuid: 77777777-8a3e-6666-b6d1-a9c5f0e8b3a2
+  tls: true
+  servername: faxf32gkfzoxqv.fx6hsv0.ccwu.cc
+  skip-cert-verify: true
+  client-fingerprint: chrome
+  network: ws
+  ws-opts:
+    path: /
+    headers:
+      Host: faxf32gkfzoxqv.fx6hsv0.ccwu.cc
+      User-Agent: Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US) AppleWebKit/533.4
+        (KHTML, like Gecko) Chrome/5.0.375.99 Safari/533.4
+    max-early-data: 2560
+    early-data-header-name: Sec-WebSocket-Protocol
+- name: 🇺🇸 ✨️❇️美国_5_NF_D+
+  type: trojan
+  server: render.com
+  udp: true
+  port: 443
+  password: humanity
+  tls: true
+  sni: www.ignitelimit.com
+  skip-cert-verify: true
+  client-fingerprint: chrome
+  network: ws
+  ws-opts:
+    path: /assignment
+    headers:
+      User-Agent: Mozilla/5.0 (Windows NT 6.2; Win64; x64) AppleWebKit/537.36 (KHTML,
+        like Gecko) Chrome/60.0.3112.90 Safari/537.36
+      Host: www.ignitelimit.com
+- name: 🇺🇸 ✨️❇️美国_6_NF_D+
+  type: http
+  server: 58.26.247.226
+  udp: true
+  port: 443
+  tls: true
+  skip-cert-verify: true
+- name: 🇺🇸 ✨️❇️Fast美国_2_USAI_NF_D+
+  type: http
+  server: twmoon1-cdn-route.couldflare-cdn.com
+  udp: true
+  port: 1443
+  dialer-proxy: 🛡️ Front前置
+  username: mrwdfNTD8M79LCukCieldrqZWqs=
+  password: exaxgqkKkd0TAMrCxeonWg==
+  tls: true
+  servername: twmoon1-cdn-route.couldflare-cdn.com
+  skip-cert-verify: true
+proxy-groups:
+- name: 🛡️ Front前置
+  type: select
+  proxies:
+  - ⚡ Fast自动选择
+  - DIRECT
+  - 🇺🇸 ✨️❇️Key美国_1_NF_D+
+- name: ⚡ Fast自动选择
+  type: url-test
+  hidden: true
+  url: https://cp.cloudflare.com/generate_204
+  interval: 45
+  tolerance: 50
+  lazy: false
+  proxies:
+  - 🇺🇸 ✨️❇️Key美国_1_NF_D+
+- name: 🌏️ 节点选择
+  type: select
+  proxies:
+  - ✨️ 综合全通
+  - 🚀 自动选择
+  - 🔄 手动切换
+  - 🔀 AI 服务
+  - 🇺🇸 Google
+  - 🎬 国际流媒体
+  - 🔒️ 落地节点
+  - DIRECT
+- name: 🚀 自动选择
+  type: url-test
+  hidden: false
+  url: https://cp.cloudflare.com/generate_204
+  interval: 45
+  tolerance: 20
+  lazy: false
+  proxies:
+  - 🇯🇵 ✨️❇️日本_2_NF_D+
+  - 🇯🇵 ✨️❇️日本_4_NF_D+
+  - 🇯🇵 ✨️❇️日本_5_NF_D+
+  - 🇯🇵 ✨️❇️日本_99_NF_D+
+  - 🇯🇵 ✨️❇️Fast日本_1_Lnd_NF_D+
+  - 🇯🇵 ✨️❇️日本_3_Lnd_NF_D+
+  - 🇺🇸 ✨️❇️Key美国_1_NF_D+
+  - 🇺🇸 ✨️❇️美国_3_NF_D+
+  - 🇺🇸 ✨️❇️美国_4_NF_D+
+  - 🇺🇸 ✨️❇️美国_5_NF_D+
+  - 🇺🇸 ✨️❇️美国_6_NF_D+
+  - 🇺🇸 ✨️❇️Fast美国_2_USAI_NF_D+
+- name: 🔄 手动切换
+  type: select
+  proxies:
+  - 🇯🇵 ✨️❇️日本_2_NF_D+
+  - 🇯🇵 ✨️❇️日本_4_NF_D+
+  - 🇯🇵 ✨️❇️日本_5_NF_D+
+  - 🇯🇵 ✨️❇️日本_99_NF_D+
+  - 🇯🇵 ✨️❇️Fast日本_1_Lnd_NF_D+
+  - 🇯🇵 ✨️❇️日本_3_Lnd_NF_D+
+  - 🇺🇸 ✨️❇️Key美国_1_NF_D+
+  - 🇺🇸 ✨️❇️美国_3_NF_D+
+  - 🇺🇸 ✨️❇️美国_4_NF_D+
+  - 🇺🇸 ✨️❇️美国_5_NF_D+
+  - 🇺🇸 ✨️❇️美国_6_NF_D+
+  - 🇺🇸 ✨️❇️Fast美国_2_USAI_NF_D+
+- name: ✨️ 综合全通
+  type: url-test
+  hidden: false
+  url: https://www.google.com/generate_204
+  interval: 60
+  tolerance: 0
+  lazy: false
+  proxies:
+  - 🇯🇵 ✨️❇️日本_2_NF_D+
+  - 🇯🇵 ✨️❇️日本_4_NF_D+
+  - 🇯🇵 ✨️❇️日本_5_NF_D+
+  - 🇯🇵 ✨️❇️日本_99_NF_D+
+  - 🇯🇵 ✨️❇️Fast日本_1_Lnd_NF_D+
+  - 🇯🇵 ✨️❇️日本_3_Lnd_NF_D+
+  - 🇺🇸 ✨️❇️Key美国_1_NF_D+
+  - 🇺🇸 ✨️❇️美国_3_NF_D+
+  - 🇺🇸 ✨️❇️美国_4_NF_D+
+  - 🇺🇸 ✨️❇️美国_5_NF_D+
+  - 🇺🇸 ✨️❇️美国_6_NF_D+
+  - 🇺🇸 ✨️❇️Fast美国_2_USAI_NF_D+
+- name: 🔀 AI 服务
+  type: select
+  proxies:
+  - ✨️ 综合全通
+  - 🇺🇸 Google
+  - ✅ 解锁USAI
+  - ✅ 解锁 AI
+  - 🔄 手动切换
+- name: 🇺🇸 Google
+  type: select
+  proxies:
+  - ✅ 解锁USAI
+  - ✅ 解锁 AI
+  - 🇺🇸 美国节点
+  - 🚀 自动选择
+  - 🔄 手动切换
+- name: ✅ 解锁 AI
+  type: url-test
+  hidden: true
+  url: https://www.google.com/generate_204
+  interval: 60
+  tolerance: 0
+  lazy: false
+  proxies:
+  - 🇯🇵 ✨️❇️日本_2_NF_D+
+  - 🇯🇵 ✨️❇️日本_4_NF_D+
+  - 🇯🇵 ✨️❇️日本_5_NF_D+
+  - 🇯🇵 ✨️❇️日本_99_NF_D+
+  - 🇯🇵 ✨️❇️Fast日本_1_Lnd_NF_D+
+  - 🇯🇵 ✨️❇️日本_3_Lnd_NF_D+
+  - 🇺🇸 ✨️❇️Key美国_1_NF_D+
+  - 🇺🇸 ✨️❇️美国_3_NF_D+
+  - 🇺🇸 ✨️❇️美国_4_NF_D+
+  - 🇺🇸 ✨️❇️美国_5_NF_D+
+  - 🇺🇸 ✨️❇️美国_6_NF_D+
+  - 🇺🇸 ✨️❇️Fast美国_2_USAI_NF_D+
+- name: ✅ 解锁USAI
+  type: url-test
+  hidden: true
+  url: https://www.google.com/generate_204
+  interval: 60
+  tolerance: 0
+  lazy: false
+  proxies:
+  - 🇺🇸 ✨️❇️Fast美国_2_USAI_NF_D+
+- name: 🇺🇸 美国节点
+  type: select
+  hidden: true
+  proxies:
+  - 🇺🇸 ✨️❇️Key美国_1_NF_D+
+  - 🇺🇸 ✨️❇️美国_3_NF_D+
+  - 🇺🇸 ✨️❇️美国_4_NF_D+
+  - 🇺🇸 ✨️❇️美国_5_NF_D+
+  - 🇺🇸 ✨️❇️美国_6_NF_D+
+  - 🇺🇸 ✨️❇️Fast美国_2_USAI_NF_D+
+- name: 🎬 国际流媒体
+  type: select
+  proxies:
+  - 🎥 奈飞解锁
+  - ✨ 解锁Disney+
+  - 🔄 手动切换
+  - DIRECT
+- name: 🎥 奈飞解锁
+  type: url-test
+  hidden: true
+  url: https://www.netflix.com/title/81280792
+  interval: 300
+  tolerance: 100
+  lazy: false
+  proxies:
+  - 🇯🇵 ✨️❇️日本_2_NF_D+
+  - 🇯🇵 ✨️❇️日本_4_NF_D+
+  - 🇯🇵 ✨️❇️日本_5_NF_D+
+  - 🇯🇵 ✨️❇️日本_99_NF_D+
+  - 🇯🇵 ✨️❇️Fast日本_1_Lnd_NF_D+
+  - 🇯🇵 ✨️❇️日本_3_Lnd_NF_D+
+  - 🇺🇸 ✨️❇️Key美国_1_NF_D+
+  - 🇺🇸 ✨️❇️美国_3_NF_D+
+  - 🇺🇸 ✨️❇️美国_4_NF_D+
+  - 🇺🇸 ✨️❇️美国_5_NF_D+
+  - 🇺🇸 ✨️❇️美国_6_NF_D+
+  - 🇺🇸 ✨️❇️Fast美国_2_USAI_NF_D+
+- name: ✨ 解锁Disney+
+  type: url-test
+  hidden: true
+  url: https://www.disneyplus.com
+  interval: 300
+  tolerance: 100
+  lazy: false
+  proxies:
+  - 🇯🇵 ✨️❇️日本_2_NF_D+
+  - 🇯🇵 ✨️❇️日本_4_NF_D+
+  - 🇯🇵 ✨️❇️日本_5_NF_D+
+  - 🇯🇵 ✨️❇️日本_99_NF_D+
+  - 🇯🇵 ✨️❇️Fast日本_1_Lnd_NF_D+
+  - 🇯🇵 ✨️❇️日本_3_Lnd_NF_D+
+  - 🇺🇸 ✨️❇️Key美国_1_NF_D+
+  - 🇺🇸 ✨️❇️美国_3_NF_D+
+  - 🇺🇸 ✨️❇️美国_4_NF_D+
+  - 🇺🇸 ✨️❇️美国_5_NF_D+
+  - 🇺🇸 ✨️❇️美国_6_NF_D+
+  - 🇺🇸 ✨️❇️Fast美国_2_USAI_NF_D+
+- name: 🔒️ 落地节点
+  type: select
+  proxies:
+  - 🇯🇵 ✨️❇️Fast日本_1_Lnd_NF_D+
+  - 🇯🇵 ✨️❇️日本_3_Lnd_NF_D+
+  - 🇺🇸 ✨️❇️Fast美国_2_USAI_NF_D+
+- name: ⛔️ 拦截广告
+  type: select
+  proxies:
+  - DIRECT
+  - REJECT
+- name: ↪️ 漏网之鱼
+  type: select
+  proxies:
+  - 🌏️ 节点选择
+  - DIRECT
+
+rules:
+
+  # --- 进程分流规则 (优先匹配) ---
+  # 翻墙进程
+- PROCESS-NAME,Docker Desktop Installer.exe,🌏️ 节点选择
+- PROCESS-NAME,Docker Desktop.exe,🌏️ 节点选择
+- PROCESS-NAME,DockerCli.exe,🌏️ 节点选择
+- PROCESS-NAME,courgette64.exe,🌏️ 节点选择
+- PROCESS-NAME,InstallerCli.exe,🌏️ 节点选择
+- PROCESS-NAME,TeraBoxUnite.exe,🌏️ 节点选择
+- PROCESS-NAME,terabox.exe,🌏️ 节点选择
+- PROCESS-NAME,teraboxunite.exe,🌏️ 节点选择
+- PROCESS-NAME,teraboxhost.exe,🌏️ 节点选择
+- PROCESS-NAME,teraboxwebservice.exe,🌏️ 节点选择
+- PROCESS-NAME,uninst.exe,🌏️ 节点选择
+- PROCESS-NAME,yunutilityservice.exe,🌏️ 节点选择
+- PROCESS-NAME,bugreport.exe,🌏️ 节点选择
+- PROCESS-NAME,chromenativemessaginghost.exe,🌏️ 节点选择
+- PROCESS-NAME,crashpad_handler.exe,🌏️ 节点选择
+  # 国内直连进程
+- PROCESS-NAME,proxypal.exe,DIRECT
+
+  # 专项防泄露测试直通境外代理
+- DOMAIN-SUFFIX,dnsleaktest.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,browserleaks.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,ipleak.net,🌏️ 节点选择
+- DOMAIN-SUFFIX,ipleak.org,🌏️ 节点选择
+- DOMAIN-SUFFIX,dnsleak.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,anyrouter.top,🌏️ 节点选择
+- DOMAIN-SUFFIX,Adobe,REJECT
+  # - DOMAIN-SUFFIX,adobe.io,REJECT
+  # - DOMAIN-SUFFIX,adobestats.io,REJECT
+  # - DOMAIN,lcs-cops.adobe.io,DIRECT
+
+# Google 全生态服务 (无论是AI还是其他均走 🇺🇸 Google)
+  # --- Google 核心业务、Gemini/AI、YouTube 与安卓生态 (内联直写) ---
+- DOMAIN-SUFFIX,google.com,🇺🇸 Google
+- DOMAIN-SUFFIX,googleapis.com,🇺🇸 Google
+- DOMAIN-SUFFIX,gstatic.com,🇺🇸 Google
+- DOMAIN-SUFFIX,googleusercontent.com,🇺🇸 Google
+- DOMAIN-SUFFIX,googlevideo.com,🇺🇸 Google
+- DOMAIN-SUFFIX,google.com.hk,🇺🇸 Google
+- DOMAIN-SUFFIX,google.co.jp,🇺🇸 Google
+- DOMAIN-SUFFIX,googleadservices.com,🇺🇸 Google
+- DOMAIN-SUFFIX,googletagmanager.com,🇺🇸 Google
+- DOMAIN-SUFFIX,googlesyndication.com,🇺🇸 Google
+- DOMAIN-SUFFIX,google-analytics.com,🇺🇸 Google
+- DOMAIN-SUFFIX,googleplay.com,🇺🇸 Google
+- DOMAIN-SUFFIX,android.com,🇺🇸 Google
+- DOMAIN-SUFFIX,deepmind.google,🇺🇸 Google
+- DOMAIN-SUFFIX,deepmind.com,🇺🇸 Google
+- DOMAIN-SUFFIX,generativeai.google,🇺🇸 Google
+- DOMAIN-SUFFIX,notebooklm.google,🇺🇸 Google
+- DOMAIN-SUFFIX,ai.google.dev,🇺🇸 Google
+- DOMAIN-SUFFIX,youtube.com,🇺🇸 Google
+- DOMAIN-SUFFIX,youtu.be,🇺🇸 Google
+- DOMAIN-SUFFIX,ytimg.com,🇺🇸 Google
+- DOMAIN-SUFFIX,ggpht.com,🇺🇸 Google
+- DOMAIN-SUFFIX,1e100.net,🇺🇸 Google
+- DOMAIN-KEYWORD,google,🇺🇸 Google
+- DOMAIN-KEYWORD,youtube,🇺🇸 Google
+- DOMAIN-KEYWORD,gemini,🇺🇸 Google
+- DOMAIN-KEYWORD,generativelanguage,🇺🇸 Google
+
+  # --- Google 远端权威规则集与内核 GeoSite 分流 ---
+- RULE-SET,Gemini,🇺🇸 Google
+- RULE-SET,Google,🇺🇸 Google
+- RULE-SET,YouTube,🇺🇸 Google
+- GEOSITE,google,🇺🇸 Google
+- GEOSITE,youtube,🇺🇸 Google
+
+# 解锁其他 AI 服务 (走 🔀 AI 服务)
+  # --- OpenAI / ChatGPT / Sora 系列 ---
+- DOMAIN-SUFFIX,chatgpt.com,🔀 AI 服务
+- DOMAIN-SUFFIX,openai.com,🔀 AI 服务
+- DOMAIN-SUFFIX,sora.com,🔀 AI 服务
+- DOMAIN-SUFFIX,oaistatic.com,🔀 AI 服务
+- DOMAIN-SUFFIX,oaiusercontent.com,🔀 AI 服务
+- DOMAIN-SUFFIX,ai.com,🔀 AI 服务
+- DOMAIN-SUFFIX,livekit.cloud,🔀 AI 服务
+- DOMAIN-SUFFIX,arkoselabs.com,🔀 AI 服务
+- DOMAIN-SUFFIX,statsigapi.net,🔀 AI 服务
+- DOMAIN-SUFFIX,featuregates.org,🔀 AI 服务
+- DOMAIN-SUFFIX,identrust.com,🔀 AI 服务
+- DOMAIN-SUFFIX,intercom.io,🔀 AI 服务
+- DOMAIN-SUFFIX,intercomcdn.com,🔀 AI 服务
+- DOMAIN-SUFFIX,launchdarkly.com,🔀 AI 服务
+- DOMAIN-SUFFIX,segment.io,🔀 AI 服务
+- DOMAIN-SUFFIX,sentry.io,🔀 AI 服务
+- DOMAIN-SUFFIX,stripe.com,🔀 AI 服务
+- DOMAIN-KEYWORD,openai,🔀 AI 服务
+- DOMAIN-KEYWORD,chatgpt,🔀 AI 服务
+- DOMAIN-KEYWORD,sora,🔀 AI 服务
+
+  # --- Anthropic / Claude 系列 ---
+- DOMAIN-SUFFIX,claude.ai,🔀 AI 服务
+- DOMAIN-SUFFIX,claude.com,🔀 AI 服务
+- DOMAIN-SUFFIX,claudeusercontent.com,🔀 AI 服务
+- DOMAIN-SUFFIX,anthropic.com,🔀 AI 服务
+- DOMAIN-KEYWORD,anthropic,🔀 AI 服务
+- DOMAIN-KEYWORD,claude,🔀 AI 服务
+
+  # --- 其它国际主流 AI 服务 (Copilot / Grok / Perplexity / Poe / Mistral / Cursor 等) ---
+- DOMAIN-SUFFIX,copilot.microsoft.com,🔀 AI 服务
+- DOMAIN-SUFFIX,copilot.cloud.microsoft,🔀 AI 服务
+- DOMAIN-SUFFIX,sydney.bing.com,🔀 AI 服务
+- DOMAIN-SUFFIX,githubcopilot.com,🔀 AI 服务
+- DOMAIN-SUFFIX,grok.com,🔀 AI 服务
+- DOMAIN-SUFFIX,x.ai,🔀 AI 服务
+- DOMAIN-SUFFIX,perplexity.ai,🔀 AI 服务
+- DOMAIN-SUFFIX,poe.com,🔀 AI 服务
+- DOMAIN-SUFFIX,meta.ai,🔀 AI 服务
+- DOMAIN-SUFFIX,groq.com,🔀 AI 服务
+- DOMAIN-SUFFIX,huggingface.co,🔀 AI 服务
+- DOMAIN-SUFFIX,hf.co,🔀 AI 服务
+- DOMAIN-KEYWORD,groq,🔀 AI 服务
+- DOMAIN-KEYWORD,huggingface,🔀 AI 服务
+- DOMAIN-SUFFIX,mistral.ai,🔀 AI 服务
+- DOMAIN-SUFFIX,together.ai,🔀 AI 服务
+- DOMAIN-SUFFIX,together.xyz,🔀 AI 服务
+- DOMAIN-SUFFIX,cursor.com,🔀 AI 服务
+- DOMAIN-SUFFIX,cursor.sh,🔀 AI 服务
+- DOMAIN-SUFFIX,cohere.ai,🔀 AI 服务
+- DOMAIN-SUFFIX,cohere.com,🔀 AI 服务
+
+  # --- 最新活跃远端规则集引用 (ACL4SSR + blackmatrix7 每日自动更新) ---
+- RULE-SET,AI,🔀 AI 服务
+- RULE-SET,OpenAI,🔀 AI 服务
+- RULE-SET,Claude,🔀 AI 服务
+
+  # --- Mihomo / Clash Meta 内核原生 AI 智能分类兜底 ---
+- GEOSITE,category-ai-chat-!cn,🔀 AI 服务
+
+# 国际流媒体
+- DOMAIN-SUFFIX,netflix.com,🎬 国际流媒体
+- DOMAIN-SUFFIX,netflix.net,🎬 国际流媒体
+- DOMAIN-SUFFIX,nflxso.net,🎬 国际流媒体
+- DOMAIN-SUFFIX,nflxext.com,🎬 国际流媒体
+- DOMAIN-SUFFIX,nflxvideo.net,🎬 国际流媒体
+- DOMAIN-SUFFIX,nflximg.net,🎬 国际流媒体
+- DOMAIN-SUFFIX,disneyplus.com,🎬 国际流媒体
+- DOMAIN-SUFFIX,disney-plus.net,🎬 国际流媒体
+- DOMAIN-SUFFIX,bamgrid.com,🎬 国际流媒体
+- DOMAIN-SUFFIX,spotify.com,🎬 国际流媒体
+- DOMAIN-SUFFIX,scdn.co,🎬 国际流媒体
+- RULE-SET,Netflix,🎬 国际流媒体
+- RULE-SET,DisneyPlus,🎬 国际流媒体
+- RULE-SET,Spotify,🎬 国际流媒体
+- RULE-SET,Amazon,🎬 国际流媒体
+- RULE-SET,Hulu,🎬 国际流媒体
+- RULE-SET,HBO,🎬 国际流媒体
+
+# 服务类
+- RULE-SET,TikTok,🔀 AI 服务
+- RULE-SET,PayPal,🌏️ 节点选择
+- RULE-SET,telegramcidr,🌏️ 节点选择,no-resolve
+- DOMAIN-SUFFIX,oaifree.com,DIRECT
+- DOMAIN-KEYWORD,oaifree,DIRECT
+
+  # --- 用户自定义翻墙域名 ---
+- DOMAIN-SUFFIX,filen.io,🌏️ 节点选择
+- DOMAIN-SUFFIX,pokepay.cc,🌏️ 节点选择
+- DOMAIN-SUFFIX,okx.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,bitmart.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,naizi.lol,🌏️ 节点选择
+- DOMAIN-SUFFIX,cc.cd,🌏️ 节点选择
+- DOMAIN-SUFFIX,search-sharp.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,kitty.sb,🌏️ 节点选择
+- DOMAIN-SUFFIX,appflowy.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,mojie.me,🌏️ 节点选择
+- DOMAIN-SUFFIX,cgfxw.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,cun.ai,🌏️ 节点选择
+- DOMAIN-SUFFIX,free-proxy.cz,🌏️ 节点选择
+- DOMAIN-SUFFIX,aireiter.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,hezubus.cc,🌏️ 节点选择
+- DOMAIN-SUFFIX,98kjc.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,b.ai,🌏️ 节点选择
+- DOMAIN-SUFFIX,42w.shop,🌏️ 节点选择
+- DOMAIN-SUFFIX,router.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,seekai.cc,🌏️ 节点选择
+- DOMAIN-SUFFIX,justwoker.icu,🌏️ 节点选择
+- DOMAIN-SUFFIX,tabitoken.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,agentrouter.org,🌏️ 节点选择
+- DOMAIN-SUFFIX,gorouter.app,🌏️ 节点选择
+- DOMAIN-SUFFIX,vyceai.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,sulmate.cn,🌏️ 节点选择
+- DOMAIN-SUFFIX,njavtv.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,kktoken.cc,🌏️ 节点选择
+- DOMAIN-SUFFIX,orevx.ai,🌏️ 节点选择
+- DOMAIN-SUFFIX,sylu.cc,🌏️ 节点选择
+- DOMAIN-SUFFIX,abinapi.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,linux.sb,🌏️ 节点选择
+- DOMAIN-SUFFIX,nodeloc.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,nodebuf.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,supabase.io,🌏️ 节点选择
+- DOMAIN-SUFFIX,knightlab.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,zlib.missuo.me,🌏️ 节点选择
+- DOMAIN-SUFFIX,missuo.me,🌏️ 节点选择
+- DOMAIN-SUFFIX,fc2.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,manhuagui.com,🌏️ 节点选择
+- DOMAIN-SUFFIX,koofr.net,🌏️ 节点选择
+- DOMAIN-SUFFIX,tubly.download,🌏️ 节点选择
+
+  # --- 用户自定义国内直连域名 ---
+- DOMAIN-SUFFIX,888188.me,DIRECT
+- DOMAIN-SUFFIX,xub.ai,DIRECT
+- DOMAIN-SUFFIX,5-turbo.auto,DIRECT
+- DOMAIN-SUFFIX,chat2.5-turbo.autos,DIRECT
+- DOMAIN-SUFFIX,miao3.cn,DIRECT
+- DOMAIN-SUFFIX,clivia.fun,DIRECT
+- DOMAIN-SUFFIX,zcool.com.cn,DIRECT
+- DOMAIN-SUFFIX,ecylt.top,DIRECT
+- DOMAIN-SUFFIX,modown.cn,DIRECT
+- DOMAIN-SUFFIX,foxirj.com,DIRECT
+- DOMAIN-SUFFIX,aischat.xyz,DIRECT
+- DOMAIN-SUFFIX,new.oaifree.com,DIRECT
+- DOMAIN-SUFFIX,aliyy.cc,DIRECT
+- DOMAIN-SUFFIX,github.cn.com,DIRECT
+- DOMAIN-SUFFIX,fofa.info,DIRECT
+- DOMAIN-SUFFIX,cgltg.com,DIRECT
+- DOMAIN-SUFFIX,adobe.io,DIRECT
+- DOMAIN-SUFFIX,adobestats.io,DIRECT
+- DOMAIN-SUFFIX,theoremhub.asia,DIRECT
+- DOMAIN-SUFFIX,spaceship.com,DIRECT
+- DOMAIN-SUFFIX,jizhihezi.com,DIRECT
+- DOMAIN-SUFFIX,sharedchat.cc,DIRECT
+- DOMAIN-SUFFIX,linuxdo.org,DIRECT
+- DOMAIN-SUFFIX,hybgzs.com,DIRECT
+- DOMAIN-SUFFIX,muyuan.do,DIRECT
+
+  # --- 顶级域名分流规则 (置于特定规则之后，避免误伤) ---
+- DOMAIN-SUFFIX,io,DIRECT
+- DOMAIN-SUFFIX,org,🌏️ 节点选择
+
+# 屏蔽广告
+- RULE-SET,AdBlock,⛔️ 拦截广告
+- RULE-SET,reject,⛔️ 拦截广告
+- RULE-SET,BanAD,⛔️ 拦截广告
+- RULE-SET,BanProgramAD,⛔️ 拦截广告
+- RULE-SET,BanEasyList,⛔️ 拦截广告
+
+# 补丁规则
+- RULE-SET,gfw,🌏️ 节点选择
+- RULE-SET,proxy,🌏️ 节点选择
+- RULE-SET,tld-not-cn,🌏️ 节点选择
+- RULE-SET,ProxyGFWlist,🌏️ 节点选择
+- RULE-SET,ProxyClient,🌏️ 节点选择
+- RULE-SET,ChinaDomain,DIRECT,no-resolve
+- RULE-SET,ChinaCompanyIp,DIRECT,no-resolve
+- RULE-SET,cncidr,DIRECT,no-resolve
+- RULE-SET,China,DIRECT,no-resolve
+- GEOIP,lan,DIRECT,no-resolve
+
+# 默认规则
+- GEOIP,CN,DIRECT,no-resolve
+- GEOSITE,geolocation-cn,DIRECT
+- GEOSITE,geolocation-!cn,🌏️ 节点选择
+- MATCH,↪️ 漏网之鱼
+
+rule-providers:
+
+# Google 类
+  Google:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./ruleset/Google.yaml
+    url: https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Google/Google.yaml
+    interval: 86400
+  YouTube:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./ruleset/YouTube.yaml
+    url: https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/YouTube/YouTube.yaml
+    interval: 86400
+
+# AI 类
+  AI:
+    type: http
+    behavior: classical
+    path: ./ruleset/AI.yaml
+    url: https://cdn.jsdelivr.net/gh/ACL4SSR/ACL4SSR@master/Clash/Ruleset/AI.list
+    interval: 86400
+  OpenAI:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./ruleset/OpenAI.yaml
+    url: https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/OpenAI/OpenAI.yaml
+    interval: 86400
+  Gemini:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./ruleset/Gemini.yaml
+    url: https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Gemini/Gemini.yaml
+    interval: 86400
+  Claude:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./ruleset/Claude.yaml
+    url: https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Claude/Claude.yaml
+    interval: 86400
+
+# 广告类
+  AdBlock:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/AdBlock.yaml
+    url: https://cdn.jsdelivr.net/gh/zuluion/Clash-Template-Config@master/Filter/AdBlock.yaml
+    interval: 86400
+  BanAD:
+    type: http
+    behavior: domain
+    url: https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/BanAD.list
+    path: ./ruleset/BanAD.yaml
+    interval: 86400
+  BanProgramAD:
+    type: http
+    behavior: domain
+    url: https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/BanProgramAD.list
+    path: ./ruleset/BanProgramAD.yaml
+    interval: 86400
+  BanEasyList:
+    type: http
+    behavior: domain
+    url: https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/BanEasyList.list
+    path: ./ruleset/BanEasyList.yaml
+    interval: 86400
+  reject:
+    type: http
+    behavior: domain
+    url: https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt
+    path: ./ruleset/reject.yaml
+    interval: 86400
+
+# 补丁类
+  gfw:
+    type: http
+    behavior: domain
+    url: https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/gfw.txt
+    path: ./ruleset/gfw.yaml
+    interval: 86400
+  proxy:
+    type: http
+    behavior: domain
+    url: https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/proxy.txt
+    path: ./ruleset/proxy.yaml
+    interval: 86400
+  tld-not-cn:
+    type: http
+    behavior: domain
+    url: https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/tld-not-cn.txt
+    path: ./ruleset/tld-not-cn.yaml
+    interval: 86400
+  ProxyGFWlist:
+    type: http
+    behavior: domain
+    url: https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/ProxyGFWlist.list
+    path: ./ruleset/BanEasyList.yaml
+    interval: 86400
+  ProxyClient:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/ProxyClient.yaml
+    url: https://cdn.jsdelivr.net/gh/zuluion/Clash-Template-Config@master/Filter/ProxyClient.yaml
+  ChinaDomain:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/ChinaDomain.yaml
+    url: https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/ChinaDomain.list
+    interval: 86400
+  ChinaCompanyIp:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/ChinaCompanyIp.yaml
+    url: https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/ChinaCompanyIp.list
+    interval: 86400
+  China:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/China.yaml
+    url: https://cdn.jsdelivr.net/gh/zuluion/Clash-Template-Config@master/Filter/China.yaml
+    interval: 86400
+  cncidr:
+    type: http
+    behavior: ipcidr
+    url: https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt
+    path: ./ruleset/cncidr.yaml
+    interval: 86400
+
+# 服务类
+  telegramcidr:
+    type: http
+    behavior: ipcidr
+    url: https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/telegramcidr.txt
+    path: ./ruleset/telegramcidr.yaml
+    interval: 86400
+  PayPal:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/PayPal.yaml
+    url: https://cdn.jsdelivr.net/gh/zuluion/Clash-Template-Config@master/Filter/PayPal.yaml
+    interval: 86400
+  TikTok:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/TikTok.yaml
+    url: https://cdn.jsdelivr.net/gh/zuluion/Clash-Template-Config@master/Filter/TikTok.yaml
+    interval: 86400
+  IDM:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/IDM.yaml
+    url: https://cdn.jsdelivr.net/gh/zuluion/Clash-Template-Config@master/Filter/IDM.yaml
+
+# 流媒体
+  Amazon:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/Amazon.yaml
+    url: https://cdn.jsdelivr.net/gh/zuluion/Clash-Template-Config@master/Filter/Amazon.yaml
+    interval: 86400
+  Netflix:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/Netflix.yaml
+    url: https://cdn.jsdelivr.net/gh/zuluion/Clash-Template-Config@master/Filter/Netflix.yaml
+    interval: 86400
+  Spotify:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/Spotify.yaml
+    url: https://cdn.jsdelivr.net/gh/zuluion/Clash-Template-Config@master/Filter/Spotify.yaml
+    interval: 86400
+  DisneyPlus:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/DisneyPlus.yaml
+    url: https://cdn.jsdelivr.net/gh/zuluion/Clash-Template-Config@master/Filter/DisneyPlus.yaml
+  Hulu:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/Hulu.yaml
+    url: https://cdn.jsdelivr.net/gh/zuluion/Clash-Template-Config@master/Filter/Hulu.yaml
+  HBO:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/HBO.yaml
+    url: https://cdn.jsdelivr.net/gh/zuluion/Clash-Template-Config@master/Filter/HBO.yaml
+
+# 游戏类
+  Steam:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/Steam.yaml
+    url: https://cdn.jsdelivr.net/gh/zuluion/Clash-Template-Config@master/Filter/Steam.yaml
+    interval: 86400
+
+# Adobe
+  Adobe:
+    type: http
+    behavior: classical
+    format: yaml
+    path: ./rules/Adobe.yaml
+    url: https://quantil.jsdelivr.net/gh/ignaciocastro/a-dove-is-dumb@latest/127.txt
+    interval: 86400

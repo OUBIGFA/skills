@@ -63,17 +63,19 @@ def is_landing_role(proxy):
         proxy.get("_is_landing") or
         "_Lnd" in name or
         "_USAI" in name or
+        "_家宽" in name or
         proxy.get("dialer-proxy")
     )
 
 
 def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None,
-                      min_stable_mbps=DEFAULT_MIN_STABLE_MBPS, min_floor_mbps=DEFAULT_MIN_FLOOR_MBPS):
+                      min_stable_mbps=DEFAULT_MIN_STABLE_MBPS, min_floor_mbps=DEFAULT_MIN_FLOOR_MBPS, is_landing=False):
     """
     对单个节点进行 Key 前置跳板资格判定与综合打分。
+    is_landing: 流水线实测的落地角色 (直连不通、经前置才连通)；这类节点名称与配置里未必带落地标记，同样不能作前置。
     返回: (eligible: bool, score: float, reason: str)
     """
-    if is_landing_role(proxy):
+    if is_landing or is_landing_role(proxy):
         return False, 0.0, "落地节点不能作为前置跳板"
 
     proto = (proxy.get("type") or "").strip().lower()
@@ -142,9 +144,12 @@ def select_key_nodes(results, max_keys=10, per_country_cap=3, min_stable_mbps=DE
             egress_result=r.get("egress_result") or r,
             delay=r.get("delay"),
             min_stable_mbps=min_stable_mbps,
-            min_floor_mbps=min_floor_mbps
+            min_floor_mbps=min_floor_mbps,
+            is_landing=bool(r.get("is_landing"))
         )
         r["is_key"] = False
+        p["_is_key"] = False
+        p.pop("_key_score", None)
         r["key_score"] = score
         r["key_reason"] = reason
         if eligible:
@@ -190,7 +195,8 @@ def rank_front_candidates(results, min_stable_mbps, min_floor_mbps):
     for r in results:
         eligible, score, _ = evaluate_key_node(
             proxy=r["proxy"], speed_result=r.get("speed_result"), egress_result=r.get("egress_result") or r,
-            delay=r.get("delay"), min_stable_mbps=min_stable_mbps, min_floor_mbps=min_floor_mbps)
+            delay=r.get("delay"), min_stable_mbps=min_stable_mbps, min_floor_mbps=min_floor_mbps,
+            is_landing=bool(r.get("is_landing")))
         if eligible:
             ranked.append((score, float((r.get("speed_result") or {}).get("stable_mbps") or 0.0), r))
     ranked.sort(key=lambda item: (-item[0], -item[1]))

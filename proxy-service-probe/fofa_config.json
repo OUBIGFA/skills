@@ -1,0 +1,12 @@
+{
+  "token": "eyJhbGciOiJIUzUxMiIsImtpZCI6Ik5XWTVZakF4TVRkalltSTJNRFZsWXpRM05EWXdaakF3TURVMlkyWTNZemd3TUdRd1pUTmpZUT09IiwidHlwIjoiSldUIn0.eyJpZCI6NTcwODA0LCJtaWQiOjEwMDMzMTIyMSwidXNlcm5hbWUiOiJjbmZyZWUiLCJwYXJlbnRfaWQiOjAsImV4cCI6MTc5MDQ3MjUyNX0.5DByMCP-Bmk4cVGjroWrd7kc90wku6tn93d3Zw7_ZtT3esVKqhj0dAjImjk8M3dSjA44LlKr3T_Kq__p6WxNQg",
+  "email": "",
+  "key": "",
+  "quake_key": "de53be8b-399f-4f0a-a241-4a489575d7fe",
+  "proxy": "http://127.0.0.1:3067",
+  "page_size": 80,
+  "timeout": 12,
+  "max_nodes_per_subscription": 200,
+  "default_query": "(server=\"nginx\" || server=\"caddy\" || server=\"cloudflare\" || server=\"openresty\") && header=\"subscription-userinfo\" && body=\"proxies:\" && body!=\"<html\"",
+  "quake_default_query": "status_code: 200 AND NOT response: \"<html\" AND (response: \"nginx\" OR response: \"caddy\" OR response: \"cloudflare\" OR response: \"openresty\") AND (response: \"subscription-userinfo\" OR (response: \"upload=\" AND response: \"download=\")) AND response: \"proxies:\""
+}

@@ -1,16 +1,25 @@
 # -*- coding: utf-8 -*-
 """
-合并多个订阅/配置到一个底库。
+合并多个订阅/配置到一个目标订阅底库 (merge_configs.py)。
+同时原生支持 Clash YAML (.yaml/.yml) 与 sing-box JSON (.json) 两种核心格式。
 
-准则：
-- 默认主动去重：自动按连接身份指纹执行去重，确保底库无重复节点（加 --keep-dup 可保留重复）。
-- 默认主动剥离链式代理：自动移除代理节点上的 detour 属性，降级为直接连接（加 --keep-detour 可保留）。
-- 严格不主动重命名：节点原有 Tag 100% 原样保留，仅在显式传入 --rename 时才规范化命名。
-- 严格不主动排序：节点原有先后顺序 100% 原样保留，仅在显式传入 --sort 时才按地区排序。
+合流准则（用户核心契约）：
+- 默认合流模式：自动按连接身份指纹执行去重，确保底库无重复节点；
+  根据规则重新排序和编号，优先保留目标订阅的原节点以及原有编号，
+  新节点按国家在空缺/后续分配空号补齐，并按标准地区聚拢排序。
+- 中间插入模式 (--insert / --resort / --reorder-all)：
+  打破原有编号壁垒，完全按能力顺位 (✨️ > ❇️ > Key > Fast > _NF > _D+ > ♥️)
+  重排并从 1 重新依次递增连续编号。
 
 用法：
-  python merge_configs.py --base <底库.json> --add <订阅1.json> <订阅2.json> [--apply]
-  python merge_configs.py --base <底库.json> --add *.json --out <新文件.json> [--sort] [--rename] [--apply]
+  # 1. 默认合流模式 (优先保留 base.yaml 原节点及原编号，新节点补空号排位)
+  python merge_configs.py --base base.yaml --add probed_nodes.yaml --apply
+
+  # 2. 中间插入模式 (完全重排重编号)
+  python merge_configs.py --base base.yaml --add probed_nodes.yaml --insert --apply
+
+  # 3. 合并到新文件
+  python merge_configs.py --base base.yaml --add add1.yaml add2.json --out final.yaml --apply
 """
 import argparse
 import copy
@@ -115,70 +124,102 @@ def merge_config_data(base, additions, dedup=True, dedup_base=True,
 
 
 def main():
-    ap = argparse.ArgumentParser(description='合并多个订阅配置（默认自动去重与剥离 detour，严格不主动改名与排序）')
-    ap.add_argument('--base', required=True, help='底库配置（结果以它的设置为准）')
-    ap.add_argument('--add', nargs='+', required=True, help='要并入的配置，可多个')
-    ap.add_argument('--out', default=None, help='结果写到新文件（默认就地更新底库）')
+    ap = argparse.ArgumentParser(
+        description='合并多个订阅配置（默认优先保留底库原节点与编号，支持中间插入完全重排重编号）'
+    )
+    ap.add_argument('--base', required=True, help='底库目标配置（支持 .yaml / .yml / .json）')
+    ap.add_argument('--add', nargs='+', required=True, help='要并入的配置或节点源，可多个')
+    ap.add_argument('--out', default=None, help='结果写到新文件（默认就地更新底库并生成 .bak 备份）')
     ap.add_argument('--apply', action='store_true', help='实际写入（默认仅预览）')
+    ap.add_argument('--insert', '--resort', '--reorder-all', dest='insert_mode', action='store_true',
+                    help='中间插入模式：打破原有编号完全按能力与规则重排序并从 1 重新编号（默认模式优先保留底库原节点及编号）')
     ap.add_argument('--no-dedup', '--keep-dup', dest='dedup', action='store_false',
                     help='保留重复节点（默认自动按连接身份指纹去重）')
     ap.add_argument('--dedup', dest='dedup', action='store_true',
                     help='按连接身份指纹去重（默认即启用）')
-    ap.add_argument('--keep-base-dup', dest='dedup_base', action='store_false',
-                    help='保留底库原有的重复节点（默认一并清理）')
-    ap.add_argument('--keep-detour', dest='strip_detour', action='store_false',
-                    help='保留代理节点的 detour 链式代理（默认自动剥离降级直连）')
-    ap.add_argument('--strip-detour', dest='strip_detour', action='store_true',
-                    help='移除代理节点的 detour 链式前置（默认即启用）')
-    ap.add_argument('--sort', action='store_true', help='合并后按地区排序（默认保持原序，严格按需）')
-    ap.add_argument('--rename', action='store_true', help='合并后按地区规范化重命名（默认保持原名，严格按需）')
-    ap.set_defaults(dedup=True, dedup_base=True, strip_detour=True)
+    ap.set_defaults(dedup=True, insert_mode=False)
     a = ap.parse_args()
 
+    from core.merger import merge_clash_proxies, merge_into_clash_config, merge_into_target_file
+    from core.parsers import load_proxies
+
     base_path = os.path.abspath(a.base)
-    base, nodes = load_nodes(base_path)
-    if not nodes:
-        print('底库里没有节点')
+    if not os.path.isfile(base_path):
+        print(f'错误: 底库目标文件不存在: {base_path}')
         sys.exit(1)
-    print(f'底库 {os.path.basename(base_path)}：{len(nodes)} 个节点')
+
+    with open(base_path, 'r', encoding='utf-8-sig') as f:
+        head_sample = f.read(512).strip()
+    is_clash_yaml = not (base_path.endswith('.json') or head_sample.startswith('{'))
+
+    # 读取待并入配置中的所有节点
     additions = []
     for path in a.add:
         p = os.path.abspath(path)
         if os.path.exists(p) and os.path.samefile(p, base_path):
             print(f'{os.path.basename(p)}：与底库是同一个文件，跳过')
             continue
-        _, ns = load_nodes(p)
-        additions.append(ns)
-        print(f'{os.path.basename(p)}：读取 {len(ns)} 个节点')
+        nodes = load_proxies(p)
+        print(f'{os.path.basename(p)}：解析到 {len(nodes)} 个候选节点')
+        additions.extend(nodes)
 
-    result = merge_config_data(
-        base, additions, dedup=a.dedup, dedup_base=a.dedup_base,
-        strip_detour=a.strip_detour, do_sort=a.sort, do_rename=a.rename,
-    )
-    if result['removed']:
-        print(f'\n[底库去重] 清理 {len(result["removed"])} 个重复节点：')
-        for old, kept in result['removed']:
-            print(f'  {old}  ≡  {kept}')
-    if result['skipped']:
-        print(f'\n[跨文件去重] 跳过 {len(result["skipped"])} 个重复节点：')
-        for old, kept in result['skipped']:
-            print(f'  {old}  ≡  {kept}')
-    total = len([o for o in base['outbounds'] if o.get('type') in NODE_TYPES])
-    print(f'\n合并结果：新增 {len(result["added"])} 个，共 {total} 个节点')
-
-    if not a.apply:
-        print('\n[预览模式] 未写入。确认无误后加 --apply')
+    if not additions:
+        print('警告: 未从待并入配置中读取到有效节点。')
         return
 
-    dst = os.path.abspath(a.out) if a.out else base_path
-    changed, backup = write_config(
-        dst, base, backup=os.path.exists(dst), style_from=base_path,
-    )
-    if changed:
-        suffix = f'；备份: {os.path.basename(backup)}' if backup else ''
-        print(f'合并写入并校验通过：{dst}{suffix}')
+    mode_desc = '【中间插入模式】打破原编号，完全按综合能力重排序并重新连续编号' if a.insert_mode else '【默认合流模式】优先保留目标订阅的原节点以及原有编号，新节点补空号排位'
+    print(f'\n[*] 合流执行模式: {mode_desc}')
+    print(f'[*] 底库目标文件: {base_path} ({"Clash YAML" if is_clash_yaml else "sing-box JSON"})')
+
+    if is_clash_yaml:
+        from core.renderer import read_template_text
+        _, _, base_data = read_template_text(base_path)
+        base_proxies = base_data.get("proxies") or []
+        print(f'[*] 底库现有节点: {len(base_proxies)} 个')
+
+        merged, stats = merge_clash_proxies(
+            base_proxies, additions,
+            insert_mode=a.insert_mode,
+            dedup=a.dedup
+        )
+
+        if stats['skipped']:
+            print(f'\n[指纹去重] 过滤 {len(stats["skipped"])} 个重复节点：')
+            for new_tag, kept_tag in stats['skipped'][:10]:
+                print(f'  {new_tag}  ≡  {kept_tag}')
+            if len(stats['skipped']) > 10:
+                print(f'  ... 等共 {len(stats["skipped"])} 项')
+
+        print(f'\n合流统计结果: 底库原有 {stats["base_count"]} 个，新增入库 {stats["added_count"]} 个，合流后总计 {stats["total_count"]} 个节点')
+
+        if not a.apply:
+            print('\n[预览模式] 未实际写回。确认无误后添加 --apply 执行写入。')
+            return
+
+        dest = os.path.abspath(a.out or base_path)
+        out_file, _ = merge_into_clash_config(
+            base_path=base_path,
+            additions=additions,
+            output_path=dest,
+            insert_mode=a.insert_mode,
+            dedup=a.dedup
+        )
+        print(f'[✓] 合流成功写入文件: {out_file}')
+
     else:
-        print('合并结果无变化，未写入，也未生成备份')
+        # sing-box JSON 模式
+        out_file, stats = merge_into_target_file(
+            target_path=base_path,
+            new_nodes_or_file=additions,
+            output_path=a.out,
+            insert_mode=a.insert_mode,
+            dedup=a.dedup
+        )
+        print(f'\n合流统计结果: 底库原有 {stats["base_count"]} 个，新增入库 {stats["added_count"]} 个，合流后总计 {stats["total_count"]} 个节点')
+        if not a.apply:
+            print('\n[预览模式] 未实际写回。确认无误后添加 --apply 执行写入。')
+            return
+        print(f'[✓] 合流成功写入文件: {out_file}')
 
 
 if __name__ == '__main__':

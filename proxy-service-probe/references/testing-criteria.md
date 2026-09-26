@@ -11,7 +11,7 @@
   - IPv4: `https://api.ipify.org?format=json`, `https://ipv4.icanhazip.com`
   - IPv6: `https://api6.ipify.org?format=json`；Cloudflare trace 返回 IPv6 时也单独归入 IPv6。
 - **跑机基线出口（Runner Baseline）**：
-  - 在探测任何节点前，必须先获取本地/跑机自身的直连公网出口 IP（`probe_egress(None)`）。
+  - 跑机基线在后台与测活并行获取：经绑定物理网卡的 mihomo DIRECT 探测；服务首次核对出口时等待基线结果，不把 `probe_egress(None)` 的系统路由出口当作物理直连。
   - 若被测节点返回的出口 IP 与跑机自身直连出口一致（`runner_ip_match=True`），说明代理穿透失败或流量走直连泄露，判定为无效节点。
   - 基线必须与节点测试走同一路径：经 mihomo DIRECT 监听并绑定同一物理网卡测得（`--direct-proxy` 显式指定时以其为准）。系统路由出口在开启 TUN/系统代理（如 Karing）时等于本机正在使用的节点出口，只记录不作基线，否则该节点会被误判“出口与本机重合”。物理直连基线测不到时不做重合淘汰并给出警告。
 - **出口稳定性（Stability）**：
@@ -52,17 +52,21 @@
 
 ## 2. AI 平台解锁检测 (AI Unlock)
 
-三大主流平台独立检验，所有接口要求目标服务本身返回“地区允许”证据，杜绝因凭据失效或网络错误导致的误判。
+六大主流顶级 AI 平台独立检验，所有接口要求目标服务本身返回“地区允许”或“鉴权穿透”证据，杜绝因凭据失效或网络错误导致的误判。并发线程池探测保证单节点检测耗时控制在 1.5~2.5 秒内。
 
-| 平台 | 探测端点 | 判定依据 | 失败/封锁判定 |
+| 平台 | 探测端点 | 判定依据 (`passed`) | 失败/封锁判定 (`blocked`) |
 |---|---|---|---|
 | **ChatGPT (OpenAI)** | 1. 合规接口：`https://api.openai.com/compliance/cookie_requirements`<br>2. 状态接口：`https://ios.chat.openai.com/public-api/mobile/server_status/v1` (UA: `ChatGPT/1.2024.000`)<br>3. 模型接口：`https://api.openai.com/v1/models` | 合规接口返回 `200` 且正文含 `cookie_consent_required` 证明地区允许；且状态接口返回 `200` 或模型接口返回 `401`（未授权证明连通）即判定解锁。 | 合规接口返回 `403 unsupported_country_region_territory` 为地区封锁。 |
 | **Claude (Anthropic)** | 模型端点：`https://api.anthropic.com/v1/models` | 返回 `401`（Unauthorized）或 `200` 即判定解锁（证明成功到达模型网关）。 | 返回 `403` 且正文含 `Request not allowed` 判定为地区封锁。 |
 | **Gemini (Google)** | 页面端点：`https://gemini.google.com/` | 正文解析到标志 `[45631641,null,true]` 且地区非大陆（非 `CN`/`CHN`）。 | 正文含可用性标志为 `false`、正文包含 `not supported in your country` 或地区码为 `CN`。 |
+| **Groq** *(新增)* | 1. `https://console.groq.com/`<br>2. `https://chat.groq.com/`<br>3. `https://api.groq.com/openai/v1/models` | Console 与 Chat 均返回 `200` 且无阻断正文；模型接口返回 `401`（未授权提示 `invalid_api_key`）或 `200`。 | 任一端点返回 `403` 且正文含 `Access denied. Please check your network settings.`，或遭遇 Cloudflare 质询盾。 |
+| **Hugging Face** *(新增)* | 1. `https://huggingface.co/`<br>2. `https://huggingface.co/api/models?limit=1` | 首页返回 `200` 且含 `huggingface` 特征；且轻量 API 返回 `200` 并成功解析模型数据 JSON。 | 状态码 `403`、`1020`、出现 Cloudflare 质询拦截特征或 GFW SNI 重置。 |
+| **Grok (xAI)** *(新增)* | 1. `https://grok.com/`<br>2. `https://api.x.ai/v1/models` | `grok.com` 返回 `200` 且正文含 `cdn.grok.com` 或 `grok` 标志；无 CF 质询头；模型接口返回 `401`（未授权提示 `No credentials presented`）或 `200`。 | 超时（GFW 阻断）、返回 `403`/`451`、或响应含 `cf-mitigated: challenge` / `Just a moment` / `not available in your region`。 |
 
-- **AI 三大全通条件**：
-  出口稳定 + 真实出口非送中 + ChatGPT 通过 + Claude 通过 + Gemini 通过。
-  满足此条件的节点获赠 **`❇️`** 徽章。
+- **AI 服务全解锁条件 (`❇️` 徽章)**：
+  出口稳定 + 真实出口非送中 + ChatGPT 通过 + Claude 通过 + Gemini 通过 + Hugging Face 通过 + Grok 通过（剔除 Groq，5 项全通即授予 `❇️`）。
+- **综合全通能力徽章 (`✨️` 徽章)**：
+  必须同时满足：**AI 五大核心全通 + 成功解锁 Groq + YouTube 免登实播通过 + 四站免盾通过**。只有解锁 Groq 才能给 `✨️`！
 
 ---
 
@@ -71,10 +75,10 @@
 非普通 API 连通性测试，而是验证无 Cookie、无登录状态下的真实媒体流播放与抗机器人风控能力。
 
 - **浏览器环境**：Playwright 驱动完整版 Chromium（`channel="chromium"`），关闭自动化特征（`--disable-blink-features=AutomationControlled`，`--disable-quic`，locale: `en-US`）。
-- **测试样本视频**：`M7lc1UVf-VE`, `aqz-KE-bpKQ`, `jNQXAC9IVRw`。
+- **测试样本视频**：`jNQXAC9IVRw`, `YE7VzlLtp-4`, `M7lc1UVf-VE`。
 - **HTML5 播放观察者（Playback Observer）**：
   - 动态监听 `<video>` 元素的播放事件与时间戳更新。
-  - **达标条件**：`currentTime` 连续播放累计时长 `>= 10.0` 秒，且非停滞缓冲（`readyState >= 3`）。
+  - **达标条件**：健康播放累计 `>= 10.0` 秒，结束时非停滞且 `readyState >= 3`；进度变化须与墙钟一致，跳进度、缓冲、广告不计时。
   - **风控与限制判定**：
     - `bot_required`：页面提示 "Sign in to confirm you’re not a bot" 或出现 Turnstile/Captcha 人机验证。
     - `sign_in_required`：需要登录才能观看。
@@ -82,7 +86,7 @@
     - `playback_start_failed`：无法起播。
 - **双向出口复核（Double Egress Check）**：
   - 播放前：浏览器 Context 访问出口检测接口，确认当前浏览器 IP 确实等于被测节点 IP。
-  - 播放后：再次核对浏览器出口 IP，若前后不一致或与节点 IP 不符，判定为 `browser_egress_unverified`，防止流量被本地直连或分流绕过。
+  - 播放后：再次核对浏览器出口 IP，前后任一缺失、变化或与节点 IP 不符都判 `browser_egress_unverified`；不从 HTML 错误页中抽取 IP。回显站失败时尝试独立 HTTPS 端点，并记录 `youtube_details.egress`。
 - **通过标准**：至少成功实播通过 **2 个** 独立样本视频。
 
 ---
@@ -126,7 +130,7 @@
 
 ### 5.3 持续下载测速规范 (按真实 YouTube 播放校准，主动要求时启用)
 - **触发条件**：仅在用户显式要求测速或传入 `--speed-test` 时激活；本地与 GitHub Actions 同一套判据。
-- **执行时机**：每批节点的服务测试（含浏览器实播）全部结束、仍在该批临时监听存活期间，独立进入测速阶段；本地严格串行（`--speed-concurrency 1`），云端 2 路并发。
+- **执行时机**：两种内核共用双线调度。直连节点一判活即入服务线与测速线，不等整批；本地测速严格串行（`--speed-concurrency 1`），云端默认 2 路。任务互斥保护节点及其前置，受并行检测干扰且未达标时延后到服务线结束再测。落地测速等待直连前置最终带宽及出口证据（含空闲重测），不把“前置还没测完”误作“没有前置”。
 - **测速目标**（`--speed-target` 可指定单一 URL 覆盖）：
   1. `https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg`（约 280MB，Google 边缘 CDN，与 YouTube 同网络）；
   2. `https://speed.cloudflare.com/__down?bytes=50000000`（仅当 Google 目标连不上或返回非二进制载荷时回退）。
@@ -163,17 +167,15 @@ Key 节点是专门用于在落地节点（`_Lnd`/`_USAI`）建立多跳链路�
   - 亚太核心区加分：香港（HK）、台湾（TW）、日本（JP）、新加坡（SG）、韩国（KR）优先加分；
   - 综合评分前 N 名授予 `is_key = True`，并施加单国家配额（默认每国最多 3 个）。
 
-### 5.5 直连 / 需前置节点区分与落地测试 (`probe_services.py` 测速模式)
-- **第一轮直连**：所有节点直连测试（节点自带的 `dialer-proxy` 在测试监听中剥离）。直连可通的节点为直连路径；原名声明为落地（`_Lnd`/`_USAI`/`dialer-proxy`）的仍保持落地角色。
-- **需前置候选**：直连拿不到公网出口的节点（`direct_unreachable`）。出口与本机重合、断流等其他淘汰原因不参与重测。
-- **前置选择**（第一轮全部完成、Key 评选之后）：
-  1. 有 Key：用评分最高的 Key；
-  2. 无 Key：从具备前置资格（非 HTTP/SOCKS、非落地、出口有效）且测速未被淘汰（稳态 >= 6 Mbps、最低 >= 3 Mbps，约 1080p 流畅）的直连节点中，按 Key 同一评分规则取最高者；前 10 名标记为备用前置；
-  3. 两者都没有：不重测，淘汰原因写明"无合格前置可用于验证"。
-- **落地节点的速度淘汰**：经 Key 前置测得的链路速度代表落地节点能力，稳态 < 6 Mbps 同样删除；经备用前置或本机客户端端口时链路受前置限制，只记录测速、不按速度删除。
-- **经前置重测**：候选节点以前置为 `dialer-proxy` 链式测试，执行与直连节点相同的全部服务测试和测速（测速反映整条链路）。出口必须不同于本机出口与前置自身出口，否则判为"流量未经该节点转发"淘汰。通过者 `is_landing=True`、`path=front`，报告记录 `front_node`，命名加 `_Lnd`/`_USAI`，配置中注入 `dialer-proxy: 🛡️ Front前置`。
-- **未开启测速**：没有带宽证据就无法选前置，只提示直连不可达节点可能需要前置。
-- **sing-box 备用流水线**：`probe_singbox.py` 采用同一规则（sing-box 以节点出站作 `detour` 前置），前置优先级为 Key → 备用前置 → `--front-proxy` 本机客户端端口（默认 127.0.0.1:3067，未监听即跳过，未开启测速时唯一可用的前置）。落地节点的浏览器实测沿用同一前置；无可用前置时落地节点跳过浏览器实测。直连初筛整批兜底上限为 120 秒（属地多源复核经慢链路可达 20 秒左右）。
+### 5.5 直连 / 需前置节点区分与落地测试（两条流水线一致）
+- **首轮测活**：全部节点直连并发探测，每节点最多 3 次、轮换 Google/Cloudflare/Apple 端点；原 `dialer-proxy` / `detour` 在临时直连监听中剥离。声明的落地角色仍保留。
+- **第二轮**：首轮直连不通的节点以并发 4 直连复测，同时在本地经最多 3 个不同服务器的已判活前置探测。前置须具备协议资格、非落地，按延迟择优；UDP 节点优先用支持 UDP 的前置。云端或 `--no-landing-probe` 不做链式探测。
+- **即时服务检测**：任一前置测通即能放行声明落地节点；未声明者优先等待直连复测结论。经前置成功的节点设置 `path=front`、`is_landing=True`，立即执行完整服务；该前置拿不到公网出口时换剩余备用前置，最多合计 3 个。实际前置写入 `front_node`，回退写入 `front_attempts`。
+- **落地下载测速**：等待直连测速（含空闲重测）与出口证据，按 Key 候选档 → 备用档（稳态 >= 6 Mbps、最低 >= 3 Mbps）评分选最多 3 个不同服务器前置；经某前置没有样本时换下一个，成功前置写入 `speed_front_node`。没有合格前置则明确记为跳过，不能伪称已测速。
+- **统一核对**：服务、测速结束后核验出口与本机/服务前置是否重合，再淘汰并评 Key。实测落地即使原名无 `_Lnd` 也绝不能成为 Key。经最终入选 Key 的前置测得低速按同一门槛淘汰；经非 Key 前置时只记录链路速度，不将前置瓶颈归咎于落地。
+- **可用成品约束**：最终前置池必须包含至少一个本轮已验证能承载该落地的保留前置；唯一前置被淘汰时，不能改用未经验证的 HTTP 或 DIRECT 后照常导出落地。无 Key 时保留的备用前置写入默认前置池。
+- **未开启测速**：仍可用已判活、具备协议资格的前置做链式测活与服务检测，但不授予 Key/Fast。两入口都不再使用本机客户端端口作为隐藏兜底。
+- **报告与失败**：报告保留测试维度、并发参数、逐节点服务/测速完成状态及 AI、YouTube、免盾证据；全部淘汰时仍写报告、返回非零、不导出空配置。
 
 ---
 

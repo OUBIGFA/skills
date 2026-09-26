@@ -1,0 +1,93 @@
+INFO[0000] network: updated default interface WLAN, index 11
+INFO[0000] inbound/mixed[in_0]: tcp server started at 127.0.0.1:1270
+INFO[0000] inbound/mixed[in_1]: tcp server started at 127.0.0.1:1271
+INFO[0000] inbound/mixed[in_2]: tcp server started at 127.0.0.1:1272
+INFO[0000] inbound/mixed[in_3]: tcp server started at 127.0.0.1:1273
+INFO[0000] inbound/mixed[in_4]: tcp server started at 127.0.0.1:1274
+INFO[0000] inbound/mixed[in_5]: tcp server started at 127.0.0.1:1275
+INFO[0000] inbound/mixed[in_6]: tcp server started at 127.0.0.1:1276
+INFO[0000] inbound/mixed[in_7]: tcp server started at 127.0.0.1:1277
+INFO[0000] inbound/mixed[in_8]: tcp server started at 127.0.0.1:1278
+INFO[0000] inbound/mixed[in_9]: tcp server started at 127.0.0.1:1279
+INFO[0000] inbound/mixed[in_10]: tcp server started at 127.0.0.1:1280
+INFO[0000] inbound/mixed[in_11]: tcp server started at 127.0.0.1:1281
+INFO[0000] network: updated network environment: gateway 192.168.31.1, gateway_mac 88:c3:97:33:ac:e7
+INFO[0000] sing-box started (0.03s)
+INFO[0000] [1201276676 0ms] inbound/mixed[in_11]: inbound connection from 127.0.0.1:12136
+INFO[0000] [984453979 0ms] inbound/mixed[in_0]: inbound connection from 127.0.0.1:12150
+INFO[0000] [984453979 1ms] inbound/mixed[in_0]: inbound connection to www.gstatic.com:443
+INFO[0000] [984453979 2ms] outbound/vless[node_0]: outbound connection to www.gstatic.com:443
+INFO[0000] [2235474128 0ms] inbound/mixed[in_2]: inbound connection from 127.0.0.1:12152
+INFO[0000] [4237663998 0ms] inbound/mixed[in_1]: inbound connection from 127.0.0.1:12153
+INFO[0000] [2235474128 1ms] inbound/mixed[in_2]: inbound connection to www.gstatic.com:443
+INFO[0000] [2235474128 1ms] outbound/http[node_2]: outbound connection to www.gstatic.com:443
+INFO[0000] [4291657134 0ms] inbound/mixed[in_3]: inbound connection from 127.0.0.1:12154
+INFO[0000] [4237663998 2ms] inbound/mixed[in_1]: inbound connection to www.gstatic.com:443
+INFO[0000] [4237663998 2ms] outbound/vless[node_1]: outbound connection to www.gstatic.com:443
+INFO[0000] [2601876436 0ms] inbound/mixed[in_4]: inbound connection from 127.0.0.1:12155
+INFO[0000] [4041198054 0ms] inbound/mixed[in_5]: inbound connection from 127.0.0.1:12158
+INFO[0000] [477721807 0ms] inbound/mixed[in_6]: inbound connection from 127.0.0.1:12159
+INFO[0000] [4291657134 1ms] inbound/mixed[in_3]: inbound connection to www.gstatic.com:443
+INFO[0000] [4291657134 1ms] outbound/vless[node_3]: outbound connection to www.gstatic.com:443
+INFO[0000] [2601876436 1ms] inbound/mixed[in_4]: inbound connection to www.gstatic.com:443
+INFO[0000] [2601876436 1ms] outbound/vmess[node_4]: outbound connection to www.gstatic.com:443
+INFO[0000] [4041198054 1ms] inbound/mixed[in_5]: inbound connection to www.gstatic.com:443
+INFO[0000] [477721807 1ms] inbound/mixed[in_6]: inbound connection to www.gstatic.com:443
+INFO[0000] [4041198054 1ms] outbound/trojan[node_5]: outbound connection to www.gstatic.com:443
+INFO[0000] [477721807 1ms] outbound/vless[node_6]: outbound connection to www.gstatic.com:443
+INFO[0000] [3192092633 0ms] inbound/mixed[in_7]: inbound connection from 127.0.0.1:12162
+INFO[0000] [3192092633 0ms] inbound/mixed[in_7]: inbound connection to www.gstatic.com:443
+INFO[0000] [3192092633 0ms] outbound/shadowsocks[node_7]: outbound connection to www.gstatic.com:443
+INFO[0000] [682231448 0ms] inbound/mixed[in_8]: inbound connection from 127.0.0.1:12168
+INFO[0000] [682231448 0ms] inbound/mixed[in_8]: inbound connection to www.gstatic.com:443
+INFO[0000] [682231448 0ms] outbound/trojan[node_8]: outbound connection to www.gstatic.com:443
+INFO[0000] [96917377 0ms] inbound/mixed[in_9]: inbound connection from 127.0.0.1:12170
+INFO[0000] [96917377 0ms] inbound/mixed[in_9]: inbound connection to www.gstatic.com:443
+INFO[0000] [96917377 0ms] outbound/http[node_9]: outbound connection to www.gstatic.com:443
+INFO[0000] [791331960 0ms] inbound/mixed[in_10]: inbound connection from 127.0.0.1:12173
+INFO[0000] [791331960 4ms] inbound/mixed[in_10]: inbound connection to www.gstatic.com:443
+INFO[0000] [791331960 4ms] outbound/http[node_10]: outbound connection to www.gstatic.com:443
+INFO[0000] [25765391 0ms] inbound/mixed[in_11]: inbound connection from 127.0.0.1:12175
+INFO[0000] [25765391 0ms] inbound/mixed[in_11]: inbound connection to www.gstatic.com:443
+INFO[0000] [25765391 0ms] outbound/trojan[node_11]: outbound connection to www.gstatic.com:443
+ERROR[0001] [4291657134 724ms] connection: open connection to www.gstatic.com:443 using outbound/vless[node_3]: EOF
+ERROR[0001] [4237663998 727ms] connection: open connection to www.gstatic.com:443 using outbound/vless[node_1]: EOF
+INFO[0001] [138490536 0ms] inbound/mixed[in_1]: inbound connection from 127.0.0.1:6241
+INFO[0001] [138490536 2ms] inbound/mixed[in_1]: inbound connection to cp.cloudflare.com:443
+INFO[0001] [138490536 2ms] outbound/vless[node_1]: outbound connection to cp.cloudflare.com:443
+INFO[0002] [3517803293 0ms] inbound/mixed[in_3]: inbound connection from 127.0.0.1:6248
+INFO[0002] [3517803293 0ms] inbound/mixed[in_3]: inbound connection to cp.cloudflare.com:443
+INFO[0002] [3517803293 0ms] outbound/vless[node_3]: outbound connection to cp.cloudflare.com:443
+ERROR[0002] [138490536 556ms] connection: open connection to cp.cloudflare.com:443 using outbound/vless[node_1]: EOF
+ERROR[0002] [3517803293 531ms] connection: open connection to cp.cloudflare.com:443 using outbound/vless[node_3]: EOF
+ERROR[0005] [984453979 5.2s] connection: open connection to www.gstatic.com:443 using outbound/vless[node_0]: read tcp 10.20.0.1:12151->198.51.100.21:443: wsarecv: An existing connection was forcibly closed by the remote host.
+ERROR[0005] [477721807 5.15s] connection: open connection to www.gstatic.com:443 using outbound/vless[node_6]: read tcp 10.20.0.1:12163->172.64.145.202:2087: wsarecv: An existing connection was forcibly closed by the remote host.
+ERROR[0005] [2235474128 5.15s] connection: open connection to www.gstatic.com:443 using outbound/http[node_2]: read tcp 10.20.0.1:12165->61.223.76.156:1443: wsarecv: An existing connection was forcibly closed by the remote host.
+ERROR[0005] [4041198054 5.15s] connection: open connection to www.gstatic.com:443 using outbound/trojan[node_5]: read tcp 10.20.0.1:12164->203.0.113.88:443: wsarecv: An existing connection was forcibly closed by the remote host.
+ERROR[0005] [25765391 5.8s] connection: open connection to www.gstatic.com:443 using outbound/trojan[node_11]: read tcp 10.20.0.1:12177->45.80.111.7:443: wsarecv: An existing connection was forcibly closed by the remote host.
+INFO[0005] [1618578904 0ms] inbound/mixed[in_0]: inbound connection from 127.0.0.1:2772
+INFO[0005] [1618578904 0ms] inbound/mixed[in_0]: inbound connection to cp.cloudflare.com:443
+INFO[0005] [1618578904 0ms] outbound/vless[node_0]: outbound connection to cp.cloudflare.com:443
+INFO[0005] [2996326368 0ms] inbound/mixed[in_6]: inbound connection from 127.0.0.1:2785
+INFO[0005] [2996326368 0ms] inbound/mixed[in_6]: inbound connection to cp.cloudflare.com:443
+INFO[0005] [2996326368 0ms] outbound/vless[node_6]: outbound connection to cp.cloudflare.com:443
+INFO[0005] [1494949499 0ms] inbound/mixed[in_2]: inbound connection from 127.0.0.1:2788
+INFO[0005] [1494949499 1ms] inbound/mixed[in_2]: inbound connection to cp.cloudflare.com:443
+INFO[0005] [1494949499 1ms] outbound/http[node_2]: outbound connection to cp.cloudflare.com:443
+INFO[0005] [1570498722 0ms] inbound/mixed[in_5]: inbound connection from 127.0.0.1:2787
+INFO[0005] [1570498722 0ms] inbound/mixed[in_5]: inbound connection to cp.cloudflare.com:443
+INFO[0005] [1570498722 0ms] outbound/trojan[node_5]: outbound connection to cp.cloudflare.com:443
+INFO[0005] [3541680164 0ms] inbound/mixed[in_7]: inbound connection from 127.0.0.1:2786
+INFO[0005] [3541680164 0ms] inbound/mixed[in_7]: inbound connection to cp.cloudflare.com:443
+INFO[0005] [3541680164 0ms] outbound/shadowsocks[node_7]: outbound connection to cp.cloudflare.com:443
+INFO[0005] [10511371 0ms] inbound/mixed[in_11]: inbound connection from 127.0.0.1:13728
+INFO[0005] [10511371 0ms] inbound/mixed[in_11]: inbound connection to cp.cloudflare.com:443
+INFO[0005] [10511371 0ms] outbound/trojan[node_11]: outbound connection to cp.cloudflare.com:443
+INFO[0009] [1554917486 0ms] inbound/mixed[in_4]: inbound connection from 127.0.0.1:2807
+INFO[0009] [1554917486 1ms] inbound/mixed[in_4]: inbound connection to cp.cloudflare.com:443
+INFO[0009] [1554917486 1ms] outbound/vmess[node_4]: outbound connection to cp.cloudflare.com:443
+ERROR[0010] [1618578904 5.2s] connection: open connection to cp.cloudflare.com:443 using outbound/vless[node_0]: read tcp 10.20.0.1:2780->198.51.100.21:443: wsarecv: An existing connection was forcibly closed by the remote host.
+ERROR[0010] [2996326368 5.4s] connection: open connection to cp.cloudflare.com:443 using outbound/vless[node_6]: read tcp 10.20.0.1:2789->172.64.145.202:2087: wsarecv: An existing connection was forcibly closed by the remote host.
+ERROR[0010] [1494949499 5.4s] connection: open connection to cp.cloudflare.com:443 using outbound/http[node_2]: read tcp 10.20.0.1:7977->61.223.76.156:1443: wsarecv: An existing connection was forcibly closed by the remote host.
+ERROR[0010] [1570498722 5.4s] connection: open connection to cp.cloudflare.com:443 using outbound/trojan[node_5]: read tcp 10.20.0.1:7978->203.0.113.88:443: wsarecv: An existing connection was forcibly closed by the remote host.
+ERROR[0010] [10511371 5.2s] connection: open connection to cp.cloudflare.com:443 using outbound/trojan[node_11]: read tcp 10.20.0.1:13730->45.80.111.7:443: wsarecv: An existing connection was forcibly closed by the remote host.

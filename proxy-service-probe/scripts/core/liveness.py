@@ -10,7 +10,8 @@
 在此之上为避免误杀:
 - 轮换 3 个不同运营方的端点 (Google / Cloudflare / Apple)，单一站点被节点屏蔽或抖动不影响判定;
 - 超时按跨境高延迟与多跳握手放宽 (直连 8s、链式 10s)，失败之间短暂间隔再试;
-- 直连全部失败的节点 (仅本地) 经多个不同服务器的已判活前置并行重试，任一前置测通即判为需前置的落地候选。
+- 直连全部失败的节点 (仅本地) 经多个不同服务器的已判活前置并行重试，任一前置测通即判为需前置的落地候选;
+  未判不通的其余前置留作该节点服务检测的备用 (某前置到该节点不通时换下一个，合计最多 3 个)。
 """
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -80,16 +81,16 @@ def uses_udp_transport(proxy):
     return (proxy.get("type") or "").strip().lower() in UDP_TRANSPORT_TYPES
 
 
-def rank_chain_fronts(alive_rows, landing_proxy, limit=MAX_CHAIN_FRONTS):
+def pick_chain_fronts(ranked_rows, landing_proxy, limit=MAX_CHAIN_FRONTS):
     """
-    为直连不通的节点挑选测活用前置: 已直连判活、协议可作前置、非落地的节点，按测活延迟升序；
-    同一服务器只取一个 (避免多个前置其实是同一台机器)；被测节点走 UDP 时优先声明支持 UDP 的前置。
+    从已按偏好排好序的行中为需前置的节点取最多 limit 个前置: 协议可作前置、非落地，同一服务器只取一个
+    (避免多个前置其实是同一台机器)；被测节点走 UDP 时把声明支持 UDP 的前置提前 (其余保持原偏好顺序)。
     """
-    candidates = [r for r in alive_rows if is_front_capable(r["proxy"])]
     needs_udp = uses_udp_transport(landing_proxy)
-    candidates.sort(key=lambda r: (needs_udp and not r["proxy"].get("udp"), r["liveness"]["latency_ms"] or 1e9))
+    ordered = sorted((r for r in ranked_rows if is_front_capable(r["proxy"])),
+                     key=lambda r: needs_udp and not r["proxy"].get("udp"))
     chosen, servers = [], set()
-    for row in candidates:
+    for row in ordered:
         server = (row["proxy"].get("server"), row["proxy"].get("port"))
         if server in servers:
             continue
@@ -98,6 +99,12 @@ def rank_chain_fronts(alive_rows, landing_proxy, limit=MAX_CHAIN_FRONTS):
         if len(chosen) >= limit:
             break
     return chosen
+
+
+def rank_chain_fronts(alive_rows, landing_proxy, limit=MAX_CHAIN_FRONTS):
+    """为直连不通的节点挑选测活用前置: 已直连判活的节点按测活延迟升序，其余规则见 pick_chain_fronts。"""
+    by_latency = sorted(alive_rows, key=lambda r: r["liveness"]["latency_ms"] or 1e9)
+    return pick_chain_fronts(by_latency, landing_proxy, limit)
 
 
 def check_alive_via_fronts(port_by_front, **options):

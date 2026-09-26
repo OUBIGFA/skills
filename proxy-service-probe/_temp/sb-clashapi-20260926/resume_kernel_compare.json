@@ -1,0 +1,542 @@
+{
+  "input_sha256": "3ecd167efef58099c8d6f328dd5533affea2d59b3e4c2d512b13194446388049",
+  "iface": "WLAN",
+  "seconds": 33.4,
+  "skipped": [],
+  "nodes": [
+    {
+      "name": "🇭🇰 香港_99_FAKE_D+",
+      "type": "vless",
+      "network": null,
+      "mihomo": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      },
+      "sing-box": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      }
+    },
+    {
+      "name": "🇭🇰 香港_2_Lnd",
+      "type": "vless",
+      "network": null,
+      "mihomo": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      },
+      "sing-box": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      }
+    },
+    {
+      "name": "🇹🇼 台湾_高雄_1_家宽",
+      "type": "http",
+      "network": null,
+      "mihomo": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      },
+      "sing-box": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      }
+    },
+    {
+      "name": "🇰🇷 韩国_2_D+",
+      "type": "vless",
+      "network": null,
+      "mihomo": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      },
+      "sing-box": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      }
+    },
+    {
+      "name": "🇯🇵 ❇️Key日本_1",
+      "type": "vmess",
+      "network": "grpc",
+      "mihomo": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "SSLError"
+          }
+        ]
+      },
+      "sing-box": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ReadTimeout"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ReadTimeout"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ReadTimeout"
+          }
+        ]
+      }
+    },
+    {
+      "name": "🇯🇵 日本_99_FAKE_D+",
+      "type": "trojan",
+      "network": null,
+      "mihomo": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      },
+      "sing-box": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      }
+    },
+    {
+      "name": "🇸🇬 Key新加坡_1",
+      "type": "vless",
+      "network": "ws",
+      "mihomo": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      },
+      "sing-box": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      }
+    },
+    {
+      "name": "🇺🇸 美国_1_USAI❇️✨️",
+      "type": "ss",
+      "network": null,
+      "mihomo": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      },
+      "sing-box": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "SSLError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "SSLError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "SSLError"
+          }
+        ]
+      }
+    },
+    {
+      "name": "🇫🇷 法国_10_⚠️IR_D+",
+      "type": "trojan",
+      "network": "ws",
+      "mihomo": {
+        "alive": true,
+        "latency_ms": 266.0,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 1875.0
+          },
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 266.0
+          }
+        ]
+      },
+      "sing-box": {
+        "alive": true,
+        "latency_ms": 250.0,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 1281.0
+          },
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 250.0
+          }
+        ]
+      }
+    },
+    {
+      "name": "🇪🇬 ❇️✨️埃及_1",
+      "type": "http",
+      "network": null,
+      "mihomo": {
+        "alive": true,
+        "latency_ms": 313.0,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 2047.0
+          },
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 313.0
+          }
+        ]
+      },
+      "sing-box": {
+        "alive": true,
+        "latency_ms": 312.0,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 1875.0
+          },
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 312.0
+          }
+        ]
+      }
+    },
+    {
+      "name": "🇲🇾 ❇️✨️Fast马来西亚_1",
+      "type": "http",
+      "network": null,
+      "mihomo": {
+        "alive": true,
+        "latency_ms": 62.0,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 985.0
+          },
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 62.0
+          }
+        ]
+      },
+      "sing-box": {
+        "alive": true,
+        "latency_ms": 62.0,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 407.0
+          },
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 62.0
+          }
+        ]
+      }
+    },
+    {
+      "name": "🏳️ 未知_1",
+      "type": "trojan",
+      "network": "ws",
+      "mihomo": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      },
+      "sing-box": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,1691 @@
+proxies:
+- name: 🇯🇵 02. 日本 AWS - Hysteria 2 (暴力极速 UDP)
+  type: hysteria2
+  server: 13.113.159.98
+  port: 8443
+  password: 3c0a6d5ffea8d45b
+  sni: www.bing.com
+  skip-cert-verify: false
+  udp: true
+  _orig_name: 🇯🇵 02. 日本 AWS - Hysteria 2 (暴力极速 UDP)
+  _source_target: http://34.3.101.206
+- name: 🇺🇸 02. 美国 RackNerd - Hysteria 2 (暴力极速 UDP)
+  type: hysteria2
+  server: 104.223.72.232
+  port: 8443
+  ports: 20000-50000
+  up: 60 Mbps
+  down: 500 Mbps
+  password: 8PJzYtDKkJ7DXqGt
+  obfs: salamander
+  obfs-password: RN_salamander_8PJz
+  fast-open: true
+  sni: rn.liujiaqi.top
+  skip-cert-verify: false
+  udp: true
+  _orig_name: 🇺🇸 02. 美国 RackNerd - Hysteria 2 (暴力极速 UDP)
+  _source_target: http://34.3.101.206
+- name: 🇺🇸 02. 美国 GCP - Hysteria 2 (暴力极速 UDP)
+  type: hysteria2
+  server: 34.173.148.138
+  port: 8443
+  ports: 20000-50000
+  up: 100 Mbps
+  down: 1000 Mbps
+  password: gcpHy2_9xK4mP2vL
+  sni: gcp-west.liujiaqi.top
+  skip-cert-verify: false
+  udp: true
+  _orig_name: 🇺🇸 02. 美国 GCP - Hysteria 2 (暴力极速 UDP)
+  _source_target: http://34.3.101.206
+- name: 🇺🇸 02. 美西 GCP - Hysteria 2 (暴力极速 UDP)
+  type: hysteria2
+  server: 34.3.101.206
+  port: 8443
+  ports: 20000-50000
+  up: 100 Mbps
+  down: 1000 Mbps
+  password: jSuxvieEWQ4WiKxqmvoYHQ
+  sni: gcp-west.liujiaqi.top
+  skip-cert-verify: false
+  udp: true
+  _orig_name: 🇺🇸 02. 美西 GCP - Hysteria 2 (暴力极速 UDP)
+  _source_target: http://34.3.101.206
+- name: 🇸🇬 02. 新加坡 Oracle - Hysteria 2 (暴力极速 UDP)
+  type: hysteria2
+  server: 2603:c024:4524:3400:0:7caf:8cfa:add3
+  port: 443
+  ports: 443,8443
+  up: 50 Mbps
+  down: 300 Mbps
+  password: bbspu8OQTybuaigS
+  sni: sg.liujiaqi.top
+  skip-cert-verify: false
+  udp: true
+  _orig_name: 🇸🇬 02. 新加坡 Oracle - Hysteria 2 (暴力极速 UDP)
+  _source_target: http://34.3.101.206
+- name: 自建-新加坡-Hy2
+  type: hysteria2
+  server: 216.195.196.86
+  port: 8443
+  password: 70ce8e381c71352eb342070521ad158a
+  obfs: salamander
+  obfs-password: a1b81e905f730505e51aceadc6acb846
+  sni: www.cloudflare.com
+  skip-cert-verify: true
+  alpn:
+  - h3
+  up: 80 Mbps
+  down: 300 Mbps
+  udp: true
+  _orig_name: 自建-新加坡-Hy2
+  _source_target: http://216.195.196.86:2086
+- name: CC-洛杉矶 LA
+  server: vps2.cursorflow.top
+  port: 443
+  sni: vps2.cursorflow.top
+  up: 1000
+  down: 1000
+  skip-cert-verify: false
+  type: hysteria2
+  password: 4c08f87a-d5ee-4c5a-babb-0165c93a1f34
+  obfs: salamander
+  obfs-password: ad4e4a7d1ac3909d59656d00
+  _orig_name: CC-洛杉矶 LA
+  _source_target: https://vps2.cursorflow.top
+- name: RN-达拉斯
+  server: rn1.cursorflow.top
+  port: 443
+  sni: rn1.cursorflow.top
+  up: 1000
+  down: 1000
+  skip-cert-verify: false
+  type: hysteria2
+  password: 4c08f87a-d5ee-4c5a-babb-0165c93a1f34
+  obfs: salamander
+  obfs-password: 4fcb7b12d0a2f35e9a5d6147
+  _orig_name: RN-达拉斯
+  _source_target: https://vps2.cursorflow.top
+- name: RN-芝加哥 Chicago
+  server: rn2.cursorflow.top
+  port: 443
+  sni: rn2.cursorflow.top
+  up: 1000
+  down: 1000
+  skip-cert-verify: false
+  type: hysteria2
+  password: 4c08f87a-d5ee-4c5a-babb-0165c93a1f34
+  obfs: salamander
+  obfs-password: 4fcb7b12d0a2f35e9a5d6147
+  _orig_name: RN-芝加哥 Chicago
+  _source_target: https://vps2.cursorflow.top
+- name: 🇸🇬新加坡专线02|BGP|流媒体
+  server: aws-linkhy10.liangxin1.xyz
+  port: 60000
+  ports: 60000-65530
+  mport: 60000-65530
+  udp: true
+  skip-cert-verify: true
+  sni: iosapps.itunes.apple.com
+  type: hysteria2
+  password: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  _orig_name: 🇸🇬新加坡专线02|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇸🇬新加坡专线03|BGP|流媒体
+  server: aws-linkhy11.liangxin1.xyz
+  port: 443
+  udp: true
+  skip-cert-verify: true
+  sni: iosapps.itunes.apple.com
+  type: hysteria2
+  password: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  _orig_name: 🇸🇬新加坡专线03|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇯🇵日本专线01|BGP|流媒体
+  server: aws-linkhy15.liangxin1.xyz
+  port: 60000
+  ports: 60000-65530
+  mport: 60000-65530
+  udp: true
+  skip-cert-verify: true
+  sni: bilibili-jp.biliimg.com
+  type: hysteria2
+  password: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  _orig_name: 🇯🇵日本专线01|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇯🇵日本专线02|BGP|流媒体
+  server: aws-linkhy16.liangxin1.xyz
+  port: 443
+  udp: true
+  skip-cert-verify: true
+  sni: bilibili-jp2.biliimg.com
+  type: hysteria2
+  password: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  _orig_name: 🇯🇵日本专线02|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇯🇵日本专线03|BGP|流媒体
+  server: aws-linkhy17.liangxin1.xyz
+  port: 443
+  udp: true
+  skip-cert-verify: true
+  sni: bilibili-jp3.biliimg.com
+  type: hysteria2
+  password: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  _orig_name: 🇯🇵日本专线03|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇰🇷韩国专线01|BGP|流媒体
+  server: aws-linkhy21.liangxin1.xyz
+  port: 443
+  udp: true
+  skip-cert-verify: true
+  sni: bilibili-kr.biliimg.com
+  type: hysteria2
+  password: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  _orig_name: 🇰🇷韩国专线01|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇨🇳台湾专线01|BGP|流媒体
+  server: aws-linkhy23.liangxin1.xyz
+  port: 443
+  udp: true
+  skip-cert-verify: true
+  sni: bilibili-tw.biliimg.com
+  type: hysteria2
+  password: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  _orig_name: 🇨🇳台湾专线01|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇺🇸美国01|流媒体
+  server: 203.10.97.121
+  port: 443
+  udp: true
+  skip-cert-verify: true
+  sni: www.apple.com
+  type: hysteria2
+  password: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  _orig_name: 🇺🇸美国01|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇺🇸美国02|流媒体 0.1倍
+  server: aws-linkhy27.liangxin1.xyz
+  port: 443
+  udp: true
+  skip-cert-verify: true
+  sni: www.apple.com
+  type: hysteria2
+  password: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  _orig_name: 🇺🇸美国02|流媒体 0.1倍
+  _source_target: https://clash.684180.xyz
+- name: 甲骨文-20260706-v6
+  type: hysteria2
+  server: nas2049.eu.cc
+  port: 8443
+  password: XcjwNgRps5C6fylUutOl
+  sni: nas2049.eu.cc
+  skip-cert-verify: false
+  ip-version: ipv6
+  _orig_name: 甲骨文-20260706-v6
+  _source_target: https://2030.us.ci
+- name: 甲骨文-20260701-v6
+  type: hysteria2
+  server: nas119.eu.cc
+  port: 8443
+  password: iL4nX2BQ3NSbn0poKQcb
+  sni: nas119.eu.cc
+  skip-cert-verify: false
+  ip-version: ipv6
+  _orig_name: 甲骨文-20260701-v6
+  _source_target: https://2030.us.ci
+- name: CloudCone-HY2
+  type: hysteria2
+  server: goko.kdns.fr
+  port: 38294
+  password: Tx9$mK2#vP8!qL5w
+  sni: goko.kdns.fr
+  skip-cert-verify: false
+  _orig_name: CloudCone-HY2
+  _source_target: https://2030.us.ci
+- name: 磐石云-HY2-v6
+  type: hysteria2
+  server: gojo.kdns.fr
+  port: 38654
+  password: mK8#x9P2$vL5nQ1w
+  sni: gojo.kdns.fr
+  skip-cert-verify: false
+  ip-version: ipv6
+  _orig_name: 磐石云-HY2-v6
+  _source_target: https://2030.us.ci
+- name: 钨云-HY2
+  type: hysteria2
+  server: zql.us.ci
+  port: 38443
+  password: 973c2b8f5f61882b9c13bfed39e900e3
+  sni: zql.us.ci
+  skip-cert-verify: false
+  _orig_name: 钨云-HY2
+  _source_target: https://2030.us.ci
+- name: 哈基猫-HY2-v6
+  type: hysteria2
+  server: zhuoql.ggff.net
+  port: 58443
+  password: kX9#mP2$vR7L!qN8
+  sni: zhuoql.ggff.net
+  skip-cert-verify: false
+  ip-version: ipv6
+  _orig_name: 哈基猫-HY2-v6
+  _source_target: https://2030.us.ci
+- name: 🚀 新加坡-Hysteria2
+  type: hysteria2
+  server: wpn.nanyanggroupids.com
+  port: 8443
+  password: nanyang2026
+  sni: wpn.nanyanggroupids.com
+  skip-cert-verify: false
+  _orig_name: 🚀 新加坡-Hysteria2
+  _source_target: https://sub-gz.nanyanggroupids.com
+- name: sevenhy2
+  type: hysteria2
+  server: udp.ap-northeast-1.clawcloudrun.com
+  port: 37647
+  password: efaf6ec5-3a55-4f91-8ea4-856f17565fa8
+  alpn:
+  - h3
+  skip-cert-verify: true
+  udp: true
+  _orig_name: sevenhy2
+  _source_target: http://clash.wwv.xx.kg:8880
+- name: reality-www.microsoft.com
+  type: vless
+  server: 104.225.237.87
+  port: 443
+  uuid: 2db85988-715e-4481-aad6-90605ca4736d
+  flow: xtls-rprx-vision
+  packet-encoding: xudp
+  tls: true
+  servername: www.microsoft.com
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: LBeNoujOB6Su0ZKL5-sp51LkIZsNbPzE1xVhufJJaGc
+    short-id: b6bac1f358b14f15
+  encryption: ''
+  network: tcp
+  udp: true
+  _orig_name: reality-www.microsoft.com
+  _source_target: http://104.225.237.87:8080
+- name: 新加坡-SIN-03-VL
+  type: vless
+  server: 03-rl-hkg.c-one.us
+  port: 25889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-sin-25.auua.us
+  _orig_name: 新加坡-SIN-03-VL
+  _source_target: https://156.239.227.43
+- name: 香港-HKG-02-VL
+  type: vless
+  server: 02-rl-hkg.c-one.us
+  port: 22889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-hkg-22.auua.us
+  _orig_name: 香港-HKG-02-VL
+  _source_target: https://156.239.227.43
+- name: 新加坡-SIN-01-VL
+  type: vless
+  server: 01-rl-hkg.c-one.us
+  port: 19889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-sin-19.auua.us
+  _orig_name: 新加坡-SIN-01-VL
+  _source_target: https://156.239.227.43
+- name: 美国-SJC-03-VL
+  type: vless
+  server: 03-rl-hkg.c-one.us
+  port: 26889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-sjc-26.auua.us
+  _orig_name: 美国-SJC-03-VL
+  _source_target: https://156.239.227.43
+- name: 台湾-TPE-HiNet-01-VL
+  type: vless
+  server: 01-rl-hkg.c-one.us
+  port: 13889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-tpe-13.auua.us
+  _orig_name: 台湾-TPE-HiNet-01-VL
+  _source_target: https://156.239.227.43
+- name: 香港-HKG-03-VL
+  type: vless
+  server: 03-rl-hkg.c-one.us
+  port: 29889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-hkg-29.auua.us
+  _orig_name: 香港-HKG-03-VL
+  _source_target: https://156.239.227.43
+- name: 日本-TYO-03-VL
+  type: vless
+  server: 03-rl-hkg.c-one.us
+  port: 28889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-tyo-28.auua.us
+  _orig_name: 日本-TYO-03-VL
+  _source_target: https://156.239.227.43
+- name: 香港-HKT-01-VL
+  type: vless
+  server: 01-rl-hkg.c-one.us
+  port: 30889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-hkt-30.auua.us
+  _orig_name: 香港-HKT-01-VL
+  _source_target: https://156.239.227.43
+- name: 香港-HKT-02-VL
+  type: vless
+  server: 02-rl-hkg.c-one.us
+  port: 31889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-hkt-31.auua.us
+  _orig_name: 香港-HKT-02-VL
+  _source_target: https://156.239.227.43
+- name: 新加坡-SIN-02-VL
+  type: vless
+  server: 02-rl-hkg.c-one.us
+  port: 20889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-sin-20.auua.us
+  _orig_name: 新加坡-SIN-02-VL
+  _source_target: https://156.239.227.43
+- name: 美国-SJC-01-VL
+  type: vless
+  server: 01-rl-hkg.c-one.us
+  port: 23889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-sjc-23.auua.us
+  _orig_name: 美国-SJC-01-VL
+  _source_target: https://156.239.227.43
+- name: 台湾-TPE-HiNet-02-VL
+  type: vless
+  server: 02-rl-hkg.c-one.us
+  port: 14889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-tpe-14.auua.us
+  _orig_name: 台湾-TPE-HiNet-02-VL
+  _source_target: https://156.239.227.43
+- name: 日本-TYO-01-VL
+  type: vless
+  server: 01-rl-hkg.c-one.us
+  port: 11889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-tyo-11.auua.us
+  _orig_name: 日本-TYO-01-VL
+  _source_target: https://156.239.227.43
+- name: 香港-HKG-01-VL
+  type: vless
+  server: 01-rl-hkg.c-one.us
+  port: 21889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-hkg-21.auua.us
+  _orig_name: 香港-HKG-01-VL
+  _source_target: https://156.239.227.43
+- name: 德国-FRA-02-VL
+  type: vless
+  server: 02-rl-hkg.c-one.us
+  port: 18889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-fra-18.auua.us
+  _orig_name: 德国-FRA-02-VL
+  _source_target: https://156.239.227.43
+- name: 美国-SJC-02-VL
+  type: vless
+  server: 02-rl-hkg.c-one.us
+  port: 10889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-sjc-10.auua.us
+  _orig_name: 美国-SJC-02-VL
+  _source_target: https://156.239.227.43
+- name: 日本-TYO-02-VL
+  type: vless
+  server: 02-rl-hkg.c-one.us
+  port: 17889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-tyo-17.auua.us
+  _orig_name: 日本-TYO-02-VL
+  _source_target: https://156.239.227.43
+- name: 德国-FRA-03-VL
+  type: vless
+  server: 03-rl-hkg.artacs.click
+  port: 27889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-fra-27.artacs.click
+  _orig_name: 德国-FRA-03-VL
+  _source_target: https://156.239.227.43
+- name: 德国-FRA-01-VL
+  type: vless
+  server: 01-rl-hkg.c-one.us
+  port: 10889
+  uuid: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  alterId: 0
+  cipher: auto
+  udp: true
+  flow: xtls-rprx-vision
+  tls: true
+  servername: vl-fra-9.auua.us
+  _orig_name: 德国-FRA-01-VL
+  _source_target: https://156.239.227.43
+- name: 🇯🇵 01. 日本 AWS - VLESS Reality (防封主力)
+  type: vless
+  server: 13.113.159.98
+  port: 443
+  uuid: 8a7b4f87-9431-4b55-ba40-ee754ca9813b
+  network: tcp
+  tls: true
+  udp: true
+  flow: xtls-rprx-vision
+  servername: www.apple.com
+  reality-opts:
+    public-key: wYdmD8y4nY9K7ZEAtbDrURk-zBLi5IXmnOxP8p54bhY
+    short-id: 762c64ef
+  client-fingerprint: chrome
+  _orig_name: 🇯🇵 01. 日本 AWS - VLESS Reality (防封主力)
+  _source_target: http://34.3.101.206
+- name: 🇺🇸 01. 美国 RackNerd - VLESS Reality (防封主力)
+  type: vless
+  server: 104.223.72.232
+  port: 443
+  uuid: 444715e6-1c6a-4027-90df-fa01ac984669
+  network: tcp
+  tls: true
+  udp: true
+  flow: xtls-rprx-vision
+  packet-encoding: xudp
+  servername: gateway.icloud.com
+  reality-opts:
+    public-key: q6WMAqAzFYui3TiWXdOJ1-E4NbiHHk5o1mx6W6m4hEM
+    short-id: c4623fa4291795e7
+  client-fingerprint: chrome
+  _orig_name: 🇺🇸 01. 美国 RackNerd - VLESS Reality (防封主力)
+  _source_target: http://34.3.101.206
+- name: 🇺🇸 01. 美国 GCP - VLESS Reality (防封主力)
+  type: vless
+  server: 34.173.148.138
+  port: 443
+  uuid: f9551ab4-265a-43f5-9834-7cebf0474ea9
+  network: tcp
+  tls: true
+  udp: true
+  flow: xtls-rprx-vision
+  servername: gateway.icloud.com
+  reality-opts:
+    public-key: n_KtBos-cczaGPoU2OtWb2IBbEoAD6cukgLJMg_g4mw
+    short-id: 747318d6556d5c7a
+  client-fingerprint: chrome
+  _orig_name: 🇺🇸 01. 美国 GCP - VLESS Reality (防封主力)
+  _source_target: http://34.3.101.206
+- name: 🇺🇸 01. 美西 GCP - VLESS Reality (防封主力)
+  type: vless
+  server: 34.3.101.206
+  port: 443
+  uuid: c64a5cfa-0fd6-4978-b062-6e89da013260
+  network: tcp
+  tls: true
+  udp: true
+  flow: xtls-rprx-vision
+  packet-encoding: xudp
+  servername: gateway.icloud.com
+  reality-opts:
+    public-key: C4ky4RduL1cfjZ3okHXDkpD2Ns4DViMkB-mDlisBrzc
+    short-id: 8a17287288cf25e5
+  client-fingerprint: chrome
+  _orig_name: 🇺🇸 01. 美西 GCP - VLESS Reality (防封主力)
+  _source_target: http://34.3.101.206
+- name: 🇸🇬 01. 新加坡 Oracle - VLESS Reality (防封主力)
+  type: vless
+  server: 2603:c024:4524:3400:0:7caf:8cfa:add3
+  port: 443
+  uuid: 086230e1-9651-4c75-8a10-aaab31412c1b
+  network: tcp
+  tls: true
+  udp: true
+  flow: xtls-rprx-vision
+  servername: gateway.icloud.com
+  reality-opts:
+    public-key: mJiFZnmwlPJ5JhpX5JZJyybHxHfYOKkBHqGPwmx9lHk
+    short-id: ef71b6682becfee4
+  client-fingerprint: chrome
+  _orig_name: 🇸🇬 01. 新加坡 Oracle - VLESS Reality (防封主力)
+  _source_target: http://34.3.101.206
+- name: 自建-新加坡-Reality
+  type: vless
+  server: 216.195.196.86
+  port: 8443
+  uuid: 7c973569-71da-4d18-8c80-aa4c8ee2f257
+  network: tcp
+  tls: true
+  udp: true
+  flow: xtls-rprx-vision
+  servername: www.cloudflare.com
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: 5wGgDloyck_L25Y5rkWorpV3IK00pK0Lki7LR0VY0io
+    short-id: 4fba6fd2c74fd18f
+  _orig_name: 自建-新加坡-Reality
+  _source_target: http://216.195.196.86:2086
+- name: Japan-VPS
+  type: vless
+  server: 116.206.93.198
+  port: 443
+  uuid: f405a6da-2e41-4cbe-b2de-8e6ae7aadb78
+  network: tcp
+  tls: true
+  udp: true
+  flow: xtls-rprx-vision
+  servername: www.microsoft.com
+  reality-opts:
+    public-key: 4NZNutrjV2MG7sw8ylMplUuM7cF1x8yjSLHhc9kDryw
+    short-id: caa9e918
+  client-fingerprint: chrome
+  _orig_name: Japan-VPS
+  _source_target: http://116.206.93.198:8089
+- name: DMIT-LAX-VLESS-REALITY-18441
+  type: vless
+  server: 179.255.152.251
+  port: 18441
+  uuid: 916634b2-4d0e-4b09-a56a-af05990dbfcb
+  network: tcp
+  tls: true
+  flow: xtls-rprx-vision
+  reality-opts:
+    public-key: FDMBkI47TGJidpx9oHVG4g577zXmPu1RA5xl2It7tzQ
+  client-fingerprint: chrome
+  servername: dash.cloudflare.com
+  udp: true
+  _orig_name: DMIT-LAX-VLESS-REALITY-18441
+  _source_target: http://179.255.152.251:8011
+- name: 🇬🇧 United Kingdom [*CIDR]
+  type: vless
+  server: 176.123.167.90
+  port: 9881
+  uuid: 5d16ac22-6eea-426f-b778-6f4c2961faef
+  network: grpc
+  tls: true
+  udp: true
+  client-fingerprint: ios
+  servername: dl.google.com
+  reality-opts:
+    public-key: Dfgu8Ey0M8Hz4gXGZAwQ3H9jLt2HByVsjAOTWiuKDB0
+  _orig_name: 🇬🇧 United Kingdom [*CIDR]
+  _source_target: https://clash.helper.indevs.in
+- name: 🇷🇺 Russia [*CIDR]
+  type: vless
+  server: 72.4.65.116
+  port: 443
+  uuid: 0dca2cfe-98eb-4f9d-9a47-cf87510c558b
+  network: grpc
+  tls: true
+  udp: true
+  client-fingerprint: chrome
+  servername: assets-de2.pleiades.codes
+  _orig_name: 🇷🇺 Russia [*CIDR]
+  _source_target: https://clash.helper.indevs.in
+- name: 🇷🇺 Russia [*CIDR] 3
+  type: vless
+  server: assets-de2.pleiades.codes
+  port: 443
+  uuid: 0dca2cfe-98eb-4f9d-9a47-cf87510c558b
+  network: grpc
+  tls: true
+  udp: true
+  client-fingerprint: chrome
+  servername: assets-de2.pleiades.codes
+  _orig_name: 🇷🇺 Russia [*CIDR] 3
+  _source_target: https://clash.helper.indevs.in
+- name: 🇷🇺 Russia | [*CIDR] 7
+  type: vless
+  server: 31.76.65.234.fwqfw783rg2dad.website
+  port: 443
+  uuid: cc39844c-d9ba-4394-9cae-395933f4e353
+  network: ws
+  tls: true
+  udp: true
+  client-fingerprint: edge
+  servername: 31.76.65.234.fwqfw783rg2dad.website
+  ws-opts:
+    path: /websocket
+    headers:
+      Host: 31.76.65.234.fwqfw783rg2dad.website
+  _orig_name: 🇷🇺 Russia | [*CIDR] 7
+  _source_target: https://clash.helper.indevs.in
+- name: 🇷🇺 Russia | [*CIDR] 12
+  type: vless
+  server: 31.76.65.234
+  port: 443
+  uuid: cc39844c-d9ba-4394-9cae-395933f4e353
+  network: ws
+  tls: true
+  udp: true
+  client-fingerprint: edge
+  servername: 31.76.65.234.fwqfw783rg2dad.website
+  ws-opts:
+    path: /websocket
+    headers:
+      Host: 31.76.65.234.fwqfw783rg2dad.website
+  _orig_name: 🇷🇺 Russia | [*CIDR] 12
+  _source_target: https://clash.helper.indevs.in
+- name: 🇷🇺 Russia | [*CIDR] 17
+  type: vless
+  server: 77.239.107.190
+  port: 443
+  uuid: d3aeadf0-94bd-46bd-88f5-ed920a3449fd
+  network: tcp
+  tls: true
+  udp: true
+  client-fingerprint: android
+  servername: msk.fastconnect.click
+  reality-opts:
+    public-key: nilJ07r1KZ0-KhmRNYeICXGhM9HeG9uxnRaqjYz3fWg
+    short-id: 356a70f0d72b4e80
+  _orig_name: 🇷🇺 Russia | [*CIDR] 17
+  _source_target: https://clash.helper.indevs.in
+- name: US-LA-1-XHTTP-Reality
+  type: vless
+  server: 207.174.6.77
+  port: 50614
+  uuid: 3a574e6b-1b40-44f5-bbfb-9473e9a0a8fa
+  udp: true
+  tls: true
+  network: xhttp
+  servername: aws.amazon.com
+  client-fingerprint: chrome
+  reality-opts:
+    public-key: HWjrs-gNexuFyvpG4zvFCyqMI5GvvD3surGJ4Sfm8XQ
+    short-id: 28c7e5a01851c4
+    spider-x: /
+  xhttp-opts:
+    path: /us-lsj-1
+    mode: auto
+    extra:
+      xPaddingBytes: 100-1000
+  _orig_name: US-LA-1-XHTTP-Reality
+  _source_target: https://jiedian.feinaisi.eu.org
+- name: 剩余流量：17.56 TB
+  type: vless
+  server: aws-link1.liangxin1.xyz
+  port: 35248
+  uuid: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  udp: true
+  tls: true
+  skip-cert-verify: false
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  servername: www.lamer.com.hk
+  reality-opts:
+    public-key: IGsSxC0wgn7wLy0NM0QN_yOREDKT_814Y_3_rbgDoTc
+    short-id: c8c0f951
+  _orig_name: 剩余流量：17.56 TB
+  _source_target: https://clash.684180.xyz
+- name: 🇸🇬新加坡高速01|BGP|流媒体
+  type: vless
+  server: aws-link7.liangxin1.xyz
+  port: 48574
+  uuid: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  udp: true
+  tls: true
+  skip-cert-verify: false
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  servername: www.lamer.com.sg
+  reality-opts:
+    public-key: lmxSayN8tUg2Dag2MPXrdqZ2SQK9K3OjlaKk8wVCRnc
+    short-id: f8f18902
+  _orig_name: 🇸🇬新加坡高速01|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇸🇬新加坡高速02|BGP|流媒体
+  type: vless
+  server: aws-link8.liangxin1.xyz
+  port: 39645
+  uuid: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  udp: true
+  tls: true
+  skip-cert-verify: false
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  servername: iosapps.itunes.apple.com
+  reality-opts:
+    public-key: x7VqpFP7_PrY4ebNw8hi8Ec5Tm5Upmt5JOdrN1M9VnQ
+    short-id: 2b3b0b93
+  _orig_name: 🇸🇬新加坡高速02|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇸🇬新加坡高速03|BGP|流媒体
+  type: vless
+  server: aws-link9.liangxin1.xyz
+  port: 23587
+  uuid: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  udp: true
+  tls: true
+  skip-cert-verify: false
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  servername: iosapps.itunes.apple.com
+  reality-opts:
+    public-key: H66PLLf6HkZwHk4oFqisfTawIvw2cxkEwk8Ue8sHZgA
+    short-id: 19b580ae
+  _orig_name: 🇸🇬新加坡高速03|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇸🇬新加坡高速04|BGP|流媒体
+  type: vless
+  server: aws-link10.liangxin1.xyz
+  port: 443
+  uuid: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  udp: true
+  tls: true
+  skip-cert-verify: false
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  servername: www.lamer.com.sg
+  reality-opts:
+    public-key: xQO7CBh6ymSW9qfw9OGHykh7PLTzWQZjxDT-H4ul2AE
+    short-id: 2bb6da88
+  _orig_name: 🇸🇬新加坡高速04|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇯🇵日本高速01|BGP|流媒体
+  type: vless
+  server: aws-link13.liangxin1.xyz
+  port: 36574
+  uuid: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  udp: true
+  tls: true
+  skip-cert-verify: false
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  servername: www.apple.com.cn
+  reality-opts:
+    public-key: sDG-KQk1BF7V83-xnmrWDouXxpPd_ZSxKcHrJJzbols
+    short-id: 32a3650d
+  _orig_name: 🇯🇵日本高速01|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇯🇵日本高速02|BGP|流媒体
+  type: vless
+  server: aws-link14.liangxin1.xyz
+  port: 25485
+  uuid: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  udp: true
+  tls: true
+  skip-cert-verify: false
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  servername: www.apple.com.cn
+  reality-opts:
+    public-key: VOFSjjWT0wIH3Q0ntyEZd8WwksrIAb5gPt_3PBnEASg
+    short-id: 9c5b8c53
+  _orig_name: 🇯🇵日本高速02|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇯🇵日本高速03|BGP|流媒体
+  type: vless
+  server: aws-link15.liangxin1.xyz
+  port: 35457
+  uuid: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  udp: true
+  tls: true
+  skip-cert-verify: false
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  servername: www.apple.com.cn
+  reality-opts:
+    public-key: 3gb-aG6qLCJpEOFrEPZ9qKqLvVPA_ovlu0X1PvjcE0k
+    short-id: 05288db3
+  _orig_name: 🇯🇵日本高速03|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇯🇵日本高速04|BGP|流媒体
+  type: vless
+  server: cfyes.lxy1015.top
+  port: 443
+  uuid: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  udp: true
+  tls: true
+  skip-cert-verify: false
+  flow: ''
+  client-fingerprint: chrome
+  servername: lxs1jp.lxy1015.top
+  network: ws
+  ws-opts:
+    path: /liangxin/jp1
+    headers:
+      Host: lx-1jp.lxy1015.top
+  _orig_name: 🇯🇵日本高速04|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇺🇸美国高速01|流媒体 0.1倍
+  type: vless
+  server: aws-link19.liangxin1.xyz
+  port: 443
+  uuid: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  udp: true
+  tls: true
+  skip-cert-verify: false
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  servername: download-porter.hoyoverse.com
+  reality-opts:
+    public-key: QE5l0RUqs4OsH3j3u_xHm06-4NlILmQivZUJqiEx11o
+    short-id: 6314e825
+  _orig_name: 🇺🇸美国高速01|流媒体 0.1倍
+  _source_target: https://clash.684180.xyz
+- name: 🇰🇷韩国高速01|BGP|流媒体
+  type: vless
+  server: aws-link25.liangxin1.xyz
+  port: 34578
+  uuid: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  udp: true
+  tls: true
+  skip-cert-verify: false
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  servername: download-porter.hoyoverse.com
+  reality-opts:
+    public-key: PSn2s5TN4e7n0LkzPunu2IA1hSmOoPYFu3d_psl2Nmc
+    short-id: e534c8be
+  _orig_name: 🇰🇷韩国高速01|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 🇨🇳台湾高速01|BGP|流媒体
+  type: vless
+  server: aws-link27.liangxin1.xyz
+  port: 443
+  uuid: 26e2aa1e-098b-493d-88e1-e34b1dd8bcaa
+  udp: true
+  tls: true
+  skip-cert-verify: false
+  flow: xtls-rprx-vision
+  client-fingerprint: chrome
+  servername: download-porter.hoyoverse.com
+  reality-opts:
+    public-key: a9I2uA3NNZA6uBAe3Tui9vZ8CG5MrMaYOifWrAdc0zg
+    short-id: a8609be8
+  _orig_name: 🇨🇳台湾高速01|BGP|流媒体
+  _source_target: https://clash.684180.xyz
+- name: 南极-CF中转-IPv4/v6
+  type: vless
+  server: nanji.514191.xyz
+  port: 443
+  uuid: c12bac0c-efcc-4276-b9c5-75756113fee9
+  network: ws
+  tls: true
+  udp: true
+  servername: nanji.514191.xyz
+  ws-opts:
+    path: /
+    headers:
+      Host: nanji.514191.xyz
+  _orig_name: 南极-CF中转-IPv4/v6
+  _source_target: http://clash.514191.xyz:8080
+- name: 朝鲜-CF中转-IPv4/v6
+  type: vless
+  server: chaoxian.514191.xyz
+  port: 443
+  uuid: 30d3c8aa-fc20-4c95-c043-ae135823f9cd
+  network: ws
+  tls: true
+  udp: true
+  servername: chaoxian.514191.xyz
+  ws-opts:
+    path: /
+    headers:
+      Host: chaoxian.514191.xyz
+  _orig_name: 朝鲜-CF中转-IPv4/v6
+  _source_target: http://clash.514191.xyz:8080
+- name: 南极-旧-直连IPv6
+  type: vless
+  server: 2001:470:f4c7:100::2a
+  port: 34194
+  uuid: 1c69f395-afad-4f1a-a4eb-460990abe35d
+  network: tcp
+  tls: false
+  udp: true
+  _orig_name: 南极-旧-直连IPv6
+  _source_target: http://clash.514191.xyz:8080
+- name: 朝鲜-旧-直连IPv6
+  type: vless
+  server: 2001:470:e2db:100::6d
+  port: 12641
+  uuid: b2f445ce-eafa-41c7-af1e-58b6ae734f65
+  network: tcp
+  tls: false
+  udp: true
+  _orig_name: 朝鲜-旧-直连IPv6
+  _source_target: http://clash.514191.xyz:8080
+- name: SG-频道@kejiland00-VLESS
+  type: vless
+  server: 34.143.159.175
+  port: 443
+  uuid: d3b0870e-1d73-4462-aade-635aa12fd79d
+  network: ws
+  tls: true
+  udp: true
+  servername: p.wwv.xx.kg
+  client-fingerprint: chrome
+  ws-opts:
+    path: /
+    headers:
+      Host: p.wwv.xx.kg
+  _orig_name: SG-频道@kejiland00-VLESS
+  _source_target: http://clash.wwv.xx.kg:8880
+- name: SONY
+  type: vless
+  server: 223.135.156.183
+  port: 20333
+  uuid: 3a408365-3682-4f1b-930f-b991533e8d94
+  tls: true
+  network: ws
+  sni: www.sony.com
+  skip-cert-verify: true
+  ws-opts:
+    path: /3381d7b7755c7ad5
+    headers:
+      Host: www.sony.com
+  _orig_name: SONY
+  _source_target: http://dns.1111988.xyz:8880
+- name: JP1-D1
+  type: vless
+  server: 172.64.53.174
+  port: 443
+  uuid: 86c50e3a-5b87-49dd-bd20-03c7f2735e40
+  tls: true
+  network: ws
+  servername: sony.1111788.xyz
+  ws-opts:
+    path: /?ed=2560
+    headers:
+      Host: sony.1111788.xyz
+  hidden: true
+  _orig_name: JP1-D1
+  _source_target: http://dns.1111988.xyz:8880
+- name: JP2-D1
+  type: vless
+  server: 172.64.229.100
+  port: 443
+  uuid: 86c50e3a-5b87-49dd-bd20-03c7f2735e40
+  tls: true
+  network: ws
+  servername: sony.1111988.xyz
+  ws-opts:
+    path: /?ed=2560
+    headers:
+      Host: sony.1111988.xyz
+  hidden: true
+  _orig_name: JP2-D1
+  _source_target: http://dns.1111988.xyz:8880
+- name: SG1-D1
+  type: vless
+  server: 108.162.198.3
+  port: 443
+  uuid: 86c50e3a-5b87-49dd-bd20-03c7f2735e40
+  tls: true
+  network: ws
+  servername: kddi.15181518.xyz
+  ws-opts:
+    path: /?ed=2560
+    headers:
+      Host: kddi.15181518.xyz
+  hidden: true
+  _orig_name: SG1-D1
+  _source_target: http://dns.1111988.xyz:8880
+- name: SG2-D1
+  type: vless
+  server: 108.162.198.80
+  port: 443
+  uuid: 86c50e3a-5b87-49dd-bd20-03c7f2735e40
+  tls: true
+  network: ws
+  servername: sony.1111588.xyz
+  ws-opts:
+    path: /?ed=2560
+    headers:
+      Host: sony.1111588.xyz
+  hidden: true
+  _orig_name: SG2-D1
+  _source_target: http://dns.1111988.xyz:8880
+- name: 🇯🇵 KDDI-落地
+  type: vless
+  server: 106.180.225.69
+  port: 21043
+  uuid: fc1ed226-3554-44b0-a9f0-832e6091faef
+  flow: xtls-rprx-vision
+  tls: true
+  servername: itunes.apple.com
+  reality-opts:
+    public-key: vIhOMfIZWqgEzPg-lbWv9v5UU1QxiIcmXMVym76t7CA
+    short-id: 5f4062df13b90f41
+  client-fingerprint: chrome
+  dialer-proxy: 日本1
+  _orig_name: 🇯🇵 KDDI-落地
+  _source_target: http://dns.1111988.xyz:8880
+- name: 剩余流量：192.15 GB
+  type: trojan
+  server: 02-rl-hkg.c-one.us
+  port: 20888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-sin-20.auua.us
+  _orig_name: 剩余流量：192.15 GB
+  _source_target: https://156.239.227.43
+- name: 美国-SJC-03-TR
+  type: trojan
+  server: 03-rl-hkg.c-one.us
+  port: 26888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-sjc-26.auua.us
+  _orig_name: 美国-SJC-03-TR
+  _source_target: https://156.239.227.43
+- name: 日本-TYO-03-TR
+  type: trojan
+  server: 03-rl-hkg.c-one.us
+  port: 28888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-tyo-28.auua.us
+  _orig_name: 日本-TYO-03-TR
+  _source_target: https://156.239.227.43
+- name: 美国-SJC-01-TR
+  type: trojan
+  server: 01-rl-hkg.c-one.us
+  port: 23888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-sjc-23.auua.us
+  _orig_name: 美国-SJC-01-TR
+  _source_target: https://156.239.227.43
+- name: 香港-HKG-02-TR
+  type: trojan
+  server: 02-rl-hkg.c-one.us
+  port: 22888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-hkg-22.auua.us
+  _orig_name: 香港-HKG-02-TR
+  _source_target: https://156.239.227.43
+- name: 台湾-TPE-HiNet-02-TR
+  type: trojan
+  server: 02-rl-hkg.c-one.us
+  port: 14888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-tpe-14.auua.us
+  _orig_name: 台湾-TPE-HiNet-02-TR
+  _source_target: https://156.239.227.43
+- name: 台湾-TPE-HiNet-01-TR
+  type: trojan
+  server: 01-rl-hkg.c-one.us
+  port: 13888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-tpe-13.auua.us
+  _orig_name: 台湾-TPE-HiNet-01-TR
+  _source_target: https://156.239.227.43
+- name: 德国-FRA-03-TR
+  type: trojan
+  server: 03-rl-hkg.artacs.click
+  port: 27888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: vl-fra-27.artacs.click
+  _orig_name: 德国-FRA-03-TR
+  _source_target: https://156.239.227.43
+- name: 新加坡-SIN-03-TR
+  type: trojan
+  server: 03-rl-hkg.c-one.us
+  port: 25888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-sin-25.auua.us
+  _orig_name: 新加坡-SIN-03-TR
+  _source_target: https://156.239.227.43
+- name: 香港-HKT-01-TR
+  type: trojan
+  server: 01-rl-hkg.c-one.us
+  port: 30888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-hkt-30.auua.us
+  _orig_name: 香港-HKT-01-TR
+  _source_target: https://156.239.227.43
+- name: 日本-TYO-01-TR
+  type: trojan
+  server: 01-rl-hkg.c-one.us
+  port: 11888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-tyo-11.auua.us
+  _orig_name: 日本-TYO-01-TR
+  _source_target: https://156.239.227.43
+- name: 德国-FRA-02-TR
+  type: trojan
+  server: 02-rl-hkg.c-one.us
+  port: 18888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-fra-18.auua.us
+  _orig_name: 德国-FRA-02-TR
+  _source_target: https://156.239.227.43
+- name: 香港-HKG-03-TR
+  type: trojan
+  server: 03-rl-hkg.c-one.us
+  port: 29888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-hkg-29.auua.us
+  _orig_name: 香港-HKG-03-TR
+  _source_target: https://156.239.227.43
+- name: 香港-HKT-02-TR
+  type: trojan
+  server: 02-rl-hkg.c-one.us
+  port: 31888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-hkt-31.auua.us
+  _orig_name: 香港-HKT-02-TR
+  _source_target: https://156.239.227.43
+- name: 新加坡-SIN-01-TR
+  type: trojan
+  server: 01-rl-hkg.c-one.us
+  port: 19888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-sin-19.auua.us
+  _orig_name: 新加坡-SIN-01-TR
+  _source_target: https://156.239.227.43
+- name: 美国-SJC-02-TR
+  type: trojan
+  server: 02-rl-hkg.c-one.us
+  port: 10888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-sjc-10.auua.us
+  _orig_name: 美国-SJC-02-TR
+  _source_target: https://156.239.227.43
+- name: 香港-HKG-01-TR
+  type: trojan
+  server: 01-rl-hkg.c-one.us
+  port: 21888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-hkg-21.auua.us
+  _orig_name: 香港-HKG-01-TR
+  _source_target: https://156.239.227.43
+- name: 德国-FRA-01-TR
+  type: trojan
+  server: 01-rl-hkg.c-one.us
+  port: 10888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-fra-9.auua.us
+  _orig_name: 德国-FRA-01-TR
+  _source_target: https://156.239.227.43
+- name: 日本-TYO-02-TR
+  type: trojan
+  server: 02-rl-hkg.c-one.us
+  port: 17888
+  password: b1fb1a1c-1f12-470b-9dfb-087f3323f1fb
+  udp: true
+  sni: tr-tyo-17.auua.us
+  _orig_name: 日本-TYO-02-TR
+  _source_target: https://156.239.227.43
+- name: 华沙
+  type: trojan
+  server: up.bbroot.com
+  port: 443
+  udp: true
+  tfo: true
+  password: a1b2c3d4-e5f6-7890-1234-56789abcdef0
+  network: ws
+  ws-opts:
+    v2ray-http-upgrade: true
+  smux:
+    enabled: true
+    max-connections: 4
+    min-streams: 4
+  _orig_name: 华沙
+  _source_target: https://doc.bbroot.com
+- name: 华沙EdgeOne
+  type: trojan
+  server: db.bbroot.com
+  port: 443
+  udp: true
+  tfo: true
+  password: a1b2c3d4-e5f6-7890-1234-56789abcdef0
+  network: ws
+  ws-opts:
+    v2ray-http-upgrade: true
+  smux:
+    enabled: true
+    max-connections: 4
+    min-streams: 4
+  _orig_name: 华沙EdgeOne
+  _source_target: https://doc.bbroot.com
+- name: 洛杉矶
+  type: trojan
+  server: st.bbroot.com
+  port: 443
+  udp: true
+  tfo: true
+  password: a1b2c3d4-e5f6-7890-1234-56789abcdef0
+  network: ws
+  ws-opts:
+    v2ray-http-upgrade: true
+  smux:
+    enabled: true
+    max-connections: 4
+    min-streams: 4
+  _orig_name: 洛杉矶
+  _source_target: https://doc.bbroot.com
+- name: 洛杉矶EdgeOne
+  type: trojan
+  server: dl.bbroot.com
+  port: 443
+  udp: true
+  tfo: true
+  password: a1b2c3d4-e5f6-7890-1234-56789abcdef0
+  network: ws
+  ws-opts:
+    v2ray-http-upgrade: true
+  smux:
+    enabled: true
+    max-connections: 4
+    min-streams: 4
+  _orig_name: 洛杉矶EdgeOne
+  _source_target: https://doc.bbroot.com
+- name: SG-频道@kejiland00-Trojan
+  type: trojan
+  server: 34.143.159.175
+  port: 443
+  password: d3b0870e-1d73-4462-aade-635aa12fd79d
+  network: ws
+  udp: true
+  sni: p.wwv.xx.kg
+  client-fingerprint: chrome
+  skip-cert-verify: true
+  ws-opts:
+    path: /
+    headers:
+      Host: p.wwv.xx.kg
+  _orig_name: SG-频道@kejiland00-Trojan
+  _source_target: http://clash.wwv.xx.kg:8880
+- alterId: 0
+  cipher: auto
+  name: sss香港转巴西-13328-zp7fo067q7
+  network: tcp
+  port: 13328
+  server: 104.23.245.121
+  tls: false
+  type: vmess
+  udp: true
+  uuid: 8aa49615-56a2-4090-9f49-b8b8c9b3c9fa
+  _orig_name: sss香港转巴西-13328-zp7fo067q7
+  _source_target: https://13866.cn
+- alterId: 0
+  cipher: auto
+  name: sss香港转巴西-9979
+  network: tcp
+  port: 9979
+  server: 104.23.245.121
+  tls: false
+  type: vmess
+  udp: true
+  uuid: 8aa49615-56a2-4090-9f49-b8b8c9b3c9fa
+  _orig_name: sss香港转巴西-9979
+  _source_target: https://13866.cn
+- alterId: 0
+  cipher: auto
+  name: sss香港转巴西-4733
+  network: tcp
+  port: 4733
+  server: 104.23.245.121
+  tls: false
+  type: vmess
+  udp: true
+  uuid: 8aa49615-56a2-4090-9f49-b8b8c9b3c9fa
+  _orig_name: sss香港转巴西-4733
+  _source_target: https://13866.cn
+- name: US-LA-2-VMess-WS-TLS
+  type: vmess
+  server: 127.0.0.1
+  port: 52550
+  uuid: e96ea2d2-1685-4fd1-82d5-43ef3682ce42
+  alterId: 0
+  cipher: auto
+  udp: true
+  tls: true
+  network: ws
+  servername: us.feinaisi.eu.org
+  client-fingerprint: chrome
+  alpn:
+  - h2
+  - http/1.1
+  ws-opts:
+    path: /uslsj
+    headers:
+      Host: us.feinaisi.eu.org
+  _orig_name: US-LA-2-VMess-WS-TLS
+  _source_target: https://jiedian.feinaisi.eu.org
+- name: 🇸🇬 SG
+  type: ss
+  server: 154.86.30.45
+  port: 24443
+  cipher: aes-128-gcm
+  password: bKgENdAl@8Zx3lAc-HK-BD-20260622
+  udp: true
+  _orig_name: 🇸🇬 SG
+  _source_target: http://154.86.30.45:30080
+- name: 🇭🇰 HK
+  type: ss
+  server: 154.86.30.45
+  port: 25443
+  cipher: aes-128-gcm
+  password: bKgENdAl@8Zx3lAc-HK-DIRECT-20260624
+  udp: true
+  _orig_name: 🇭🇰 HK
+  _source_target: http://154.86.30.45:30080
+- name: 🇮🇳 自建SS-01 (115.x)
+  type: ss
+  server: 115.187.17.97
+  port: 31981
+  cipher: 2022-blake3-aes-256-gcm
+  password: 7e8xYEun62pjYRA3Rrb//x3QM8Bp1mUer9oes8k5BZ8=:1j0drEXungBxjla3IQAgYy5yA43BSiKNQqiG2G2lOTc=
+  udp: true
+  dialer-proxy: 🇭🇰 香港中转入口
+  _orig_name: 🇮🇳 自建SS-01 (115.x)
+  _source_target: https://hkgoin.jyounet.com
+- name: 🇮🇳 自建SS-02 (TeenPatti)
+  type: ss
+  server: yindu003.teenpatti.xin
+  port: 42268
+  cipher: 2022-blake3-aes-256-gcm
+  password: MftGFvinDqzXNj9vZqA9mPQzRJqB3bMA7or7qOslNVo=:5ziSvOa0H349P7PG2he0Csucgpt7ieCVyXIAcSFIgK0=
+  udp: true
+  dialer-proxy: 🇭🇰 香港中转入口
+  _orig_name: 🇮🇳 自建SS-02 (TeenPatti)
+  _source_target: https://hkgoin.jyounet.com
+- name: 🇮🇳 自建3
+  type: ss
+  server: 134.195.137.159
+  port: 35330
+  cipher: 2022-blake3-aes-256-gcm
+  password: lTQ6NK4SnwxddzSW9REpoVfxkiF1ADyyQcQFuFh8kbc=:ot1xchXKf2uTNGWel9b0aYBi6sr8VpdyMNpH7x6r4us=
+  udp: true
+  dialer-proxy: 🇭🇰 香港中转入口
+  _orig_name: 🇮🇳 自建3
+  _source_target: https://hkgoin.jyounet.com
+- name: 🇮🇳 自建SS-04 (115.x)
+  type: ss
+  server: 115.187.17.97
+  port: 25824
+  cipher: 2022-blake3-aes-256-gcm
+  password: R6KgWnGWQpB8Q3h8go8v7is5YavNFw8JTkLFCtq7uAw=:w/8KtnqA+uWv2OQMKPgiV10YaarkZ+bFEUesnvv5QTI=
+  udp: true
+  dialer-proxy: 🇭🇰 香港中转入口
+  _orig_name: 🇮🇳 自建SS-04 (115.x)
+  _source_target: https://hkgoin.jyounet.com
+- name: 🇮🇳 自建SS-05
+  type: ss
+  server: 115.187.17.163
+  port: 37110
+  cipher: 2022-blake3-aes-256-gcm
+  password: yHnjx2qQrFZmjPcruk/yWjtOe5l+SgeSOnqk46XPNE0=:8utCU6Rmj0tqZ2ke+FUofw7pgmstDGsJTM8kJ6r4/Vk=
+  udp: true
+  dialer-proxy: 🇭🇰 香港中转入口
+  _orig_name: 🇮🇳 自建SS-05
+  _source_target: https://hkgoin.jyounet.com
+- name: 🇮🇳 自建SS-06
+  type: ss
+  server: 115.187.17.150
+  port: 15171
+  cipher: 2022-blake3-aes-256-gcm
+  password: jx7xHt5Zbx5llCQzeFT0DGXgKqunuKhveS/4vtG7KHI=:5djP4f+qdI2nfIBSxNAuRQisItLiX0p1KjPPhii24OI=
+  udp: true
+  dialer-proxy: 🇭🇰 香港中转入口
+  _orig_name: 🇮🇳 自建SS-06
+  _source_target: https://hkgoin.jyounet.com
+- name: 🇮🇳 自建SS-07
+  type: ss
+  server: 115.187.17.163
+  port: 25527
+  cipher: 2022-blake3-aes-256-gcm
+  password: VX/eK+4x2lkUbkwyfVxkQC/YRuXdrHwKPUYKGSjm7Jg=:mJ9X9IpFc9pgCjl1ug1HrKQ+T0ICqK2K/IbFcYgSA/k=
+  udp: true
+  dialer-proxy: 🇭🇰 香港中转入口
+  _orig_name: 🇮🇳 自建SS-07
+  _source_target: https://hkgoin.jyounet.com
+- name: 🇮🇳 自建SS-08
+  type: ss
+  server: 115.187.17.166
+  port: 31881
+  cipher: 2022-blake3-aes-256-gcm
+  password: +y+TRoTjaGWfvBIta0UDMMkFyaSXq6e5wjkGFBvfHOo=:fpv/qy4sDocNorBvEybZa42BKyY4jZgl81p/Jb+7DyI=
+  udp: true
+  dialer-proxy: 🇭🇰 香港中转入口
+  _orig_name: 🇮🇳 自建SS-08
+  _source_target: https://hkgoin.jyounet.com
+- name: 🇺🇸 04. 美国 RackNerd - TUIC v5 (QUIC 极速并发)
+  type: tuic
+  server: 104.223.72.232
+  port: 8444
+  uuid: 444715e6-1c6a-4027-90df-fa01ac984669
+  password: rnTuic_9xK4mP2vL
+  alpn:
+  - h3
+  congestion-controller: bbr
+  zero-rtt-handshake: true
+  heartbeat: 10s
+  sni: rn.liujiaqi.top
+  skip-cert-verify: false
+  udp-relay-mode: native
+  _orig_name: 🇺🇸 04. 美国 RackNerd - TUIC v5 (QUIC 极速并发)
+  _source_target: http://34.3.101.206
+- name: 🇺🇸 04. 美国 GCP - TUIC v5 (QUIC 极速并发)
+  type: tuic
+  server: 34.173.148.138
+  port: 8444
+  uuid: f9551ab4-265a-43f5-9834-7cebf0474ea9
+  password: gcpTuic_9xK4mP2vL
+  alpn:
+  - h3
+  congestion-controller: bbr
+  sni: gcp-west.liujiaqi.top
+  skip-cert-verify: false
+  udp-relay-mode: native
+  _orig_name: 🇺🇸 04. 美国 GCP - TUIC v5 (QUIC 极速并发)
+  _source_target: http://34.3.101.206
+- name: 🇸🇬 04. 新加坡 Oracle - TUIC v5 (QUIC 极速并发)
+  type: tuic
+  server: 2603:c024:4524:3400:0:7caf:8cfa:add3
+  port: 8444
+  uuid: 086230e1-9651-4c75-8a10-aaab31412c1b
+  password: oraTuic_9xK4mP2vL
+  alpn:
+  - h3
+  congestion-controller: bbr
+  sni: sg.liujiaqi.top
+  skip-cert-verify: false
+  udp-relay-mode: native
+  _orig_name: 🇸🇬 04. 新加坡 Oracle - TUIC v5 (QUIC 极速并发)
+  _source_target: http://34.3.101.206
+- name: 🇺🇸 03. 美国 RackNerd - AnyTLS (高级流控抗阻断)
+  type: anytls
+  server: 104.223.72.232
+  port: 8443
+  password: rnAny_8nQ5wT1zR
+  tls: true
+  sni: rn.liujiaqi.top
+  skip-cert-verify: false
+  _orig_name: 🇺🇸 03. 美国 RackNerd - AnyTLS (高级流控抗阻断)
+  _source_target: http://34.3.101.206
+- name: 🇺🇸 03. 美国 GCP - AnyTLS (高级流控抗阻断)
+  type: anytls
+  server: 34.173.148.138
+  port: 8443
+  password: gcpAny_8nQ5wT1zR
+  tls: true
+  sni: gcp-west.liujiaqi.top
+  skip-cert-verify: false
+  _orig_name: 🇺🇸 03. 美国 GCP - AnyTLS (高级流控抗阻断)
+  _source_target: http://34.3.101.206
+- name: 🇸🇬 03. 新加坡 Oracle - AnyTLS (高级流控抗阻断)
+  type: anytls
+  server: 2603:c024:4524:3400:0:7caf:8cfa:add3
+  port: 8443
+  password: oraAny_8nQ5wT1zR
+  tls: true
+  sni: sg.liujiaqi.top
+  skip-cert-verify: false
+  _orig_name: 🇸🇬 03. 新加坡 Oracle - AnyTLS (高级流控抗阻断)
+  _source_target: http://34.3.101.206
+- name: 自建-新加坡-WireGuard
+  type: wireguard
+  server: 216.195.196.86
+  port: 51820
+  ip: 10.66.66.2
+  private-key: yJzZiWwokKYJJFqwvotSP2n8mTZQe/qmVVWiU9BGiHM=
+  public-key: QpuIyoi9TiG3bd8cAEStnmSPn22xsoBpDciVlj5Gv3w=
+  pre-shared-key: LjCAQRXobuSip9l1S6mYIz8k8ksVhqq0VTjE+GLuhGg=
+  allowed-ips:
+  - 0.0.0.0/0
+  udp: true
+  mtu: 1428
+  _orig_name: 自建-新加坡-WireGuard
+  _source_target: http://216.195.196.86:2086
+- name: ✈️ 美国备用-HTTPS
+  type: http
+  server: 144.34.241.10
+  port: 443
+  username: lindada
+  password: aoto930608
+  tls: true
+  skip-cert-verify: true
+  _orig_name: ✈️ 美国备用-HTTPS
+  _source_target: https://sub-gz.nanyanggroupids.com
+- name: 优选
+  type: socks5
+  server: 127.0.0.1
+  port: 7777
+  udp: true
+  _orig_name: 优选
+  _source_target: http://clash.wwv.xx.kg:8880
+- name: 美国
+  type: socks5
+  server: nat-us-28tz.aproxy.top
+  port: 24233
+  username: 761fc923c5ab0b32
+  password: 2b5a3db9f64ecc101cca8375365937fe
+  udp: true
+  dialer-proxy: 日本1
+  _orig_name: 美国
+  _source_target: http://dns.1111988.xyz:8880
+- name: 🇯🇵 SONY-落地
+  type: socks5
+  server: 223.135.156.183
+  port: 20330
+  username: c88e8ea4c740b090
+  password: b2579b50b52cad84869a8fa274751dea
+  dialer-proxy: 日本1
+  _orig_name: 🇯🇵 SONY-落地
+  _source_target: http://dns.1111988.xyz:8880
+- name: 🇯🇵 乐天-落地
+  type: socks5
+  server: 23.81.40.149
+  port: 22025
+  username: acf1fa7908c22f2b
+  password: 5fccc3f10414b79160bc765093f77c77
+  dialer-proxy: 日本1
+  _orig_name: 🇯🇵 乐天-落地
+  _source_target: http://dns.1111988.xyz:8880
+- name: 🇯🇵 SoftB-落地
+  type: socks5
+  server: 142.91.109.151
+  port: 23028
+  username: 3dd8bd6c4ce857b3
+  password: 3422617db50680df596cdf053b9e955f
+  dialer-proxy: 日本1
+  _orig_name: 🇯🇵 SoftB-落地
+  _source_target: http://dns.1111988.xyz:8880

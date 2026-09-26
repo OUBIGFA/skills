@@ -157,6 +157,24 @@ class TestKeyEvaluator(unittest.TestCase):
         self.assertEqual(select_key_nodes([row], min_stable_mbps=16.0), [])
         self.assertEqual(len(select_key_nodes([row], min_stable_mbps=12.0)), 1)
 
+    def test_landing_role_and_old_key_flags_are_rechecked(self):
+        speed = {"status": "complete", "verdict": "qualified", "stable_mbps": 20.0, "floor_mbps": 15.0}
+        for name, landing in (("unmarked", True), ("🇹🇼 台湾_1_家宽", False)):
+            with self.subTest(name=name):
+                row = {"proxy": {"name": name, "type": "trojan", "_is_key": True, "_key_score": 99},
+                       "exit_ip": "1.1.1.1", "is_landing": landing, "speed_result": speed}
+                self.assertEqual(select_key_nodes([row]), [])
+                self.assertFalse(row["proxy"]["_is_key"])
+                self.assertNotIn("_key_score", row["proxy"])
+
+    def test_key_reselection_clears_prior_winner(self):
+        row = {"proxy": {"name": "direct", "type": "trojan"}, "exit_ip": "1.1.1.1",
+               "speed_result": {"status": "complete", "stable_mbps": 14.0, "floor_mbps": 10.0}}
+        self.assertEqual(len(select_key_nodes([row])), 1)
+        self.assertEqual(select_key_nodes([row], min_stable_mbps=16.0), [])
+        self.assertFalse(row["is_key"])
+        self.assertFalse(row["proxy"]["_is_key"])
+
     def test_asia_bonus_uses_pipeline_country_code(self):
         # 流水线结果行只有 cc（无 _country_code / country），亚太加分仍需生效
         speed = {"status": "complete", "verdict": "qualified", "stable_mbps": 40.0, "floor_mbps": 35.0}
@@ -203,6 +221,15 @@ class TestTaggerAndNaming(unittest.TestCase):
 
 class TestRendererGroupingSync(unittest.TestCase):
     """测试分组规则同步与落地节点链式跳板绑定"""
+
+    def test_stale_key_on_landing_never_enters_front_group(self):
+        landing = {"name": "🇺🇸 Key美国_1_Lnd", "type": "trojan", "_is_key": True, "_is_landing": True}
+        direct = {"name": "🇯🇵 Key日本_1", "type": "trojan", "_is_key": True}
+        config = render_clash_config([landing, direct])
+        groups = {g["name"]: g["proxies"] for g in config["proxy-groups"]}
+        self.assertNotIn(landing["name"], groups["🛡️ Front前置"])
+        self.assertNotIn(landing["name"], groups["⚡ Fast自动选择"])
+        self.assertIn(direct["name"], groups["🛡️ Front前置"])
 
     def test_front_and_fast_groups_with_keys(self):
         proxies = [

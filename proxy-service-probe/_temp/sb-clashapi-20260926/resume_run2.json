@@ -1,0 +1,610 @@
+{
+  "log": {
+    "disabled": false,
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "dns_proxy",
+        "type": "https",
+        "server": "8.8.8.8",
+        "detour": "🌏️ 节点选择"
+      },
+      {
+        "tag": "dns_direct",
+        "type": "udp",
+        "server": "223.5.5.5"
+      },
+      {
+        "tag": "dns_local",
+        "type": "local"
+      }
+    ],
+    "rules": [
+      {
+        "clash_mode": "Direct",
+        "server": "dns_direct"
+      },
+      {
+        "clash_mode": "Global",
+        "server": "dns_proxy"
+      },
+      {
+        "rule_set": "geosite-cn",
+        "server": "dns_direct"
+      }
+    ],
+    "final": "dns_proxy",
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "127.0.0.1",
+      "listen_port": 20808
+    }
+  ],
+  "http_clients": [
+    {
+      "tag": "direct-client"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "🛡️ Front前置",
+      "outbounds": [
+        "⚡ Fast自动选择",
+        "direct",
+        "🇪🇬 ✨️❇️♥️Fast埃及_1_D+",
+        "🇲🇾 ❇️♥️Fast马来西亚_1"
+      ],
+      "default": "⚡ Fast自动选择"
+    },
+    {
+      "type": "urltest",
+      "tag": "⚡ Fast自动选择",
+      "outbounds": [
+        "🇪🇬 ✨️❇️♥️Fast埃及_1_D+",
+        "🇲🇾 ❇️♥️Fast马来西亚_1"
+      ],
+      "url": "https://cp.cloudflare.com/generate_204",
+      "interval": "60s",
+      "tolerance": 50
+    },
+    {
+      "type": "selector",
+      "tag": "🌏️ 节点选择",
+      "outbounds": [
+        "✨️ 综合全通",
+        "🚀 自动选择",
+        "🔄 手动切换",
+        "🔀 AI 服务",
+        "🇺🇸 Google",
+        "🎬 国际流媒体",
+        "🔒️ 落地节点",
+        "direct"
+      ],
+      "default": "✨️ 综合全通"
+    },
+    {
+      "type": "urltest",
+      "tag": "🚀 自动选择",
+      "outbounds": [
+        "🇪🇬 ✨️❇️♥️Fast埃及_1_D+",
+        "🇫🇷 法国_1_Lnd_D+_⚠️IR",
+        "🇲🇾 ❇️♥️Fast马来西亚_1"
+      ],
+      "url": "https://cp.cloudflare.com/generate_204",
+      "interval": "60s",
+      "tolerance": 20
+    },
+    {
+      "type": "selector",
+      "tag": "🔄 手动切换",
+      "outbounds": [
+        "🇪🇬 ✨️❇️♥️Fast埃及_1_D+",
+        "🇫🇷 法国_1_Lnd_D+_⚠️IR",
+        "🇲🇾 ❇️♥️Fast马来西亚_1"
+      ],
+      "default": "🇪🇬 ✨️❇️♥️Fast埃及_1_D+"
+    },
+    {
+      "type": "urltest",
+      "tag": "✨️ 综合全通",
+      "outbounds": [
+        "🇪🇬 ✨️❇️♥️Fast埃及_1_D+"
+      ],
+      "url": "https://www.google.com/generate_204",
+      "interval": "60s",
+      "tolerance": 0
+    },
+    {
+      "type": "selector",
+      "tag": "🔀 AI 服务",
+      "outbounds": [
+        "✨️ 综合全通",
+        "🇺🇸 Google",
+        "✅ 解锁USAI",
+        "✅ 解锁 AI",
+        "🔄 手动切换"
+      ],
+      "default": "✨️ 综合全通"
+    },
+    {
+      "type": "selector",
+      "tag": "🇺🇸 Google",
+      "outbounds": [
+        "✅ 解锁USAI",
+        "✅ 解锁 AI",
+        "🇺🇸 美国节点",
+        "🚀 自动选择",
+        "🔄 手动切换"
+      ],
+      "default": "✅ 解锁USAI"
+    },
+    {
+      "type": "urltest",
+      "tag": "✅ 解锁 AI",
+      "outbounds": [
+        "🇪🇬 ✨️❇️♥️Fast埃及_1_D+",
+        "🇲🇾 ❇️♥️Fast马来西亚_1"
+      ],
+      "url": "https://www.google.com/generate_204",
+      "interval": "60s",
+      "tolerance": 0
+    },
+    {
+      "type": "urltest",
+      "tag": "✅ 解锁USAI",
+      "outbounds": [
+        "🚀 自动选择"
+      ],
+      "url": "https://www.google.com/generate_204",
+      "interval": "60s",
+      "tolerance": 0
+    },
+    {
+      "type": "selector",
+      "tag": "🇺🇸 美国节点",
+      "outbounds": [
+        "🚀 自动选择"
+      ],
+      "default": "🚀 自动选择"
+    },
+    {
+      "type": "selector",
+      "tag": "🎬 国际流媒体",
+      "outbounds": [
+        "🎥 奈飞解锁",
+        "✨ 解锁Disney+",
+        "🔄 手动切换",
+        "direct"
+      ],
+      "default": "🎥 奈飞解锁"
+    },
+    {
+      "type": "urltest",
+      "tag": "🎥 奈飞解锁",
+      "outbounds": [
+        "🔄 手动切换",
+        "direct"
+      ],
+      "url": "https://www.netflix.com/title/81280792",
+      "interval": "300s",
+      "tolerance": 100
+    },
+    {
+      "type": "urltest",
+      "tag": "✨ 解锁Disney+",
+      "outbounds": [
+        "🇪🇬 ✨️❇️♥️Fast埃及_1_D+",
+        "🇫🇷 法国_1_Lnd_D+_⚠️IR"
+      ],
+      "url": "https://www.disneyplus.com",
+      "interval": "300s",
+      "tolerance": 100
+    },
+    {
+      "type": "selector",
+      "tag": "🔒️ 落地节点",
+      "outbounds": [
+        "🇫🇷 法国_1_Lnd_D+_⚠️IR"
+      ],
+      "default": "🇫🇷 法国_1_Lnd_D+_⚠️IR"
+    },
+    {
+      "type": "selector",
+      "tag": "⛔️ 拦截广告",
+      "outbounds": [
+        "direct"
+      ],
+      "default": "direct"
+    },
+    {
+      "type": "selector",
+      "tag": "↪️ 漏网之鱼",
+      "outbounds": [
+        "🌏️ 节点选择",
+        "direct"
+      ],
+      "default": "🌏️ 节点选择"
+    },
+    {
+      "type": "http",
+      "tag": "🇪🇬 ✨️❇️♥️Fast埃及_1_D+",
+      "server": "102.217.70.166",
+      "server_port": 443,
+      "tls": {
+        "enabled": true,
+        "insecure": true
+      }
+    },
+    {
+      "server": "45.80.111.7",
+      "server_port": 443,
+      "tag": "🇫🇷 法国_1_Lnd_D+_⚠️IR",
+      "type": "trojan",
+      "password": "humanity",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.calmlunch.com",
+        "insecure": true,
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/assignment",
+        "headers": {
+          "Host": [
+            "www.calmlunch.com"
+          ]
+        }
+      },
+      "tcp_fast_open": false,
+      "detour": "🛡️ Front前置"
+    },
+    {
+      "type": "http",
+      "tag": "🇲🇾 ❇️♥️Fast马来西亚_1",
+      "server": "58.26.247.226",
+      "server_port": 443,
+      "tls": {
+        "enabled": true,
+        "insecure": true
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "default_http_client": "direct-client",
+    "auto_detect_interface": true,
+    "default_domain_resolver": "dns_direct",
+    "final": "↪️ 漏网之鱼",
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      },
+      {
+        "clash_mode": "Direct",
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "Global",
+        "outbound": "🌏️ 节点选择"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      },
+      {
+        "process_name": [
+          "Docker Desktop Installer.exe",
+          "Docker Desktop.exe",
+          "DockerCli.exe",
+          "courgette64.exe",
+          "InstallerCli.exe",
+          "TeraBoxUnite.exe",
+          "terabox.exe",
+          "teraboxunite.exe",
+          "teraboxhost.exe",
+          "teraboxwebservice.exe",
+          "uninst.exe",
+          "yunutilityservice.exe",
+          "bugreport.exe",
+          "chromenativemessaginghost.exe",
+          "crashpad_handler.exe"
+        ],
+        "outbound": "🌏️ 节点选择"
+      },
+      {
+        "process_name": [
+          "proxypal.exe"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "domain_suffix": [
+          "dnsleaktest.com",
+          "browserleaks.com",
+          "ipleak.net",
+          "ipleak.org",
+          "dnsleak.com",
+          "anyrouter.top"
+        ],
+        "outbound": "🌏️ 节点选择"
+      },
+      {
+        "domain_suffix": [
+          "Adobe"
+        ],
+        "action": "reject"
+      },
+      {
+        "domain_suffix": [
+          "google.com",
+          "googleapis.com",
+          "gstatic.com",
+          "googleusercontent.com",
+          "googlevideo.com",
+          "google.com.hk",
+          "google.co.jp",
+          "googleadservices.com",
+          "googletagmanager.com",
+          "googlesyndication.com",
+          "google-analytics.com",
+          "googleplay.com",
+          "android.com",
+          "deepmind.google",
+          "deepmind.com",
+          "generativeai.google",
+          "notebooklm.google",
+          "ai.google.dev",
+          "youtube.com",
+          "youtu.be",
+          "ytimg.com",
+          "ggpht.com",
+          "1e100.net"
+        ],
+        "outbound": "🇺🇸 Google"
+      },
+      {
+        "domain_keyword": [
+          "google",
+          "youtube",
+          "gemini",
+          "generativelanguage"
+        ],
+        "outbound": "🇺🇸 Google"
+      },
+      {
+        "domain_suffix": [
+          "chatgpt.com",
+          "openai.com",
+          "sora.com",
+          "oaistatic.com",
+          "oaiusercontent.com",
+          "ai.com",
+          "livekit.cloud",
+          "arkoselabs.com",
+          "statsigapi.net",
+          "featuregates.org",
+          "identrust.com",
+          "intercom.io",
+          "intercomcdn.com",
+          "launchdarkly.com",
+          "segment.io",
+          "sentry.io",
+          "stripe.com"
+        ],
+        "outbound": "🔀 AI 服务"
+      },
+      {
+        "domain_keyword": [
+          "openai",
+          "chatgpt",
+          "sora"
+        ],
+        "outbound": "🔀 AI 服务"
+      },
+      {
+        "domain_suffix": [
+          "claude.ai",
+          "claude.com",
+          "claudeusercontent.com",
+          "anthropic.com"
+        ],
+        "outbound": "🔀 AI 服务"
+      },
+      {
+        "domain_keyword": [
+          "anthropic",
+          "claude"
+        ],
+        "outbound": "🔀 AI 服务"
+      },
+      {
+        "domain_suffix": [
+          "copilot.microsoft.com",
+          "copilot.cloud.microsoft",
+          "sydney.bing.com",
+          "githubcopilot.com",
+          "grok.com",
+          "x.ai",
+          "perplexity.ai",
+          "poe.com",
+          "meta.ai",
+          "groq.com",
+          "huggingface.co",
+          "hf.co"
+        ],
+        "outbound": "🔀 AI 服务"
+      },
+      {
+        "domain_keyword": [
+          "groq",
+          "huggingface"
+        ],
+        "outbound": "🔀 AI 服务"
+      },
+      {
+        "domain_suffix": [
+          "mistral.ai",
+          "together.ai",
+          "together.xyz",
+          "cursor.com",
+          "cursor.sh",
+          "cohere.ai",
+          "cohere.com"
+        ],
+        "outbound": "🔀 AI 服务"
+      },
+      {
+        "domain_suffix": [
+          "netflix.com",
+          "netflix.net",
+          "nflxso.net",
+          "nflxext.com",
+          "nflxvideo.net",
+          "nflximg.net",
+          "disneyplus.com",
+          "disney-plus.net",
+          "bamgrid.com",
+          "spotify.com",
+          "scdn.co"
+        ],
+        "outbound": "🎬 国际流媒体"
+      },
+      {
+        "domain_suffix": [
+          "oaifree.com"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "domain_keyword": [
+          "oaifree"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "domain_suffix": [
+          "filen.io",
+          "pokepay.cc",
+          "okx.com",
+          "bitmart.com",
+          "naizi.lol",
+          "cc.cd",
+          "search-sharp.com",
+          "kitty.sb",
+          "appflowy.com",
+          "mojie.me",
+          "cgfxw.com",
+          "cun.ai",
+          "free-proxy.cz",
+          "aireiter.com",
+          "hezubus.cc",
+          "98kjc.com",
+          "b.ai",
+          "42w.shop",
+          "router.com",
+          "seekai.cc",
+          "justwoker.icu",
+          "tabitoken.com",
+          "agentrouter.org",
+          "gorouter.app",
+          "vyceai.com",
+          "sulmate.cn",
+          "njavtv.com",
+          "kktoken.cc",
+          "orevx.ai",
+          "sylu.cc",
+          "abinapi.com",
+          "linux.sb",
+          "nodeloc.com",
+          "nodebuf.com",
+          "supabase.io",
+          "knightlab.com",
+          "zlib.missuo.me",
+          "missuo.me",
+          "fc2.com",
+          "manhuagui.com",
+          "koofr.net",
+          "tubly.download"
+        ],
+        "outbound": "🌏️ 节点选择"
+      },
+      {
+        "domain_suffix": [
+          "888188.me",
+          "xub.ai",
+          "5-turbo.auto",
+          "chat2.5-turbo.autos",
+          "miao3.cn",
+          "clivia.fun",
+          "zcool.com.cn",
+          "ecylt.top",
+          "modown.cn",
+          "foxirj.com",
+          "aischat.xyz",
+          "new.oaifree.com",
+          "aliyy.cc",
+          "github.cn.com",
+          "fofa.info",
+          "cgltg.com",
+          "adobe.io",
+          "adobestats.io",
+          "theoremhub.asia",
+          "spaceship.com",
+          "jizhihezi.com",
+          "sharedchat.cc",
+          "linuxdo.org",
+          "hybgzs.com",
+          "muyuan.do",
+          "io"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "domain_suffix": [
+          "org"
+        ],
+        "outbound": "🌏️ 节点选择"
+      },
+      {
+        "rule_set": [
+          "geoip-cn",
+          "geosite-cn"
+        ],
+        "outbound": "direct"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "remote",
+        "tag": "geosite-cn",
+        "format": "binary",
+        "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/cn.srs"
+      },
+      {
+        "type": "remote",
+        "tag": "geoip-cn",
+        "format": "binary",
+        "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/cn.srs"
+      }
+    ]
+  }
+}

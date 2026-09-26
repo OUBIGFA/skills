@@ -17,7 +17,6 @@ import math
 import statistics
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
@@ -441,22 +440,6 @@ def apply_speed_result(row, measured, criteria):
     row["speed_kbs"] = round(row["speed_mbps"] * 1_000_000 / 8 / 1024, 1)
     row["is_fast"] = speed_qualified(measured, criteria["min_stable_mbps"], criteria["min_floor_mbps"])
     row["speed_drop"] = speed_drop_reason(measured)
-
-
-def measure_rows_speed(jobs, options, targets=None, concurrency=1):
-    """
-    独立测速阶段 (sing-box 备用流水线使用)：jobs 为 [(proxy_url, row)]，以受控并发逐个测速并把结果写回 row。
-    本地 concurrency=1 严格串行，避免多个节点同时下载互相挤占本机带宽而整体测低。
-    """
-    def measure(job):
-        proxy_url, row = job
-        measured, _ = measure_with_retry(proxy_url, options, targets)
-        apply_speed_result(row, measured, options["criteria"])
-
-    if not jobs:
-        return
-    with ThreadPoolExecutor(max_workers=max(1, min(concurrency, len(jobs)))) as pool:
-        list(pool.map(measure, jobs))
 
 
 VERDICT_ORDER = {"drop": 0, "keep": 1, "qualified": 2}
