@@ -1,0 +1,8 @@
+{"outbounds": [
+ {"type": "trojan", "tag": "🇯🇵 日本_1", "server": "jp.example.com", "server_port": 443, "password": "x", "tls": {"enabled": true, "server_name": "jp.example.com"}},
+ {"type": "vless", "tag": "🇨🇳 中国_1", "server": "cn.example.com", "server_port": 443, "uuid": "01234567-89ab-cdef-0123-456789abcdef", "tls": {"enabled": true, "server_name": "cn.example.com"}},
+ {"type": "shadowsocks", "tag": "🇴🇲 阿曼_1", "server": "om.example.com", "server_port": 8388, "method": "aes-128-gcm", "password": "p"},
+ {"type": "shadowsocks", "tag": "🇺🇸 美国_1_Lnd", "server": "us.example.com", "server_port": 8388, "method": "aes-128-gcm", "password": "p", "detour": "🇯🇵 日本_1"},
+ {"type": "vless", "tag": "xhttp", "server": "x.example.com", "server_port": 443, "uuid": "01234567-89ab-cdef-0123-456789abcdef", "transport": {"type": "xhttp"}},
+ {"type": "selector", "tag": "select", "outbounds": ["🇯🇵 日本_1"]}
+]}

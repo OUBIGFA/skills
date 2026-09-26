@@ -213,8 +213,11 @@ def _mihomo_config(listeners, proxies, iface):
     return config
 
 
-class MihomoStartError(RuntimeError):
-    """临时 mihomo 未能启动 (多为某个节点配置被内核拒绝)，message 带内核日志末尾。"""
+class KernelStartError(RuntimeError):
+    """临时内核 (mihomo / sing-box) 未能启动 (多为某个节点配置被内核拒绝)，message 带内核日志末尾。"""
+
+
+_ERROR_LINE = re.compile(r"level=(?:error|fatal)|\b(?:FATAL|ERROR)\b")
 
 
 def _log_tail(path, limit=300):
@@ -223,43 +226,34 @@ def _log_tail(path, limit=300):
             lines = [line.strip() for line in f if line.strip()]
     except OSError:
         return ""
-    errors = [line for line in lines if "level=error" in line or "level=fatal" in line]
+    errors = [line for line in lines if _ERROR_LINE.search(line)]
     return (errors or lines)[-1][-limit:] if (errors or lines) else ""
 
 
 @contextmanager
-def _run_mihomo(binary, config, ports, monitor=None):
+def kernel_process(label, command, config_name, config_text, ports, controller=None, monitor=None):
     """
-    写入配置并启动临时 mihomo，等待端口就绪；退出时先终止进程再删临时目录。
-    给出 monitor (TrafficMonitor) 时开启仅本机可达、带随机密钥的 external-controller，并接入 /traffic 流量统计。
+    写入配置并启动临时内核进程 (mihomo 与 sing-box 共用)，等待全部监听端口就绪；退出时先终止进程再删临时目录。
+    command(临时目录, 配置路径) 返回启动参数；controller=(端口, 密钥) 时就绪后把其 /traffic 流量统计接入 monitor。
+    进程提前退出抛出 KernelStartError，端口迟迟未就绪抛出 TimeoutError，均带内核日志末尾。
     """
-    config = dict(config)
-    controller = None
-    if monitor is not None:
-        controller = (get_free_port(avoid_ports=ports), secrets.token_hex(12))
-        config["external-controller"] = f"127.0.0.1:{controller[0]}"
-        config["secret"] = controller[1]
-    tmp_dir = tempfile.mkdtemp(prefix="mihomo_probe_")
-    cfg_path = os.path.join(tmp_dir, "config.yaml")
-    log_path = os.path.join(tmp_dir, "mihomo.log")
+    tmp_dir = tempfile.mkdtemp(prefix=f"{label.lower().replace('-', '')}_probe_")
+    cfg_path = os.path.join(tmp_dir, config_name)
+    log_path = os.path.join(tmp_dir, "kernel.log")
     with open(cfg_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(config, f, allow_unicode=True)
+        f.write(config_text)
 
     proc = None
     log_file = open(log_path, "wb")
     try:
-        proc = subprocess.Popen(
-            [binary, "-d", tmp_dir, "-f", cfg_path],
-            stdout=log_file,
-            stderr=subprocess.STDOUT
-        )
+        proc = subprocess.Popen(command(tmp_dir, cfg_path), stdout=log_file, stderr=subprocess.STDOUT)
         for p in list(ports) + ([controller[0]] if controller else []):
             if not wait_port_open(p, timeout=12.0, proc=proc):
                 detail = _log_tail(log_path)
                 if proc.poll() is not None:
-                    raise MihomoStartError(f"Mihomo 启动失败: {detail or f'退出码 {proc.returncode}'}")
-                raise TimeoutError(f"Mihomo 临时监听端口 {p} 启动超时 {detail}".strip())
-        if controller:
+                    raise KernelStartError(f"{label} 启动失败: {detail or f'退出码 {proc.returncode}'}")
+                raise TimeoutError(f"{label} 临时监听端口 {p} 启动超时 {detail}".strip())
+        if controller and monitor is not None:
             monitor.watch(*controller)
         yield
     finally:
@@ -275,6 +269,23 @@ def _run_mihomo(binary, config, ports, monitor=None):
                     pass
         log_file.close()
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@contextmanager
+def _run_mihomo(binary, config, ports, monitor=None):
+    """
+    启动临时 mihomo 并等待端口就绪。给出 monitor (TrafficMonitor) 时开启仅本机可达、带随机密钥的
+    external-controller，并接入 /traffic 流量统计。
+    """
+    config = dict(config)
+    controller = None
+    if monitor is not None:
+        controller = (get_free_port(avoid_ports=ports), secrets.token_hex(12))
+        config["external-controller"] = f"127.0.0.1:{controller[0]}"
+        config["secret"] = controller[1]
+    with kernel_process("Mihomo", lambda tmp_dir, cfg_path: [binary, "-d", tmp_dir, "-f", cfg_path], "config.yaml",
+                        yaml.safe_dump(config, allow_unicode=True), ports, controller=controller, monitor=monitor):
+        yield
 
 
 def _listener_config(entries, iface):
@@ -306,26 +317,22 @@ def _listener_config(entries, iface):
     return _mihomo_config(listeners, proxies, iface), ports
 
 
-def start_node_group(stack, entries, iface=None, mihomo_bin=None, monitor=None, shard_size=64):
+def start_isolated(stack, entries, launch_group, shard_size=64):
     """
-    在 ExitStack 中为 entries 启动临时 mihomo 监听，存活到 stack 关闭为止 (供测活、服务检测、测速各阶段复用)。
-    每个实例最多承载 shard_size 个节点；某个节点配置被内核拒绝时整组二分重试，只把真正无法加载的节点单独剔除，
-    不连累同组其他节点。返回 ({key: 端口}, {key: 失败原因})。
+    entries 每 shard_size 个起一个临时内核实例，存活到 stack 关闭为止 (mihomo 与 sing-box 共用)。
+    某个节点配置被内核拒绝时整组二分重试，只把真正无法加载的节点单独剔除，不连累同组其他节点。
+    launch_group(group) 返回 (未进入的上下文管理器, {key: 端口})。返回 ({key: 端口}, {key: 失败原因})。
     """
-    binary = find_mihomo_bin(mihomo_bin)
-    if not binary:
-        raise RuntimeError("未检测到可用的 Mihomo 内核，请确认系统 PATH 或 _temp/mihomo.exe 存在。")
-    effective_iface = iface or detect_physical_interface()
     ports, failed = {}, {}
 
     def launch(group):
         if not group:
             return
-        config, group_ports = _listener_config(group, effective_iface)
+        context, group_ports = launch_group(group)
         try:
-            stack.enter_context(_run_mihomo(binary, config, list(group_ports.values()), monitor=monitor))
+            stack.enter_context(context)
             ports.update(group_ports)
-        except (MihomoStartError, TimeoutError) as error:
+        except (KernelStartError, TimeoutError) as error:
             if len(group) == 1:
                 failed[group[0][0]] = f"内核无法加载该节点配置: {error}"
                 return
@@ -340,6 +347,40 @@ def start_node_group(stack, entries, iface=None, mihomo_bin=None, monitor=None, 
     return ports, failed
 
 
+def start_node_group(stack, entries, iface=None, mihomo_bin=None, monitor=None, shard_size=64):
+    """
+    在 ExitStack 中为 entries 启动临时 mihomo 监听，存活到 stack 关闭为止 (供测活、服务检测、测速各阶段复用)。
+    分片与被拒节点的二分隔离见 start_isolated。返回 ({key: 端口}, {key: 失败原因})。
+    """
+    binary = find_mihomo_bin(mihomo_bin)
+    if not binary:
+        raise RuntimeError("未检测到可用的 Mihomo 内核，请确认系统 PATH 或 _temp/mihomo.exe 存在。")
+    effective_iface = iface or detect_physical_interface()
+
+    def launch_group(group):
+        config, group_ports = _listener_config(group, effective_iface)
+        return _run_mihomo(binary, config, list(group_ports.values()), monitor=monitor), group_ports
+
+    return start_isolated(stack, entries, launch_group, shard_size)
+
+
+class MihomoKernel:
+    """core.probe_flow 的 mihomo 内核适配器：交给内核的节点配置即 Clash 节点字典。"""
+    label = "mihomo"
+
+    def __init__(self, binary, iface=None):
+        self.binary = binary
+        self.iface = iface
+
+    @staticmethod
+    def node(row):
+        return row["proxy"]
+
+    def start(self, stack, entries, monitor=None, shard_size=64):
+        return start_node_group(stack, entries, iface=self.iface, mihomo_bin=self.binary, monitor=monitor,
+                                shard_size=shard_size)
+
+
 @contextmanager
 def direct_listener(iface=None, mihomo_bin=None):
     """
@@ -351,6 +392,8 @@ def direct_listener(iface=None, mihomo_bin=None):
     if not binary:
         raise RuntimeError("未检测到可用的 Mihomo 内核，请确认系统 PATH 或 _temp/mihomo.exe 存在。")
     port = get_free_port()
-    listeners = [{"name": "direct_baseline", "type": "mixed", "listen": "127.0.0.1", "port": port, "proxy": "DIRECT"}]
+    # 也作 sing-box 流水线的物理直连中继，需转发 hysteria2/tuic 等 UDP 节点
+    listeners = [{"name": "direct_baseline", "type": "mixed", "listen": "127.0.0.1", "port": port, "udp": True,
+                  "proxy": "DIRECT"}]
     with _run_mihomo(binary, _mihomo_config(listeners, [], iface or detect_physical_interface()), [port]):
         yield port

@@ -45,7 +45,8 @@ def reputation_for_exits(info_by_ip, observed_ips):
             "reason": None if complete else "missing_exit_or_reputation_evidence"}
 
 
-# 保留现有渲染、排序接口。
+# 保留现有渲染、排序接口。地区排序按 (位阶, 序号)：未列出的地区为 (7, 999)，排在已列出地区之后；
+# 中国 (8) 排在所有国家/地区之后，未知 (9) 垫底。
 CATEGORY_ORDER = {
     'HK': (0, 0, '香港'), 'MO': (0, 1, '澳门'), 'TW': (0, 2, '台湾'),
     'KR': (1, 0, '韩国'), 'JP': (1, 1, '日本'), 'SG': (1, 2, '新加坡'),
@@ -63,7 +64,7 @@ CATEGORY_ORDER = {
     'MY': (5, 0, '马来西亚'), 'TH': (5, 1, '泰国'), 'VN': (5, 2, '越南'), 'PH': (5, 3, '菲律宾'),
     'ID': (5, 4, '印度尼西亚'), 'IN': (5, 10, '印度'), 'PK': (5, 11, '巴基斯坦'),
     'AE': (6, 1, '阿联酋'), 'SA': (6, 2, '沙特阿拉伯'), 'IL': (6, 3, '以色列'),
-    'CN': (7, 0, '中国'), 'UNK': (7, 999, '未知')
+    'CN': (8, 0, '中国'), 'UNK': (9, 999, '未知')
 }
 
 
@@ -328,7 +329,7 @@ def arbitrate_geo(cf_trace=None, google_region=None, ip_info=None, exit_ips=None
     is_pool = any(count > 1 for count in families.values())
     records = [r for r in info.get('records', []) if r.get('status') == 'ok']
     cf_loc = normalize_country_code(cf.get('loc')) if cf.get('status') == 'ok' and cf.get('ip') in ips else None
-    if cf_loc and (not info.get('ip') or cf.get('ip') == info['ip']):
+    if cf_loc and (not info.get('ip') or cf.get('ip') in ips):
         records.append({"provider": "cloudflare", "cc": cf_loc, "status": "ok"})
     consensus = geo_consensus(records)
     # 旧 google_multi_signals 缓存不能复用：只接收已校验的显式地区来源。

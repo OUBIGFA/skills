@@ -7,8 +7,9 @@ import unittest
 
 # 将 scripts 目录加入 sys.path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-if BASE_DIR not in sys.path:
-    sys.path.insert(0, BASE_DIR)
+SCRIPTS_DIR = os.path.join(os.path.dirname(BASE_DIR), "scripts")
+if SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
 
 from core.parsers import parse_node_uri, parse_singbox_outbound, load_proxies
 from core.egress_geo import alpha3_to_alpha2, country_name_zh, flag_emoji
@@ -60,6 +61,44 @@ class TestProxyServiceProbe(unittest.TestCase):
         self.assertIsNotNone(p_sb)
         self.assertEqual(p_sb["type"], "hysteria2")
         self.assertEqual(p_sb["sni"], "hy2.example.com")
+
+    def test_singbox_list_headers_and_scalar_lists_convert_without_mutation(self):
+        import copy
+        outbound = {"type": "vless", "tag": "ws", "server": "example.com", "server_port": 443,
+                    "uuid": "00000000-0000-0000-0000-000000000001",
+                    "tls": {"enabled": True, "alpn": "h2"},
+                    "transport": {"type": "ws", "path": "/ws", "max_early_data": 2048,
+                                  "headers": {"Host": ["cdn.example.com"], "X-Empty": [], "X-Test": "ok"}}}
+        original = copy.deepcopy(outbound)
+        converted = parse_singbox_outbound(outbound)
+        self.assertEqual(converted["alpn"], ["h2"])
+        self.assertEqual(converted["ws-opts"]["headers"], {"Host": "cdn.example.com", "X-Test": "ok"})
+        self.assertNotIn("early-data-header-name", converted["ws-opts"])
+        self.assertEqual(outbound, original)
+        outbound["transport"] = {"type": "http", "host": "h2.example.com", "path": "/"}
+        self.assertEqual(parse_singbox_outbound(outbound)["h2-opts"]["host"], ["h2.example.com"])
+        outbound["transport"] = {"type": "httpupgrade", "host": "upgrade.example.com",
+                                  "headers": {"X-Test": ["one", "two"]}}
+        upgraded = parse_singbox_outbound(outbound)["ws-opts"]
+        self.assertEqual(upgraded["headers"], {"Host": "upgrade.example.com", "X-Test": "one"})
+        self.assertTrue(upgraded["v2ray-http-upgrade"])
+        http = parse_singbox_outbound({"type": "http", "tag": "http", "server": "example.com", "server_port": 443,
+                                      "headers": {"X-Test": ["one", "two"]}})
+        self.assertEqual(http["headers"], {"X-Test": "one"})
+
+    def test_china_sorts_after_unlisted_regions_in_both_export_formats(self):
+        from core.renderer import sort_nodes_by_region_and_landing
+        for field in ("name", "tag", "final_name"):
+            for resort in (False, True):
+                with self.subTest(field=field, resort=resort):
+                    names = ["🇨🇳 中国_1", "🏳️ 未知_1", "🇬🇱 格陵兰_1", "🇭🇰 香港_1"]
+                    rows = [{field: name} for name in names]
+                    ordered = sort_nodes_by_region_and_landing(rows, resort=resort)
+                    self.assertEqual([r[field] for r in ordered], [names[3], names[2], names[0], names[1]])
+                    # 首节点落地保护不能把中国或未知搬到其它地区前面。
+                    rows = [{field: "🇭🇰 香港_1_Lnd"}, {field: "🇨🇳 中国_1"}, {field: "🏳️ 未知_1"}]
+                    ordered = sort_nodes_by_region_and_landing(rows, resort=resort)
+                    self.assertEqual([r[field] for r in ordered], [r[field] for r in rows])
 
     def test_tagger_and_naming(self):
         # 综合全通美国落地
@@ -205,16 +244,6 @@ class TestProxyServiceProbe(unittest.TestCase):
                     "cc": "JP", "is_landing": False}]
         tag_and_rename_nodes(results)
         self.assertEqual(results[0]["final_name"], "🇯🇵 日本_2")
-
-    def test_browser_only_retest_keeps_poison_tag(self):
-        import probe_singbox
-        info = probe_singbox.parse_info_from_tag("🇰🇷 韩国_3_⚠️CN")
-        self.assertEqual(info["poison_tag"], "_⚠️CN")
-        results = [{"raw_node": {"tag": "🇰🇷 韩国_3_⚠️CN"}, "orig_name": "🇰🇷 韩国_3_⚠️CN",
-                    "cc": info["cc"], "is_landing": False,
-                    "geo_decision": {"poison_tag": info["poison_tag"]}}]
-        tag_and_rename_nodes(results)
-        self.assertEqual(results[0]["final_name"], "🇰🇷 韩国_3_⚠️CN")
 
     def test_clash_to_singbox_conversion_contracts(self):
         from core.clash_to_singbox import clash_to_singbox, convert_clash_proxies

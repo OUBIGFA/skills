@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import unittest
+from contextlib import ExitStack
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
@@ -129,8 +130,14 @@ class GeoEvidenceTests(unittest.TestCase):
         self.assertEqual(result['cc'], 'JP')
         self.assertTrue(result['conflict'])
         self.assertTrue(result['needs_review'])
-        self.assertEqual(geo.arbitrate_geo(orig_cc='SG')['cc'], 'UNK')
         self.assertEqual(geo.arbitrate_geo(cf, exit_ips=[IP])['cc'], 'UNK')
+
+    def test_dual_stack_cf_trace_votes_when_ip_in_exit_ips(self):
+        cf = {'status': 'ok', 'ip': V6, 'loc': 'CN', 'colo': 'SJC'}
+        ip_info = {'ip': IP, 'records': [{'provider': 'ipinfo', 'cc': 'CN', 'status': 'ok'}]}
+        result = geo.arbitrate_geo(cf, ip_info=ip_info, exit_ips=[IP, V6])
+        self.assertEqual(result['cc'], 'CN')
+        self.assertEqual(result['votes'], {'CN': 2})
 
     def test_service_region_and_database_region_are_separate(self):
         google = {'country_code': 'JP', 'source': 'gemini_page'}
@@ -304,6 +311,25 @@ class AuditTests(unittest.TestCase):
 
 
 class PipelineIntegrationTests(unittest.TestCase):
+    """两条流水线共用 core.probe_flow 的服务检测，属地结论均取自共享的 probe_geolocation。"""
+
+    @staticmethod
+    def listeners(stack, entries, **kwargs):
+        return {key: 12345 for key, _, _ in entries}, {}
+
+    @staticmethod
+    def shared_flow(result, ai=None):
+        stack = ExitStack()
+        flow = 'core.probe_flow'
+        stack.enter_context(patch(f'{flow}.check_alive', return_value={'alive': True, 'latency_ms': 80.0, 'attempts': []}))
+        stack.enter_context(patch(f'{flow}.probe_runner_baseline', return_value={IP2}))
+        stack.enter_context(patch(f'{flow}.probe_egress', side_effect=[egress()]))
+        shared = stack.enter_context(patch(f'{flow}.probe_geolocation', return_value=result))
+        if ai is not None:
+            stack.enter_context(patch(f'{flow}.probe_all_ai', return_value=ai))
+        stack.enter_context(patch('builtins.print'))
+        return stack, shared
+
     @patch.object(sys, 'platform', 'linux')
     def test_mihomo_report_retains_shared_evidence(self):
         module = importlib.import_module('probe_services')
@@ -311,18 +337,11 @@ class PipelineIntegrationTests(unittest.TestCase):
         result = {'cc': 'JP', 'exit_ip': IP, 'google_region': {'country_code': 'JP'},
                   'geo_decision': {'egress_stable': True, 'is_pool': False}, 'ip_info': info(),
                   'ip_info_by_ip': {IP: info()}, 'egress': egress(), 'egress_after': egress()}
-
-        def listeners(stack, entries, **kwargs):
-            return {key: 12345 for key, _, _ in entries}, {}
-
-        with tempfile.TemporaryDirectory() as temp, patch.object(module, 'load_proxies', return_value=[node]), \
+        stack, shared = self.shared_flow(result)
+        with stack, tempfile.TemporaryDirectory() as temp, \
+                patch.object(module, 'load_proxies', return_value=[node]), \
                 patch.object(module, 'find_mihomo_bin', return_value='test-kernel'), \
-                patch.object(module, 'start_node_group', listeners), \
-                patch.object(module, 'check_alive', return_value={'alive': True, 'latency_ms': 80.0, 'attempts': []}), \
-                patch.object(module, 'probe_runner_baseline', return_value={IP2}), \
-                patch.object(module, 'probe_egress', side_effect=[egress()]), \
-                patch.object(module, 'probe_geolocation', return_value=result) as shared, \
-                patch('builtins.print'):
+                patch('core.mihomo_runner.start_node_group', self.listeners):
             report = Path(temp) / 'report.json'
             self.assertEqual(module.main(['--input', 'dummy', '--tests', 'ip', '--report', str(report)]), 0)
             saved = json.loads(report.read_text(encoding='utf-8'))['results'][0]
@@ -336,15 +355,25 @@ class PipelineIntegrationTests(unittest.TestCase):
         module = importlib.import_module('probe_singbox')
         result = {'cc': 'UNK', 'exit_ip': IP, 'google_region': {}, 'ip_info': geo.empty_ip_info(),
                   'geo_decision': {'egress_stable': False, 'is_pool': True}}
-        target = {'raw': {'tag': '🇸🇬 新加坡_4'}, 'direct_proxies': {}, 'front_proxies': {}}
-        with patch.object(module, 'fast_probe_ip', return_value=IP), \
-                patch.object(module, 'run_fast_speed', return_value={'speed_kbs': 10}), \
-                patch.object(module, 'probe_geolocation', return_value=result) as shared, \
-                patch.object(module, 'probe_all_ai', return_value={'ai_supported': True}), \
-                patch.object(module, 'probe_all_media', return_value={}):
-            row = module.test_target_node(target)
-        self.assertEqual(row['cc'], 'UNK')
-        self.assertFalse(row['ai_supported'])
+        ai = {'ai_supported': True, 'details': {}, 'observations': {}}
+        stack, shared = self.shared_flow(result, ai=ai)
+        with stack, tempfile.TemporaryDirectory() as temp, \
+                patch.object(module, 'find_singbox_bin', return_value='sing-box'), \
+                patch.object(module, 'find_mihomo_bin', return_value='test-kernel'), \
+                patch.object(module, 'start_physical_relay', return_value=None), \
+                patch('core.singbox_runner.start_singbox_group', self.listeners), \
+                patch('core.singbox_runner.find_singbox_bin', return_value=None):
+            source, report = Path(temp) / 'in.json', Path(temp) / 'report.json'
+            source.write_text(json.dumps({'outbounds': [
+                {'type': 'vless', 'tag': '🇸🇬 新加坡_4', 'server': IP, 'server_port': 443,
+                 'uuid': '00000000-0000-0000-0000-000000000001'}]}, ensure_ascii=False), encoding='utf-8')
+            argv = ['--input', str(source), '--output', str(Path(temp) / 'out.json'), '--tests', 'ip,ai',
+                    '--report', str(report)]
+            self.assertEqual(module.main(argv), 0)
+            saved = json.loads(report.read_text(encoding='utf-8'))['results'][0]
+        # 原名国旗 (新加坡) 不参与定国；出口不稳定/轮换池时 AI 全通资格被剥离
+        self.assertEqual(saved['cc'], 'UNK')
+        self.assertFalse(saved['ai_supported'])
         shared.assert_called_once()
 
 

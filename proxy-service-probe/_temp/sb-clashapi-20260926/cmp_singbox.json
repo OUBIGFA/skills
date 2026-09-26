@@ -1,0 +1,394 @@
+{
+ "log": {
+  "level": "info",
+  "timestamp": false
+ },
+ "inbounds": [
+  {
+   "type": "mixed",
+   "tag": "in_0",
+   "listen": "127.0.0.1",
+   "listen_port": 1270
+  },
+  {
+   "type": "mixed",
+   "tag": "in_1",
+   "listen": "127.0.0.1",
+   "listen_port": 1271
+  },
+  {
+   "type": "mixed",
+   "tag": "in_2",
+   "listen": "127.0.0.1",
+   "listen_port": 1272
+  },
+  {
+   "type": "mixed",
+   "tag": "in_3",
+   "listen": "127.0.0.1",
+   "listen_port": 1273
+  },
+  {
+   "type": "mixed",
+   "tag": "in_4",
+   "listen": "127.0.0.1",
+   "listen_port": 1274
+  },
+  {
+   "type": "mixed",
+   "tag": "in_5",
+   "listen": "127.0.0.1",
+   "listen_port": 1275
+  },
+  {
+   "type": "mixed",
+   "tag": "in_6",
+   "listen": "127.0.0.1",
+   "listen_port": 1276
+  },
+  {
+   "type": "mixed",
+   "tag": "in_7",
+   "listen": "127.0.0.1",
+   "listen_port": 1277
+  },
+  {
+   "type": "mixed",
+   "tag": "in_8",
+   "listen": "127.0.0.1",
+   "listen_port": 1278
+  },
+  {
+   "type": "mixed",
+   "tag": "in_9",
+   "listen": "127.0.0.1",
+   "listen_port": 1279
+  },
+  {
+   "type": "mixed",
+   "tag": "in_10",
+   "listen": "127.0.0.1",
+   "listen_port": 1280
+  },
+  {
+   "type": "mixed",
+   "tag": "in_11",
+   "listen": "127.0.0.1",
+   "listen_port": 1281
+  }
+ ],
+ "outbounds": [
+  {
+   "type": "vless",
+   "tag": "node_0",
+   "server": "198.51.100.21",
+   "server_port": 443,
+   "uuid": "00000000-0000-0000-0000-000000000001",
+   "tls": {
+    "enabled": true,
+    "server_name": "hk-fake.invalid",
+    "insecure": true
+   }
+  },
+  {
+   "server": "hk3n.wxgqlfx.vip",
+   "server_port": 35193,
+   "tag": "node_1",
+   "type": "vless",
+   "uuid": "35cbae61-ee10-4cb9-abb8-4950b35e9851",
+   "flow": "xtls-rprx-vision",
+   "packet_encoding": "xudp",
+   "tls": {
+    "enabled": true,
+    "server_name": "www.apple.com",
+    "utls": {
+     "enabled": true,
+     "fingerprint": "chrome"
+    },
+    "reality": {
+     "enabled": true,
+     "public_key": "d_pn_DMaIxhCkNh80h0Mc7nP94hrlN--I8liOIREDxE",
+     "short_id": "e8daed2d"
+    },
+    "insecure": true
+   }
+  },
+  {
+   "server": "twmoon1-cdn-route.couldflare-cdn.com",
+   "server_port": 1443,
+   "tag": "node_2",
+   "type": "http",
+   "username": "mrwdfNTD8M79LCukCieldrqZWqs=",
+   "password": "exaxgqkKkd0TAMrCxeonWg==",
+   "tls": {
+    "enabled": true,
+    "server_name": "twmoon1-cdn-route.couldflare-cdn.com",
+    "insecure": true
+   }
+  },
+  {
+   "server": "3.39.4.109",
+   "server_port": 13672,
+   "tag": "node_3",
+   "type": "vless",
+   "uuid": "814bd064-544d-4255-a070-5705c03f6da9",
+   "flow": "xtls-rprx-vision",
+   "packet_encoding": "xudp",
+   "tls": {
+    "enabled": true,
+    "server_name": "www.apple.com",
+    "utls": {
+     "enabled": true,
+     "fingerprint": "chrome"
+    },
+    "reality": {
+     "enabled": true,
+     "public_key": "k2hPp0tTW0Da-HK94wYpSCLbuK44LfGqC2MSJIM1Ti0",
+     "short_id": "48050fab"
+    },
+    "insecure": true
+   }
+  },
+  {
+   "server": "tw1.dinopaws.top",
+   "server_port": 443,
+   "tag": "node_4",
+   "type": "vmess",
+   "uuid": "318129e6-f028-11f0-b3a2-2f19ebaf05f9",
+   "security": "auto",
+   "alter_id": 0,
+   "tls": {
+    "enabled": true,
+    "server_name": "tw1.dinopaws.top",
+    "insecure": true,
+    "utls": {
+     "enabled": true,
+     "fingerprint": "chrome"
+    }
+   },
+   "transport": {
+    "type": "grpc",
+    "service_name": "5f94d7e5-b9ea-46b0-b1b3-b5f069a9e87f"
+   },
+   "tcp_fast_open": false
+  },
+  {
+   "type": "trojan",
+   "tag": "node_5",
+   "server": "203.0.113.88",
+   "server_port": 443,
+   "password": "fake-invalid-password-203011388",
+   "tls": {
+    "enabled": true,
+    "server_name": "jp-fake.invalid",
+    "insecure": true
+   }
+  },
+  {
+   "server": "172.64.145.202",
+   "server_port": 2087,
+   "tag": "node_6",
+   "type": "vless",
+   "uuid": "77777777-8a3e-6666-b6d1-a9c5f0e8b3a2",
+   "packet_encoding": "xudp",
+   "tls": {
+    "enabled": true,
+    "server_name": "faxf32gkfzoxqv.fx6hsv0.ccwu.cc",
+    "insecure": true,
+    "utls": {
+     "enabled": true,
+     "fingerprint": "chrome"
+    }
+   },
+   "transport": {
+    "type": "ws",
+    "path": "/",
+    "headers": {
+     "Host": [
+      "faxf32gkfzoxqv.fx6hsv0.ccwu.cc"
+     ],
+     "User-Agent": [
+      "Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US) AppleWebKit/533.4 (KHTML, like Gecko) Chrome/5.0.375.99 Safari/533.4"
+     ]
+    },
+    "max_early_data": 2560,
+    "early_data_header_name": "Sec-WebSocket-Protocol"
+   },
+   "tcp_fast_open": false
+  },
+  {
+   "server": "65.49.197.121",
+   "server_port": 51888,
+   "tag": "node_7",
+   "type": "shadowsocks",
+   "method": "2022-blake3-aes-128-gcm",
+   "password": "dL9x9OXRTXbpHpd726Gtdg=="
+  },
+  {
+   "server": "render.com",
+   "server_port": 443,
+   "tag": "node_8",
+   "type": "trojan",
+   "password": "humanity",
+   "tls": {
+    "enabled": true,
+    "server_name": "www.ignitelimit.com",
+    "insecure": true,
+    "utls": {
+     "enabled": true,
+     "fingerprint": "chrome"
+    }
+   },
+   "transport": {
+    "type": "ws",
+    "path": "/assignment",
+    "headers": {
+     "User-Agent": [
+      "Mozilla/5.0 (Windows NT 6.2; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36"
+     ],
+     "Host": [
+      "www.ignitelimit.com"
+     ]
+    }
+   },
+   "tcp_fast_open": false
+  },
+  {
+   "type": "http",
+   "tag": "node_9",
+   "server": "102.217.70.166",
+   "server_port": 443,
+   "tls": {
+    "enabled": true,
+    "insecure": true
+   }
+  },
+  {
+   "type": "http",
+   "tag": "node_10",
+   "server": "58.26.247.226",
+   "server_port": 443,
+   "tls": {
+    "enabled": true,
+    "insecure": true
+   }
+  },
+  {
+   "server": "45.80.111.7",
+   "server_port": 443,
+   "tag": "node_11",
+   "type": "trojan",
+   "password": "humanity",
+   "tls": {
+    "enabled": true,
+    "server_name": "www.calmlunch.com",
+    "insecure": true,
+    "utls": {
+     "enabled": true,
+     "fingerprint": "chrome"
+    }
+   },
+   "transport": {
+    "type": "ws",
+    "path": "/assignment",
+    "headers": {
+     "Host": [
+      "www.calmlunch.com"
+     ]
+    }
+   },
+   "tcp_fast_open": false
+  },
+  {
+   "type": "direct",
+   "tag": "direct-out"
+  }
+ ],
+ "route": {
+  "rules": [
+   {
+    "inbound": [
+     "in_0"
+    ],
+    "outbound": "node_0"
+   },
+   {
+    "inbound": [
+     "in_1"
+    ],
+    "outbound": "node_1"
+   },
+   {
+    "inbound": [
+     "in_2"
+    ],
+    "outbound": "node_2"
+   },
+   {
+    "inbound": [
+     "in_3"
+    ],
+    "outbound": "node_3"
+   },
+   {
+    "inbound": [
+     "in_4"
+    ],
+    "outbound": "node_4"
+   },
+   {
+    "inbound": [
+     "in_5"
+    ],
+    "outbound": "node_5"
+   },
+   {
+    "inbound": [
+     "in_6"
+    ],
+    "outbound": "node_6"
+   },
+   {
+    "inbound": [
+     "in_7"
+    ],
+    "outbound": "node_7"
+   },
+   {
+    "inbound": [
+     "in_8"
+    ],
+    "outbound": "node_8"
+   },
+   {
+    "inbound": [
+     "in_9"
+    ],
+    "outbound": "node_9"
+   },
+   {
+    "inbound": [
+     "in_10"
+    ],
+    "outbound": "node_10"
+   },
+   {
+    "inbound": [
+     "in_11"
+    ],
+    "outbound": "node_11"
+   }
+  ],
+  "final": "direct-out"
+ },
+ "dns": {
+  "servers": [
+   {
+    "tag": "dns-main",
+    "type": "udp",
+    "server": "223.5.5.5"
+   }
+  ],
+  "strategy": "ipv4_only"
+ }
+}

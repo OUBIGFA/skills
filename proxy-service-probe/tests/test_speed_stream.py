@@ -21,7 +21,8 @@ if SCRIPTS_DIR not in sys.path:
 
 from core import speed_probe
 from core.speed_probe import (default_criteria, measure_download_sustained, measure_node_speed,
-                              measure_rows_speed, speed_qualified, steady_stats, steady_verdict)
+                              measure_with_retry, apply_speed_result, speed_qualified, steady_stats,
+                              steady_verdict)
 from core.run_profile import PROFILES, apply_profile, detect_profile, validate_speed_options
 from core import mihomo_runner
 
@@ -31,6 +32,14 @@ MBPS = 125_000  # bytes/s
 # 用户节点 "美国_11" 的真实逐秒曲线 (直连新建连接，YouTube 实测可流畅播放 4K、连接速度约 15 Mbps)
 US11_DIRECT = [1.311, 2.49, 2.49, 3.801, 4.981, 2.053, 6.966, 8.845, 7.826, 8.738,
                8.607, 12.146, 7.602, 10.093, 10.617, 6.27, 15.37, 19.386, 10.486, 15.991]
+
+
+def measure_row(proxy_url, options, targets=None):
+    """与流水线测速任务相同: 单节点完整测速 (贴近门槛重测一次)，结论写回 row。"""
+    row = {}
+    measured, _ = measure_with_retry(proxy_url, options, targets)
+    apply_speed_result(row, measured, options["criteria"])
+    return row
 
 
 def _rate_schedule(path):
@@ -135,10 +144,9 @@ class TestSustainedDownload(unittest.TestCase):
         self.assertNotIn("failed_targets", result)
 
     def test_rows_stage_marks_drop_and_qualified(self):
-        rows = [{}, {}]
         options = {"rate_limit_mbps": 0, "criteria": FAST_CRITERIA}
-        measure_rows_speed([(self.proxy, rows[0])], options, targets=["http://speed.test/steady"])
-        measure_rows_speed([(self.proxy, rows[1])], options, targets=["http://speed.test/slow"])
+        rows = [measure_row(self.proxy, options, targets=["http://speed.test/steady"]),
+                measure_row(self.proxy, options, targets=["http://speed.test/slow"])]
         self.assertTrue(rows[0]["is_fast"])
         self.assertIsNone(rows[0]["speed_drop"])
         self.assertFalse(rows[1]["is_fast"])
@@ -207,10 +215,8 @@ class TestSteadyVerdict(unittest.TestCase):
 class TestRetryNearThreshold(unittest.TestCase):
     def run_rows(self, outcomes):
         calls = iter(outcomes)
-        row = {}
         with patch.object(speed_probe, "measure_node_speed", side_effect=lambda *a, **k: dict(next(calls))):
-            measure_rows_speed([("http://p", row)], {"rate_limit_mbps": 0, "criteria": default_criteria()})
-        return row
+            return measure_row("http://p", {"rate_limit_mbps": 0, "criteria": default_criteria()})
 
     def test_near_miss_is_remeasured_and_best_kept(self):
         near = {"status": "complete", "verdict": "drop", "stable_mbps": 5.9, "floor_mbps": 5.3}

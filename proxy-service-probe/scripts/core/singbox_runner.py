@@ -1,22 +1,25 @@
 # -*- coding: utf-8 -*-
 """
-sing-box 内核定位、双轨探活监听生成、生命周期管理与严格 Schema 兼容导出模块。
-专用于高健壮性、非阻塞并发的双轨（直连 + 前置跳板）服务能力探测与配置输出。
+sing-box 内核定位、测试监听生成与生命周期管理，以及严格 Schema 兼容导出模块。
+测试监听与 mihomo 同一套流程 (core.probe_flow)：每个节点 (或 节点+前置 组合) 一个本地 mixed 入站。
 """
 import os
 import sys
 import json
-import time
-import socket
+import secrets
 import shutil
-import tempfile
 import subprocess
 from copy import deepcopy
 from contextlib import contextmanager
 
+from .mihomo_runner import get_free_port, kernel_process, start_isolated
+
 SUPPORTED_TYPES = {'vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2', 'tuic', 'http', 'socks', 'wireguard', 'hysteria'}
 STRIP_OUTBOUND_FIELDS = {'domain_resolver', 'tls_fragment', 'detour'}
 VALID_FINGERPRINTS = {'chrome', 'firefox', 'safari', 'ios', 'android', 'edge', '360', 'qq', 'random'}
+
+
+SKILL_CORE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "core")
 
 
 def find_singbox_bin(custom_path=None):
@@ -29,6 +32,7 @@ def find_singbox_bin(custom_path=None):
         return os.path.abspath(env_bin)
 
     candidates = [
+        os.path.join(SKILL_CORE_DIR, "sing-box.exe" if sys.platform == "win32" else "sing-box"),
         r"E:\_BIGFAFree\_code\_Mywork\singbox sub\bin\sing-box.exe",
         os.path.join(os.getcwd(), "bin", "sing-box.exe"),
         os.path.join(os.getcwd(), "bin", "sing-box"),
@@ -75,7 +79,6 @@ def clean_node_for_singbox(node):
 
 def _port_allocator():
     """动态申请空闲端口，自动避让常用代理客户端端口黑名单与本批已分配端口。"""
-    from .mihomo_runner import get_free_port
     used = set()
 
     def next_port():
@@ -85,60 +88,12 @@ def _port_allocator():
     return next_port
 
 
-def _start_singbox(binary, cfg_path, ports):
-    """启动临时 sing-box；首尾监听端口未就绪时终止进程并报错，避免整批节点被误判为不可达。"""
-    proc = subprocess.Popen([binary, "run", "-c", cfg_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    for port in dict.fromkeys([ports[0], ports[-1]] if ports else []):
-        if not wait_port_ready(port, timeout=8.0):
-            state = "进程已退出" if proc.poll() is not None else "端口未就绪"
-            _stop_singbox(proc)
-            raise RuntimeError(f"sing-box 临时监听端口 {port} 启动失败({state})")
-    return proc
-
-
-def _stop_singbox(proc):
-    try:
-        proc.kill()
-        proc.wait(timeout=3)
-    except Exception:
-        pass
-
-
-def wait_port_ready(port, timeout=3.0):
-    """等待本地端口开启监听"""
-    t_end = time.monotonic() + timeout
-    while time.monotonic() < t_end:
-        try:
-            with socket.create_connection(('127.0.0.1', port), timeout=0.2):
-                return True
-        except (OSError, ConnectionRefusedError):
-            time.sleep(0.05)
-    return False
-
-
-def front_outbound(front):
-    """
-    前置出站 (tag 固定为 front-anchor)：
-    - dict: 节点出站 (评出的 Key 或备用前置)；
-    - (host, port): 本机客户端的 SOCKS 端口 (如 Karing 127.0.0.1:3067)；
-    - None: 无前置。
-    """
-    if front is None:
-        return None
-    if isinstance(front, dict):
-        out = deepcopy(clean_node_for_singbox(front) or front)
-        out["tag"] = "front-anchor"
-        out.pop("detour", None)
-        return out
-    return {"type": "socks", "tag": "front-anchor", "server": front[0], "server_port": int(front[1])}
-
-
 def apply_physical_relay(outbounds, relay):
     """
     本机 TUN 接管系统路由时，让节点出站 (含节点前置) 经绑定物理网卡的本地 SOCKS 中继出网。
     sing-box 1.14 在 Windows 上开着外部 TUN 时 bind_interface/default_interface 不生效 (实测连不通)，
     不经中继则测试流量会先经过本机客户端正在使用的节点，测速与属地都会失真。
-    已有 detour 的落地节点经前置出网；回环地址上的本机客户端前置无需中继。
+    已有 detour 的落地节点经前置出网；回环地址上的出站无需中继。
     """
     if not relay:
         return outbounds
@@ -152,200 +107,94 @@ def apply_physical_relay(outbounds, relay):
     return outbounds
 
 
-@contextmanager
-def singbox_dual_listeners(batch_nodes, front_proxy=None, singbox_bin=None, relay=None):
+def _listener_config(entries, relay=None):
     """
-    为一组待测节点构建临时 sing-box 混合监听实例（端口均为动态空闲端口）：
-    - node-{i}-direct: 纯直连测试
-    - node-{i}-front: 经前置测试 (仅 front_proxy 非 None 时建立，见 front_outbound)
-    relay: 本机 TUN 接管系统路由时的物理直连 SOCKS 中继 (host, port)，见 apply_physical_relay
+    entries: [(key, 节点出站, 前置出站或 None)]。每个节点一个 127.0.0.1 mixed 入站，按入站路由到该节点；
+    经前置的节点以 detour 链到前置，同一前置只加载一次。relay 见 apply_physical_relay。返回 (配置, {key: 端口})。
     """
-    binary = find_singbox_bin(singbox_bin)
-    if not binary:
-        raise RuntimeError("未检测到可用的 sing-box 可执行文件，请确认安装或指定路径。")
-
-    if not batch_nodes:
-        yield []
-        return
-
-    tmp_dir = tempfile.mkdtemp(prefix="sb_probe_batch_")
-    cfg_path = os.path.join(tmp_dir, "config.json")
-
-    inbounds = []
-    rules = []
-    outs = []
-
-    # 1. 注入前置出站
-    anchor = front_outbound(front_proxy)
-    if anchor:
-        outs.append(anchor)
-
-    targets = []
-    ports = []
+    inbounds, outbounds, rules, ports, fronts = [], [], [], {}, {}
     next_port = _port_allocator()
-    for i, node in enumerate(batch_nodes):
-        cleaned = clean_node_for_singbox(node.get("cleaned", node))
-        if not cleaned:
-            continue
-
-        d_port = next_port()
-        ports.append(d_port)
-
-        # 直连出站
-        cd = deepcopy(cleaned)
-        cd['tag'] = f"node-{i}-direct"
-        outs.append(cd)
-        inbounds.append({
-            "type": "mixed",
-            "tag": f"in-{i}-d",
-            "listen": "127.0.0.1",
-            "listen_port": d_port
-        })
-        rules.append({"inbound": [f"in-{i}-d"], "outbound": f"node-{i}-direct"})
-
-        # 前置跳板出站
-        front_proxies = None
-        if anchor:
-            f_port = next_port()
-            ports.append(f_port)
-            cf = deepcopy(cleaned)
-            cf['tag'] = f"node-{i}-front"
-            cf['detour'] = "front-anchor"
-            outs.append(cf)
-            inbounds.append({
-                "type": "mixed",
-                "tag": f"in-{i}-f",
-                "listen": "127.0.0.1",
-                "listen_port": f_port
-            })
-            rules.append({"inbound": [f"in-{i}-f"], "outbound": f"node-{i}-front"})
-            front_proxies = {"http": f"http://127.0.0.1:{f_port}", "https": f"http://127.0.0.1:{f_port}"}
-
-        targets.append({
-            "index": i,
-            "raw": node.get("raw", node),
-            "cleaned": cleaned,
-            "direct_proxies": {"http": f"http://127.0.0.1:{d_port}", "https": f"http://127.0.0.1:{d_port}"},
-            "front_proxies": front_proxies
-        })
-
-    apply_physical_relay(outs, relay)
-    outs.append({"type": "direct", "tag": "direct-out"})
-    cfg = {
+    for idx, (key, node, front) in enumerate(entries):
+        out = deepcopy(node)
+        out["tag"] = f"node_{idx}"
+        out.pop("detour", None)
+        if front is not None:
+            if id(front) not in fronts:
+                anchor = deepcopy(front)
+                anchor["tag"] = f"front_{len(fronts)}"
+                anchor.pop("detour", None)
+                fronts[id(front)] = anchor["tag"]
+                outbounds.append(anchor)
+            out["detour"] = fronts[id(front)]
+        outbounds.append(out)
+        ports[key] = next_port()
+        inbounds.append({"type": "mixed", "tag": f"in_{idx}", "listen": "127.0.0.1", "listen_port": ports[key]})
+        rules.append({"inbound": [f"in_{idx}"], "outbound": out["tag"]})
+    apply_physical_relay(outbounds, relay)
+    outbounds.append({"type": "direct", "tag": "direct-out"})
+    config = {
         "log": {"level": "warn"},
         "inbounds": inbounds,
-        "outbounds": outs,
+        "outbounds": outbounds,
         "route": {"rules": rules, "final": "direct-out"},
         "dns": {
             "servers": [{"tag": "dns-main", "type": "udp", "server": "223.5.5.5"}],
             "strategy": "ipv4_only"
         }
     }
-
-    with open(cfg_path, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
-
-    try:
-        proc = _start_singbox(binary, cfg_path, ports)
-    except Exception:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise
-
-    try:
-        yield targets
-    finally:
-        # 严格遵守安全退出契约：先 kill 子进程切断本地端口，让挂起线程立即收到 TCP RST 退出，再清理临时目录
-        _stop_singbox(proc)
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+    return config, ports
 
 
 @contextmanager
-def singbox_active_listeners(qualified_nodes, front_proxy=None, singbox_bin=None, relay=None):
+def _run_singbox(binary, config, ports, monitor=None):
     """
-    为一组已确定路径（直连 or 落地经由 front_proxy，取值见 front_outbound）的合格节点建立单端口独享监听：
-    - node-{i}: 监听 127.0.0.1 上的动态空闲端口，
-    方便 Playwright 浏览器、测速或深度探针通过 target["proxy_url"] 访问。
+    启动临时 sing-box 并等待端口就绪。给出 monitor (TrafficMonitor) 时开启仅本机可达、带随机密钥的
+    Clash API，接入与 mihomo 相同的 /traffic 流量统计 (sing-box 官方构建含 with_clash_api)。
+    """
+    config = dict(config)
+    controller = None
+    if monitor is not None:
+        controller = (get_free_port(avoid_ports=ports), secrets.token_hex(12))
+        config["experimental"] = {"clash_api": {"external_controller": f"127.0.0.1:{controller[0]}",
+                                                "secret": controller[1]}}
+    with kernel_process("sing-box",
+                        lambda tmp_dir, cfg_path: [binary, "run", "-D", tmp_dir, "--disable-color", "-c", cfg_path],
+                        "config.json", json.dumps(config, ensure_ascii=False, indent=2), ports,
+                        controller=controller, monitor=monitor):
+        yield
+
+
+def start_singbox_group(stack, entries, singbox_bin=None, relay=None, monitor=None, shard_size=64):
+    """
+    在 ExitStack 中为 entries 启动临时 sing-box 监听，存活到 stack 关闭为止 (供测活、服务检测、测速各阶段复用)。
+    分片与被拒节点的二分隔离与 mihomo 相同 (见 start_isolated)。返回 ({key: 端口}, {key: 失败原因})。
     """
     binary = find_singbox_bin(singbox_bin)
     if not binary:
         raise RuntimeError("未检测到可用的 sing-box 可执行文件，请确认安装或指定路径。")
 
-    if not qualified_nodes:
-        yield []
-        return
+    def launch_group(group):
+        config, group_ports = _listener_config(group, relay)
+        return _run_singbox(binary, config, list(group_ports.values()), monitor=monitor), group_ports
 
-    tmp_dir = tempfile.mkdtemp(prefix="sb_active_batch_")
-    cfg_path = os.path.join(tmp_dir, "config.json")
+    return start_isolated(stack, entries, launch_group, shard_size)
 
-    inbounds = []
-    rules = []
-    outs = []
 
-    anchor = front_outbound(front_proxy)
-    if anchor:
-        outs.append(anchor)
-    elif any(r.get("is_landing") for r in qualified_nodes):
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise ValueError("落地节点必须经前置测试，但未提供前置")
+class SingboxKernel:
+    """core.probe_flow 的 sing-box 内核适配器：交给内核的节点配置为清洗后的 sing-box 出站 (proxy["_singbox_outbound"])。"""
+    label = "sing-box"
 
-    targets = []
-    next_port = _port_allocator()
-    for i, r in enumerate(qualified_nodes):
-        node = r.get("cleaned_node") or clean_node_for_singbox(r.get("raw_node", r.get("proxy", {})))
-        if not node:
-            continue
+    def __init__(self, binary, relay=None):
+        self.binary = binary
+        self.relay = relay
 
-        port = next_port()
-        cn = deepcopy(node)
-        cn["tag"] = f"node-{i}"
-        if r.get("is_landing"):
-            cn["detour"] = "front-anchor"
-        else:
-            cn.pop("detour", None)
-        outs.append(cn)
+    @staticmethod
+    def node(row):
+        return row["proxy"]["_singbox_outbound"]
 
-        inbounds.append({
-            "type": "mixed",
-            "tag": f"in-{i}",
-            "listen": "127.0.0.1",
-            "listen_port": port
-        })
-        rules.append({"inbound": [f"in-{i}"], "outbound": f"node-{i}"})
-
-        targets.append({
-            "index": i,
-            "result_ref": r,
-            "port": port,
-            "proxy_url": f"http://127.0.0.1:{port}"
-        })
-
-    apply_physical_relay(outs, relay)
-    outs.append({"type": "direct", "tag": "direct-out"})
-    cfg = {
-        "log": {"level": "warn"},
-        "inbounds": inbounds,
-        "outbounds": outs,
-        "route": {"rules": rules, "final": "direct-out"},
-        "dns": {
-            "servers": [{"tag": "dns-main", "type": "udp", "server": "223.5.5.5"}],
-            "strategy": "ipv4_only"
-        }
-    }
-
-    with open(cfg_path, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
-
-    try:
-        proc = _start_singbox(binary, cfg_path, [t["port"] for t in targets])
-    except Exception:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise
-
-    try:
-        yield targets
-    finally:
-        _stop_singbox(proc)
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+    def start(self, stack, entries, monitor=None, shard_size=64):
+        return start_singbox_group(stack, entries, singbox_bin=self.binary, relay=self.relay, monitor=monitor,
+                                   shard_size=shard_size)
 
 
 def make_standard_singbox_config(cleaned_proxies, qualified_tags=None, sparkle_tags=None, template_path=None):
@@ -375,6 +224,8 @@ def make_standard_singbox_config(cleaned_proxies, qualified_tags=None, sparkle_t
         # 带 detour（含 Clash dialer-proxy 转换而来）的节点即链式落地节点
         if _is_landing(p):
             cp["_is_landing"] = True
+        if p.get("_key_score") is not None:
+            cp["_key_score"] = p["_key_score"]  # Key 在前置组内按评分排序，与 YAML 一致
         clash_proxies.append(cp)
 
     # 1. 严格使用与 Clash/Mihomo 完全一致的标准策略组构建器 (无 Key 时前置池用备用前置)
@@ -484,12 +335,13 @@ def make_standard_singbox_config(cleaned_proxies, qualified_tags=None, sparkle_t
 
 
 def export_singbox_json(base_config, qualified_results, output_path,
-                        front_proxy=("127.0.0.1", 3067), singbox_bin=None):
+                        front_proxy=("127.0.0.1", 3067), singbox_bin=None, template_path=None):
     """
     组装导出严格符合 sing-box 1.12+ / 1.14+ 官方标准的 JSON 配置文件，
     彻底净化非标准专有字段，自动注入标准现代 DNS (type: https/udp/local/rcode)、
     Route (download_detour: direct) 与 Outbounds 结构，
     且直连 ✨️ 综合全通节点绝对置顶，落地节点沉底，确保客户端首节点无痛即开。
+    分流规则取自 template_path 指定的母版 (默认技能母版)，与同批导出的 Clash/Mihomo YAML 一致。
     """
     has_landing = any(r.get('is_landing') for r in qualified_results)
 
@@ -517,6 +369,8 @@ def export_singbox_json(base_config, qualified_results, output_path,
             clean_obj['_is_landing'] = bool(r.get('is_landing'))
         if r.get('is_key') is not None:
             clean_obj['_is_key'] = bool(r.get('is_key'))
+        if r.get('key_score') is not None:
+            clean_obj['_key_score'] = r['key_score']
         if r.get('is_front_fallback'):
             clean_obj['_front_fallback'] = True
         cleaned_proxies.append(clean_obj)
@@ -524,7 +378,7 @@ def export_singbox_json(base_config, qualified_results, output_path,
         if '✨' in name:
             sparkle_tags.append(name)
 
-    final_cfg = make_standard_singbox_config(cleaned_proxies, qualified_tags, sparkle_tags)
+    final_cfg = make_standard_singbox_config(cleaned_proxies, qualified_tags, sparkle_tags, template_path=template_path)
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:

@@ -228,6 +228,26 @@ def parse_node_uri(uri):
     return None
 
 
+def _as_list(value):
+    """sing-box 的可列表字段 (alpn、h2 host 等) 可写成单个字符串；Clash/Mihomo 要求列表。"""
+    return list(value) if isinstance(value, (list, tuple)) else [value]
+
+
+def _header_strings(headers):
+    """
+    sing-box 的 HTTP 头值可为字符串或字符串列表，Clash/Mihomo 只接受字符串 (列表会让整份配置加载失败)：
+    列表取首个值，空列表的头丢弃。
+    """
+    flat = {}
+    for key, value in (headers or {}).items():
+        if isinstance(value, (list, tuple)):
+            if not value:
+                continue
+            value = value[0]
+        flat[key] = str(value)
+    return flat
+
+
 def _copy_singbox_tls(outbound, proxy, use_sni=False):
     tls = outbound.get("tls") or {}
     if not tls.get("enabled"):
@@ -238,7 +258,7 @@ def _copy_singbox_tls(outbound, proxy, use_sni=False):
     if tls.get("insecure"):
         proxy["skip-cert-verify"] = True
     if tls.get("alpn"):
-        proxy["alpn"] = tls["alpn"]
+        proxy["alpn"] = _as_list(tls["alpn"])
     utls = tls.get("utls") or {}
     if utls.get("enabled"):
         proxy["client-fingerprint"] = normalize_fingerprint(utls.get("fingerprint"))
@@ -256,16 +276,18 @@ def _copy_singbox_transport(outbound, proxy):
     if tr_type == "ws":
         proxy["network"] = "ws"
         opts = {"path": transport.get("path", "/")}
-        if transport.get("headers"):
-            opts["headers"] = transport["headers"]
+        headers = _header_strings(transport.get("headers"))
+        if headers:
+            opts["headers"] = headers
         if transport.get("max_early_data"):
             opts["max-early-data"] = transport["max_early_data"]
-            opts["early-data-header-name"] = transport.get("early_data_header_name")
+            if transport.get("early_data_header_name"):
+                opts["early-data-header-name"] = transport["early_data_header_name"]
         proxy["ws-opts"] = opts
     elif tr_type == "httpupgrade":
         proxy["network"] = "ws"
         opts = {"path": transport.get("path", "/"), "v2ray-http-upgrade": True}
-        headers = dict(transport.get("headers") or {})
+        headers = _header_strings(transport.get("headers"))
         if transport.get("host"):
             headers["Host"] = transport["host"]
         if headers:
@@ -278,7 +300,7 @@ def _copy_singbox_transport(outbound, proxy):
         proxy["network"] = "h2"
         opts = {"path": transport.get("path", "/")}
         if transport.get("host"):
-            opts["host"] = transport["host"]
+            opts["host"] = _as_list(transport["host"])
         proxy["h2-opts"] = opts
 
 
@@ -413,8 +435,9 @@ def parse_singbox_outbound(outbound):
             p["username"] = outbound.get("username")
         if outbound.get("password"):
             p["password"] = outbound.get("password")
-        if outbound.get("headers"):
-            p["headers"] = outbound["headers"]
+        headers = _header_strings(outbound.get("headers"))
+        if headers:
+            p["headers"] = headers
         _copy_singbox_tls(outbound, p)
         return p
 
@@ -442,7 +465,25 @@ def load_proxies(source):
 
     if isinstance(source, str):
         source = source.strip()
-        if source.startswith("http://") or source.startswith("https://"):
+        s_lower = source.lower()
+        if (s_lower in ("fofa", "quake", "spatial") or
+                s_lower.startswith(("fofa:", "quake:", "spatial:"))):
+            from core.fofa import search_and_fetch_proxies
+            if s_lower.startswith("quake:"):
+                engine = "quake"
+                query_or_preset = source[6:].strip() or None
+            elif s_lower.startswith("fofa:"):
+                engine = "fofa"
+                query_or_preset = source[5:].strip() or None
+            elif s_lower.startswith("spatial:"):
+                engine = "all"
+                query_or_preset = source[8:].strip() or None
+            else:
+                engine = "all"
+                query_or_preset = None
+            proxies, _ = search_and_fetch_proxies(query_or_preset=query_or_preset, engine=engine)
+            return proxies
+        elif source.startswith("http://") or source.startswith("https://"):
             resp = requests.get(source, headers={"User-Agent": UA}, timeout=25)
             resp.raise_for_status()
             text = resp.text

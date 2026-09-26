@@ -13,7 +13,7 @@ geox-url:
   mmdb: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb
 geo-auto-update: true
 geo-update-interval: 24
-global-client-fingerprint: chrome
+# TLS 指纹使用节点自己的 client-fingerprint；新版 Mihomo 已移除全局指纹选项。
 find-process-mode: strict
 
 # 流量域名嗅探模块（从 TLS/HTTP 流量中提取域名，阻断纯 IP 访问造成的泄露）
@@ -213,12 +213,14 @@ rules:
 - DOMAIN-SUFFIX,githubcopilot.com,🔀 AI 服务
 - DOMAIN-SUFFIX,grok.com,🔀 AI 服务
 - DOMAIN-SUFFIX,x.ai,🔀 AI 服务
+- DOMAIN-KEYWORD,grok,🔀 AI 服务
 - DOMAIN-SUFFIX,perplexity.ai,🔀 AI 服务
 - DOMAIN-SUFFIX,poe.com,🔀 AI 服务
 - DOMAIN-SUFFIX,meta.ai,🔀 AI 服务
 - DOMAIN-SUFFIX,groq.com,🔀 AI 服务
 - DOMAIN-SUFFIX,huggingface.co,🔀 AI 服务
 - DOMAIN-SUFFIX,hf.co,🔀 AI 服务
+- DOMAIN-SUFFIX,hf.space,🔀 AI 服务
 - DOMAIN-KEYWORD,groq,🔀 AI 服务
 - DOMAIN-KEYWORD,huggingface,🔀 AI 服务
 - DOMAIN-SUFFIX,mistral.ai,🔀 AI 服务

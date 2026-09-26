@@ -144,17 +144,57 @@ def _is_landing(p):
 
 
 def _is_key(p):
-    """判定是否为 Key 优质前置跳板节点 (直连强加密且测速达标)"""
-    if p.get("_is_key") is True:
-        return True
+    """判定是否为 Key 优质前置跳板节点 (直连强加密且测速达标)；落地节点即使带 Key 标记也不作前置，杜绝前置组自环。"""
+    if _is_landing(p):
+        return False
     name = p.get("name") or p.get("tag") or ""
-    return "Key" in name and not _is_landing(p)
+    return p.get("_is_key") is True or "Key" in name
+
+
+def renumber_node_tag(old_name, slot, is_hq=False):
+    """根据目标编号重构节点名称（保留已有能力徽章、前缀与后缀）。"""
+    flag_match = re.search(r'^([\U0001F1E6-\U0001F1FF]{2}|🏳️|\U0001F3F3\uFE0F?)\s*', old_name)
+    flag = flag_match.group(0) if flag_match else ""
+    rest = old_name[len(flag):]
+
+    sparkle = bool("✨️" in rest or "✨" in rest)
+    ai = bool("❇️" in rest or "❇" in rest)
+    is_polluted = bool("_⚠️" in rest)
+    hq = bool(is_hq and not is_polluted)
+    key = bool(re.search(r'(?i)\bkey(?![a-z])', rest))
+    fast = bool(re.search(r'(?i)\bfast(?![a-z])', rest))
+
+    prefix = ""
+    if sparkle:
+        prefix += "✨️"
+    if ai:
+        prefix += "❇️"
+    if hq:
+        prefix += "♥️"
+    if key:
+        prefix += "Key"
+    elif fast:
+        prefix += "Fast"
+
+    cleaned_rest = re.sub(r'^(?:[✨❇️♥️♥]️?|\s+|Key|Fast)+', '', rest, flags=re.I)
+    m = re.search(r'^(.*?)_(\d+)(.*)$', cleaned_rest)
+    if m:
+        country = m.group(1)
+        raw_suffix = m.group(3)
+        clean_suffix = re.sub(r'(?:✨\uFE0F?|❇\uFE0F?|♥\uFE0F?|\bKey\b|\bFast\b)', '', raw_suffix, flags=re.I).strip()
+        return f"{flag}{prefix}{country}_{slot}{clean_suffix}"
+
+    m_old = re.search(r'^(.*?)_(\d+)(.*)$', old_name)
+    if m_old:
+        return f"{m_old.group(1)}_{slot}{m_old.group(3)}"
+    return f"{old_name}_{slot}"
 
 
 def sort_nodes_by_region_and_landing(items, resort=False):
     """
     按国家/地区分组，并严格保持与 YAML 相同的排序规则：
-    1. 同一国家/地区内的节点聚集在一起（按 CATEGORY_ORDER 标准地区位阶排列）。
+    1. 同一国家/地区内的节点聚集在一起（按 CATEGORY_ORDER 标准地区位阶排列，未列出的地区排在已列出地区之后，
+       中国排在所有国家/地区之后，未知垫底）。
     2. 同一国家/地区内，直连节点排在前面，落地节点 (_Lnd / _USAI) 排在该地区最后。
     3. 特殊边界保护：如果排在全节点第一个的国家/地区仅有 1 个节点且为落地节点，
        则将该国家/地区挪至下一个国家/地区之后，确保客户端启动的首选节点必定为可直连节点。
@@ -251,45 +291,11 @@ def sort_nodes_by_region_and_landing(items, resort=False):
     if len(country_order) >= 2:
         first_c = country_order[0]
         first_nodes = country_buckets[first_c]
-        if len(first_nodes) == 1 and _is_lnd(first_nodes[0]):
+        if len(first_nodes) == 1 and _is_lnd(first_nodes[0]) and country_order[1] not in ('CN', 'UNK'):
+            # 首节点保护不能破坏“中国在所有已知国家/地区之后、未知垫底”的硬顺序。
             country_order = [country_order[1], first_c] + country_order[2:]
 
-    def _renumber_tag(old_name, slot, is_hq=False):
-        flag_match = re.search(r'^([\U0001F1E6-\U0001F1FF]{2}|🏳️|\U0001F3F3\uFE0F?)\s*', old_name)
-        flag = flag_match.group(0) if flag_match else ""
-        rest = old_name[len(flag):]
-
-        sparkle = bool("✨️" in rest or "✨" in rest)
-        ai = bool("❇️" in rest or "❇" in rest)
-        is_polluted = bool("_⚠️" in rest)
-        hq = bool(is_hq and not is_polluted)
-        key = bool(re.search(r'(?i)\bkey(?![a-z])', rest))
-        fast = bool(re.search(r'(?i)\bfast(?![a-z])', rest))
-
-        prefix = ""
-        if sparkle:
-            prefix += "✨️"
-        if ai:
-            prefix += "❇️"
-        if hq:
-            prefix += "♥️"
-        if key:
-            prefix += "Key"
-        elif fast:
-            prefix += "Fast"
-
-        cleaned_rest = re.sub(r'^(?:[✨❇️♥️♥]️?|\s+|Key|Fast)+', '', rest, flags=re.I)
-        m = re.search(r'^(.*?)_(\d+)(.*)$', cleaned_rest)
-        if m:
-            country = m.group(1)
-            raw_suffix = m.group(3)
-            clean_suffix = re.sub(r'(?:✨\uFE0F?|❇\uFE0F?|♥\uFE0F?|\bKey\b|\bFast\b)', '', raw_suffix, flags=re.I).strip()
-            return f"{flag}{prefix}{country}_{slot}{clean_suffix}"
-
-        m_old = re.search(r'^(.*?)_(\d+)(.*)$', old_name)
-        if m_old:
-            return f"{m_old.group(1)}_{slot}{m_old.group(3)}"
-        return f"{old_name}_{slot}"
+    _renumber_tag = renumber_node_tag
 
     sorted_items = []
     for c in country_order:

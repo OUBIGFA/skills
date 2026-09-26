@@ -1,0 +1,2802 @@
+{
+  "timestamp": 1790381260.6482067,
+  "kernel": "sing-box",
+  "speed_test_enabled": true,
+  "speed_profile": {
+    "profile": "local",
+    "vantage": "本机网络 -> 节点 -> CDN",
+    "targets": [
+      "https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg",
+      "https://speed.cloudflare.com/__down?bytes=50000000"
+    ],
+    "concurrency": 1,
+    "rate_limit_mbps": 40.0,
+    "criteria": {
+      "min_stable_mbps": 12.0,
+      "min_floor_mbps": 6.0,
+      "drop_below_mbps": 6.0,
+      "window_seconds": 6,
+      "min_observe_seconds": 10,
+      "max_observe_seconds": 20
+    }
+  },
+  "timeline_seconds": {
+    "direct_liveness_done": 27.6,
+    "second_round_done": 74.8,
+    "lines_done": 205.6,
+    "total": 218.6
+  },
+  "total_candidates": 12,
+  "qualified_count": 4,
+  "eliminated_count": 8,
+  "key_count": 2,
+  "landing_speed_fronts": [
+    {
+      "kind": "Key 候选",
+      "orig_name": "🇫🇷 法国_10_⚠️IR_D+",
+      "final_name": "🇫🇷 Key法国_10_D+_⚠️IR",
+      "is_key": true,
+      "speed_result": {
+        "status": "complete",
+        "complete": true,
+        "verdict": "qualified",
+        "reason": "稳态达标",
+        "error": null,
+        "observed_seconds": 10,
+        "stable_mbps": 23.105,
+        "floor_mbps": 17.639,
+        "peak_mbps": 33.74,
+        "mean_mbps": 19.648,
+        "sample_mbps": [
+          5.944,
+          24.605,
+          14.58,
+          12.721,
+          17.129,
+          18.148,
+          33.74,
+          28.69,
+          25.986,
+          14.939
+        ],
+        "max_stall_seconds": 0.203,
+        "bytes_received": 24576000,
+        "http_status": 200,
+        "ttfb_ms": 1704.0,
+        "rate_limit_mbps": 40.0,
+        "capped": false,
+        "target": "https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg",
+        "started_monotonic": 4825.25,
+        "contention": {
+          "contended": true,
+          "method": "traffic",
+          "contended_seconds": 2,
+          "background_mbps": 6.84,
+          "capacity_mbps": 40.0
+        }
+      }
+    }
+  ],
+  "results": [
+    {
+      "orig_name": "🇫🇷 法国_10_⚠️IR_D+",
+      "final_name": "🇫🇷 Key法国_10_D+_⚠️IR",
+      "cc": "FR",
+      "google_region": {
+        "status": "observed",
+        "country_code": "IR",
+        "region_code": "IRN",
+        "gemini_available": false,
+        "source": "gemini_page",
+        "is_sent_to_china": false,
+        "conflict": false,
+        "details": {
+          "google_search": null,
+          "gemini": "IR",
+          "youtube": null
+        },
+        "signals": {
+          "gemini": {
+            "url": "https://gemini.google.com/",
+            "observed_at": "2026-09-26T00:04:43.440924+00:00",
+            "http_status": 200,
+            "final_url": "https://gemini.google.com/",
+            "status": "observed",
+            "sha256": "dc4b090b835c3fa53e18f08c6d9dec6ba0d99e48da9fe34fb92ee1c8a42d0372",
+            "bytes": 851488,
+            "country_code": "IR",
+            "candidates": [
+              "IR"
+            ],
+            "gemini_available": false
+          },
+          "youtube": {
+            "url": "https://www.youtube.com/premium",
+            "observed_at": "2026-09-26T00:04:48.525327+00:00",
+            "http_status": 200,
+            "final_url": "https://consent.youtube.com/m?continue=https%3A%2F%2Fwww.youtube.com%2Fpremium%3Fcbrd%3D1&gl=FR&m=0&pc=yt&cm=2&hl=en&src=1",
+            "status": "missing_marker",
+            "sha256": "2aa66b7b535918c76079b85bc6fe4fd762a1b156d4ef12649b621fa90c32cbe7",
+            "bytes": 584695,
+            "country_code": null,
+            "gl": [],
+            "country_codes": []
+          }
+        },
+        "confirmation": {
+          "status": "observed",
+          "country_code": "IR",
+          "region_code": "IRN",
+          "gemini_available": false,
+          "source": "gemini_page",
+          "is_sent_to_china": false,
+          "conflict": false,
+          "details": {
+            "google_search": null,
+            "gemini": "IR",
+            "youtube": null
+          },
+          "signals": {
+            "gemini": {
+              "url": "https://gemini.google.com/",
+              "observed_at": "2026-09-26T00:05:00.900646+00:00",
+              "http_status": 200,
+              "final_url": "https://gemini.google.com/",
+              "status": "observed",
+              "sha256": "f2d8f46ded78858e22354c901abc502d01969530d925f250fe951463ec2fd253",
+              "bytes": 850760,
+              "country_code": "IR",
+              "candidates": [
+                "IR"
+              ],
+              "gemini_available": false
+            },
+            "youtube": {
+              "url": "https://www.youtube.com/premium",
+              "observed_at": "2026-09-26T00:05:05.101063+00:00",
+              "http_status": 200,
+              "final_url": "https://consent.youtube.com/m?continue=https%3A%2F%2Fwww.youtube.com%2Fpremium%3Fcbrd%3D1&gl=FR&m=0&pc=yt&cm=2&hl=en&src=1",
+              "status": "missing_marker",
+              "sha256": "a9e2e8d74e213bab8a74f205266e5d979314a5510921397dccd0a21877720e36",
+              "bytes": 584705,
+              "country_code": null,
+              "gl": [],
+              "country_codes": []
+            }
+          }
+        }
+      },
+      "geo_decision": {
+        "cc": "FR",
+        "country_zh": "法国",
+        "flag": "🇫🇷",
+        "basis": "geoip_with_google_poisoning",
+        "candidate_cc": "IR",
+        "scope": "ip_geolocation",
+        "confidence": "high",
+        "needs_review": false,
+        "conflict": true,
+        "is_pool": false,
+        "observed_ips": [
+          "51.159.158.233"
+        ],
+        "cf_loc": "FR",
+        "cf_colo": "CDG",
+        "google_cc": "IR",
+        "geoip_cc": "FR",
+        "votes": {
+          "FR": 4
+        },
+        "is_poisoned": true,
+        "poisoned_cc": "IR",
+        "poison_tag": "_⚠️IR",
+        "egress_stable": true
+      },
+      "egress": {
+        "ipv4": {
+          "ip": "51.159.158.233",
+          "source": "cloudflare-trace"
+        },
+        "ipv6": {
+          "ip": null,
+          "source": null
+        },
+        "observed_ips": [
+          "51.159.158.233"
+        ],
+        "observations": [
+          {
+            "url": "https://api.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:04:41.301475+00:00",
+            "http_status": 200,
+            "final_url": "https://api.ipify.org/?format=json",
+            "status": "ok",
+            "sha256": "e07ac880d23f68b305b430197d3ca27b8888250b7ba02e4d4cf262357bb69349",
+            "bytes": 23,
+            "ip": "51.159.158.233"
+          },
+          {
+            "url": "https://api6.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:04:42.478651+00:00",
+            "status": "error",
+            "error": "SSLError"
+          }
+        ],
+        "status": "ok",
+        "cf_trace": {
+          "url": "https://cloudflare.com/cdn-cgi/trace",
+          "observed_at": "2026-09-26T00:04:39.716241+00:00",
+          "http_status": 200,
+          "final_url": "https://cloudflare.com/cdn-cgi/trace",
+          "status": "ok",
+          "sha256": "a3e354a2300e9bab0e03a08d5346bd74746b5a5261c3d9c3e613305ff987ad7b",
+          "bytes": 312,
+          "ip": "51.159.158.233",
+          "loc": "FR",
+          "colo": "CDG",
+          "colo_city": "巴黎",
+          "colo_cc": "FR"
+        }
+      },
+      "egress_after": {
+        "ipv4": {
+          "ip": "51.159.158.233",
+          "source": "cloudflare-trace"
+        },
+        "ipv6": {
+          "ip": null,
+          "source": null
+        },
+        "observed_ips": [
+          "51.159.158.233"
+        ],
+        "observations": [
+          {
+            "url": "https://api.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:05:09.320184+00:00",
+            "http_status": 200,
+            "final_url": "https://api.ipify.org/?format=json",
+            "status": "ok",
+            "sha256": "e07ac880d23f68b305b430197d3ca27b8888250b7ba02e4d4cf262357bb69349",
+            "bytes": 23,
+            "ip": "51.159.158.233"
+          },
+          {
+            "url": "https://api6.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:05:10.606131+00:00",
+            "status": "error",
+            "error": "SSLError"
+          }
+        ],
+        "status": "ok",
+        "cf_trace": {
+          "url": "https://cloudflare.com/cdn-cgi/trace",
+          "observed_at": "2026-09-26T00:05:07.994973+00:00",
+          "http_status": 200,
+          "final_url": "https://cloudflare.com/cdn-cgi/trace",
+          "status": "ok",
+          "sha256": "6d74816f1d7b3e6907f17c40c637f2a957486cb0e01af1e3290ad028ccb45830",
+          "bytes": 306,
+          "ip": "51.159.158.233",
+          "loc": "FR",
+          "colo": "CDG",
+          "colo_city": "巴黎",
+          "colo_cc": "FR"
+        }
+      },
+      "exit_ip": "51.159.158.233",
+      "path": "direct",
+      "is_landing": false,
+      "front_node": null,
+      "speed_front_node": null,
+      "front_attempts": null,
+      "liveness": {
+        "alive": true,
+        "latency_ms": 250.0,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 1750.0
+          },
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 250.0
+          }
+        ]
+      },
+      "chain_liveness": null,
+      "delay": 250.0,
+      "is_front_fallback": false,
+      "ip_info_by_ip": {
+        "51.159.158.233": {
+          "country_code": "FR",
+          "votes": {
+            "FR": 3
+          },
+          "status": "confirmed",
+          "confidence": "high",
+          "ip": "51.159.158.233",
+          "records": [
+            {
+              "url": "https://ipinfo.io/51.159.158.233/json",
+              "observed_at": "2026-09-26T00:04:56.317096+00:00",
+              "status": "error",
+              "error": "SSLError",
+              "provider": "ipinfo",
+              "target_ip": "51.159.158.233"
+            },
+            {
+              "url": "https://ipwho.is/51.159.158.233",
+              "observed_at": "2026-09-26T00:04:56.321090+00:00",
+              "http_status": 200,
+              "final_url": "https://ipwho.is/51.159.158.233",
+              "status": "ok",
+              "sha256": "c1422811cef1296cb451cf7a4397dba24c4c0bac76faa951466a73eda5af62cd",
+              "bytes": 666,
+              "provider": "ipwhois",
+              "family": "ipwhois",
+              "target_ip": "51.159.158.233",
+              "ip": "51.159.158.233",
+              "cc": "FR",
+              "city": "Paris"
+            },
+            {
+              "url": "https://api.ipapi.is/?q=51.159.158.233",
+              "observed_at": "2026-09-26T00:04:56.322516+00:00",
+              "http_status": 200,
+              "final_url": "https://api.ipapi.is/?q=51.159.158.233",
+              "status": "ok",
+              "sha256": "804e4b3f376542da73141578c4bce0b66369ae7d68c4ee7fb782b9d391d9eeb1",
+              "bytes": 309,
+              "provider": "ipapi.is",
+              "family": "ipapi.is",
+              "target_ip": "51.159.158.233",
+              "ip": "51.159.158.233",
+              "cc": "FR",
+              "city": "Paris 04 Hôtel-de-Ville"
+            },
+            {
+              "url": "https://api.db-ip.com/v2/free/51.159.158.233",
+              "observed_at": "2026-09-26T00:04:57.223591+00:00",
+              "http_status": 200,
+              "final_url": "https://api.db-ip.com/v2/free/51.159.158.233",
+              "status": "ok",
+              "sha256": "7db368ba89d49a16d4c3a36d67421fe059c13579f6f6d66d5a3603195582dc1c",
+              "bytes": 209,
+              "provider": "dbip",
+              "family": "dbip",
+              "target_ip": "51.159.158.233",
+              "ip": "51.159.158.233",
+              "cc": "FR",
+              "city": "Paris"
+            }
+          ],
+          "score": 79,
+          "flags": {
+            "residential": false,
+            "datacenter": true,
+            "mobile": false,
+            "vpn": false,
+            "proxy": false,
+            "tor": false,
+            "crawler": false,
+            "abuser": false
+          },
+          "asn": null,
+          "isp": null,
+          "reputation": {
+            "ip": "51.159.158.233",
+            "provider": "Net.Coffee",
+            "score": 79,
+            "status": "observed",
+            "flags": {
+              "residential": false,
+              "datacenter": true,
+              "mobile": false,
+              "vpn": false,
+              "proxy": false,
+              "tor": false,
+              "crawler": false,
+              "abuser": false
+            },
+            "checked_at": "2026-09-26T00:04:58.357252+00:00",
+            "source": {
+              "url": "https://ip.net.coffee/api/ip/lookup/51.159.158.233",
+              "observed_at": "2026-09-26T00:04:58.357252+00:00",
+              "http_status": 200,
+              "final_url": "https://ip.net.coffee/api/ip/lookup/51.159.158.233",
+              "status": "ok",
+              "sha256": "a1cb2889e9afac8494140a1d5966bb1d40fd4d180ad274e5c717bbbca229c86d",
+              "bytes": 3698
+            }
+          },
+          "reputation_source": {
+            "url": "https://ip.net.coffee/api/ip/lookup/51.159.158.233",
+            "observed_at": "2026-09-26T00:04:58.357252+00:00",
+            "http_status": 200,
+            "final_url": "https://ip.net.coffee/api/ip/lookup/51.159.158.233",
+            "status": "ok",
+            "sha256": "a1cb2889e9afac8494140a1d5966bb1d40fd4d180ad274e5c717bbbca229c86d",
+            "bytes": 3698
+          }
+        }
+      },
+      "ip_reputation": {
+        "score": 79,
+        "status": "observed",
+        "provider": "Net.Coffee",
+        "by_ip": {
+          "51.159.158.233": {
+            "ip": "51.159.158.233",
+            "provider": "Net.Coffee",
+            "score": 79,
+            "status": "observed",
+            "flags": {
+              "residential": false,
+              "datacenter": true,
+              "mobile": false,
+              "vpn": false,
+              "proxy": false,
+              "tor": false,
+              "crawler": false,
+              "abuser": false
+            },
+            "checked_at": "2026-09-26T00:04:58.357252+00:00",
+            "source": {
+              "url": "https://ip.net.coffee/api/ip/lookup/51.159.158.233",
+              "observed_at": "2026-09-26T00:04:58.357252+00:00",
+              "http_status": 200,
+              "final_url": "https://ip.net.coffee/api/ip/lookup/51.159.158.233",
+              "status": "ok",
+              "sha256": "a1cb2889e9afac8494140a1d5966bb1d40fd4d180ad274e5c717bbbca229c86d",
+              "bytes": 3698
+            }
+          }
+        },
+        "reason": null
+      },
+      "is_key": true,
+      "is_fast": false,
+      "key_score": 18.7,
+      "speed_mbps": 23.105,
+      "speed_kbs": 2820.4,
+      "speed_result": {
+        "status": "complete",
+        "complete": true,
+        "verdict": "qualified",
+        "reason": "稳态达标",
+        "error": null,
+        "observed_seconds": 10,
+        "stable_mbps": 23.105,
+        "floor_mbps": 17.639,
+        "peak_mbps": 33.74,
+        "mean_mbps": 19.648,
+        "sample_mbps": [
+          5.944,
+          24.605,
+          14.58,
+          12.721,
+          17.129,
+          18.148,
+          33.74,
+          28.69,
+          25.986,
+          14.939
+        ],
+        "max_stall_seconds": 0.203,
+        "bytes_received": 24576000,
+        "http_status": 200,
+        "ttfb_ms": 1704.0,
+        "rate_limit_mbps": 40.0,
+        "capped": false,
+        "target": "https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg",
+        "started_monotonic": 4825.25,
+        "contention": {
+          "contended": true,
+          "method": "traffic",
+          "contended_seconds": 2,
+          "background_mbps": 6.84,
+          "capacity_mbps": 40.0
+        }
+      },
+      "speed_note": null,
+      "key_reason": "ok",
+      "service_seconds": 168.4,
+      "ai_supported": false,
+      "ai_details": {
+        "openai": true,
+        "claude": true,
+        "gemini": false
+      },
+      "youtube_passed": false,
+      "shield_passed": true,
+      "media_details": {
+        "nf": false,
+        "dp": true
+      },
+      "ip_info": {
+        "country_code": "FR",
+        "votes": {
+          "FR": 3
+        },
+        "status": "confirmed",
+        "confidence": "high",
+        "ip": "51.159.158.233",
+        "records": [
+          {
+            "url": "https://ipinfo.io/51.159.158.233/json",
+            "observed_at": "2026-09-26T00:04:56.317096+00:00",
+            "status": "error",
+            "error": "SSLError",
+            "provider": "ipinfo",
+            "target_ip": "51.159.158.233"
+          },
+          {
+            "url": "https://ipwho.is/51.159.158.233",
+            "observed_at": "2026-09-26T00:04:56.321090+00:00",
+            "http_status": 200,
+            "final_url": "https://ipwho.is/51.159.158.233",
+            "status": "ok",
+            "sha256": "c1422811cef1296cb451cf7a4397dba24c4c0bac76faa951466a73eda5af62cd",
+            "bytes": 666,
+            "provider": "ipwhois",
+            "family": "ipwhois",
+            "target_ip": "51.159.158.233",
+            "ip": "51.159.158.233",
+            "cc": "FR",
+            "city": "Paris"
+          },
+          {
+            "url": "https://api.ipapi.is/?q=51.159.158.233",
+            "observed_at": "2026-09-26T00:04:56.322516+00:00",
+            "http_status": 200,
+            "final_url": "https://api.ipapi.is/?q=51.159.158.233",
+            "status": "ok",
+            "sha256": "804e4b3f376542da73141578c4bce0b66369ae7d68c4ee7fb782b9d391d9eeb1",
+            "bytes": 309,
+            "provider": "ipapi.is",
+            "family": "ipapi.is",
+            "target_ip": "51.159.158.233",
+            "ip": "51.159.158.233",
+            "cc": "FR",
+            "city": "Paris 04 Hôtel-de-Ville"
+          },
+          {
+            "url": "https://api.db-ip.com/v2/free/51.159.158.233",
+            "observed_at": "2026-09-26T00:04:57.223591+00:00",
+            "http_status": 200,
+            "final_url": "https://api.db-ip.com/v2/free/51.159.158.233",
+            "status": "ok",
+            "sha256": "7db368ba89d49a16d4c3a36d67421fe059c13579f6f6d66d5a3603195582dc1c",
+            "bytes": 209,
+            "provider": "dbip",
+            "family": "dbip",
+            "target_ip": "51.159.158.233",
+            "ip": "51.159.158.233",
+            "cc": "FR",
+            "city": "Paris"
+          }
+        ],
+        "score": 79,
+        "flags": {
+          "residential": false,
+          "datacenter": true,
+          "mobile": false,
+          "vpn": false,
+          "proxy": false,
+          "tor": false,
+          "crawler": false,
+          "abuser": false
+        },
+        "asn": null,
+        "isp": null,
+        "reputation": {
+          "ip": "51.159.158.233",
+          "provider": "Net.Coffee",
+          "score": 79,
+          "status": "observed",
+          "flags": {
+            "residential": false,
+            "datacenter": true,
+            "mobile": false,
+            "vpn": false,
+            "proxy": false,
+            "tor": false,
+            "crawler": false,
+            "abuser": false
+          },
+          "checked_at": "2026-09-26T00:04:58.357252+00:00",
+          "source": {
+            "url": "https://ip.net.coffee/api/ip/lookup/51.159.158.233",
+            "observed_at": "2026-09-26T00:04:58.357252+00:00",
+            "http_status": 200,
+            "final_url": "https://ip.net.coffee/api/ip/lookup/51.159.158.233",
+            "status": "ok",
+            "sha256": "a1cb2889e9afac8494140a1d5966bb1d40fd4d180ad274e5c717bbbca229c86d",
+            "bytes": 3698
+          }
+        },
+        "reputation_source": {
+          "url": "https://ip.net.coffee/api/ip/lookup/51.159.158.233",
+          "observed_at": "2026-09-26T00:04:58.357252+00:00",
+          "http_status": 200,
+          "final_url": "https://ip.net.coffee/api/ip/lookup/51.159.158.233",
+          "status": "ok",
+          "sha256": "a1cb2889e9afac8494140a1d5966bb1d40fd4d180ad274e5c717bbbca229c86d",
+          "bytes": 3698
+        }
+      }
+    },
+    {
+      "orig_name": "🏳️ 未知_1",
+      "final_name": "🇫🇷 Key法国_1_Lnd_D+_⚠️IR",
+      "cc": "FR",
+      "google_region": {
+        "status": "observed",
+        "country_code": "IR",
+        "region_code": "IRN",
+        "gemini_available": false,
+        "source": "gemini_page",
+        "is_sent_to_china": false,
+        "conflict": false,
+        "details": {
+          "google_search": null,
+          "gemini": "IR",
+          "youtube": null
+        },
+        "signals": {
+          "gemini": {
+            "url": "https://gemini.google.com/",
+            "observed_at": "2026-09-26T00:05:02.363605+00:00",
+            "http_status": 200,
+            "final_url": "https://gemini.google.com/",
+            "status": "observed",
+            "sha256": "6415586c2eb2994fda63d79e2490add7d5956454189c61319e85acea1000066a",
+            "bytes": 851407,
+            "country_code": "IR",
+            "candidates": [
+              "IR"
+            ],
+            "gemini_available": false
+          },
+          "youtube": {
+            "url": "https://www.youtube.com/premium",
+            "observed_at": "2026-09-26T00:05:04.704744+00:00",
+            "http_status": 200,
+            "final_url": "https://consent.youtube.com/m?continue=https%3A%2F%2Fwww.youtube.com%2Fpremium%3Fcbrd%3D1&gl=FR&m=0&pc=yt&cm=2&hl=en&src=1",
+            "status": "missing_marker",
+            "sha256": "065067f03cbf15627f3aa85885726500323a221d6089f88333372e312e013807",
+            "bytes": 584696,
+            "country_code": null,
+            "gl": [],
+            "country_codes": []
+          }
+        },
+        "confirmation": {
+          "status": "observed",
+          "country_code": "IR",
+          "region_code": "IRN",
+          "gemini_available": false,
+          "source": "gemini_page",
+          "is_sent_to_china": false,
+          "conflict": false,
+          "details": {
+            "google_search": null,
+            "gemini": "IR",
+            "youtube": null
+          },
+          "signals": {
+            "gemini": {
+              "url": "https://gemini.google.com/",
+              "observed_at": "2026-09-26T00:05:17.800884+00:00",
+              "http_status": 200,
+              "final_url": "https://gemini.google.com/",
+              "status": "observed",
+              "sha256": "23a2df6e05789e0c8c0352d2f0f382c980879db2f2949f9b39df2e06c32beac4",
+              "bytes": 851455,
+              "country_code": "IR",
+              "candidates": [
+                "IR"
+              ],
+              "gemini_available": false
+            },
+            "youtube": {
+              "url": "https://www.youtube.com/premium",
+              "observed_at": "2026-09-26T00:05:20.627452+00:00",
+              "http_status": 200,
+              "final_url": "https://consent.youtube.com/m?continue=https%3A%2F%2Fwww.youtube.com%2Fpremium%3Fcbrd%3D1&gl=FR&m=0&pc=yt&cm=2&hl=en&src=1",
+              "status": "missing_marker",
+              "sha256": "be3dc631cf23c267ef87f0b0f1c78259bb1a9ace44f73112563e82639a5a7500",
+              "bytes": 584700,
+              "country_code": null,
+              "gl": [],
+              "country_codes": []
+            }
+          }
+        }
+      },
+      "geo_decision": {
+        "cc": "FR",
+        "country_zh": "法国",
+        "flag": "🇫🇷",
+        "basis": "geoip_with_google_poisoning",
+        "candidate_cc": "IR",
+        "scope": "ip_geolocation",
+        "confidence": "high",
+        "needs_review": false,
+        "conflict": true,
+        "is_pool": false,
+        "observed_ips": [
+          "51.158.101.199"
+        ],
+        "cf_loc": "FR",
+        "cf_colo": "CDG",
+        "google_cc": "IR",
+        "geoip_cc": "FR",
+        "votes": {
+          "FR": 4
+        },
+        "is_poisoned": true,
+        "poisoned_cc": "IR",
+        "poison_tag": "_⚠️IR",
+        "egress_stable": true
+      },
+      "egress": {
+        "ipv4": {
+          "ip": "51.158.101.199",
+          "source": "cloudflare-trace"
+        },
+        "ipv6": {
+          "ip": null,
+          "source": null
+        },
+        "observed_ips": [
+          "51.158.101.199"
+        ],
+        "observations": [
+          {
+            "url": "https://api.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:04:57.701252+00:00",
+            "http_status": 200,
+            "final_url": "https://api.ipify.org/?format=json",
+            "status": "ok",
+            "sha256": "ff151dfc4fef35c2abcd875860152dbd7d75b53cd2e8506796238de040bcadaa",
+            "bytes": 23,
+            "ip": "51.158.101.199"
+          },
+          {
+            "url": "https://api6.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:05:00.522533+00:00",
+            "status": "error",
+            "error": "SSLError"
+          }
+        ],
+        "status": "ok",
+        "cf_trace": {
+          "url": "https://cloudflare.com/cdn-cgi/trace",
+          "observed_at": "2026-09-26T00:04:55.619266+00:00",
+          "http_status": 200,
+          "final_url": "https://cloudflare.com/cdn-cgi/trace",
+          "status": "ok",
+          "sha256": "d5a7e62ac8237a96feb6832fa4ce9387b6efaecdb3f293e696fe96529bc86a41",
+          "bytes": 312,
+          "ip": "51.158.101.199",
+          "loc": "FR",
+          "colo": "CDG",
+          "colo_city": "巴黎",
+          "colo_cc": "FR"
+        }
+      },
+      "egress_after": {
+        "ipv4": {
+          "ip": "51.158.101.199",
+          "source": "cloudflare-trace"
+        },
+        "ipv6": {
+          "ip": null,
+          "source": null
+        },
+        "observed_ips": [
+          "51.158.101.199"
+        ],
+        "observations": [
+          {
+            "url": "https://api.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:05:26.267800+00:00",
+            "http_status": 200,
+            "final_url": "https://api.ipify.org/?format=json",
+            "status": "ok",
+            "sha256": "ff151dfc4fef35c2abcd875860152dbd7d75b53cd2e8506796238de040bcadaa",
+            "bytes": 23,
+            "ip": "51.158.101.199"
+          },
+          {
+            "url": "https://api6.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:05:28.107578+00:00",
+            "status": "error",
+            "error": "SSLError"
+          }
+        ],
+        "status": "ok",
+        "cf_trace": {
+          "url": "https://cloudflare.com/cdn-cgi/trace",
+          "observed_at": "2026-09-26T00:05:24.365172+00:00",
+          "http_status": 200,
+          "final_url": "https://cloudflare.com/cdn-cgi/trace",
+          "status": "ok",
+          "sha256": "334527872d00ca77d143fbf16e564620e70a6918c483222229dfe05bf461d756",
+          "bytes": 307,
+          "ip": "51.158.101.199",
+          "loc": "FR",
+          "colo": "CDG",
+          "colo_city": "巴黎",
+          "colo_cc": "FR"
+        }
+      },
+      "exit_ip": "51.158.101.199",
+      "path": "front",
+      "is_landing": true,
+      "front_node": "🇫🇷 法国_10_⚠️IR_D+",
+      "speed_front_node": "🇫🇷 法国_10_⚠️IR_D+",
+      "front_attempts": null,
+      "liveness": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ]
+      },
+      "chain_liveness": {
+        "🇫🇷 法国_10_⚠️IR_D+": {
+          "alive": true,
+          "latency_ms": 359.0,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": true,
+              "ms": 2485.0
+            },
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": true,
+              "ms": 359.0
+            }
+          ]
+        }
+      },
+      "delay": 359.0,
+      "is_front_fallback": false,
+      "ip_info_by_ip": {
+        "51.158.101.199": {
+          "country_code": "FR",
+          "votes": {
+            "FR": 3
+          },
+          "status": "confirmed",
+          "confidence": "high",
+          "ip": "51.158.101.199",
+          "records": [
+            {
+              "url": "https://ipinfo.io/51.158.101.199/json",
+              "observed_at": "2026-09-26T00:05:13.604938+00:00",
+              "status": "error",
+              "error": "SSLError",
+              "provider": "ipinfo",
+              "target_ip": "51.158.101.199"
+            },
+            {
+              "url": "https://ipwho.is/51.158.101.199",
+              "observed_at": "2026-09-26T00:05:13.607489+00:00",
+              "http_status": 200,
+              "final_url": "https://ipwho.is/51.158.101.199",
+              "status": "ok",
+              "sha256": "e3cf426aa5ec744ef0a1c53c7c24e86790b352228ee9992960d1506ce8babbd6",
+              "bytes": 666,
+              "provider": "ipwhois",
+              "family": "ipwhois",
+              "target_ip": "51.158.101.199",
+              "ip": "51.158.101.199",
+              "cc": "FR",
+              "city": "Paris"
+            },
+            {
+              "url": "https://api.ipapi.is/?q=51.158.101.199",
+              "observed_at": "2026-09-26T00:05:13.609303+00:00",
+              "http_status": 200,
+              "final_url": "https://api.ipapi.is/?q=51.158.101.199",
+              "status": "ok",
+              "sha256": "9c4277302f85dd1b08b9c1f0517d041866007d4dc945b82b9e9005c93d7d5329",
+              "bytes": 309,
+              "provider": "ipapi.is",
+              "family": "ipapi.is",
+              "target_ip": "51.158.101.199",
+              "ip": "51.158.101.199",
+              "cc": "FR",
+              "city": "Paris 04 Hôtel-de-Ville"
+            },
+            {
+              "url": "https://api.db-ip.com/v2/free/51.158.101.199",
+              "observed_at": "2026-09-26T00:05:14.488267+00:00",
+              "http_status": 200,
+              "final_url": "https://api.db-ip.com/v2/free/51.158.101.199",
+              "status": "ok",
+              "sha256": "05de13958402834c433b54b50160531c126f436e73f6b22525e7172b9120a0aa",
+              "bytes": 209,
+              "provider": "dbip",
+              "family": "dbip",
+              "target_ip": "51.158.101.199",
+              "ip": "51.158.101.199",
+              "cc": "FR",
+              "city": "Paris"
+            }
+          ],
+          "score": 79,
+          "flags": {
+            "residential": false,
+            "datacenter": true,
+            "mobile": false,
+            "vpn": false,
+            "proxy": false,
+            "tor": false,
+            "crawler": false,
+            "abuser": false
+          },
+          "asn": null,
+          "isp": null,
+          "reputation": {
+            "ip": "51.158.101.199",
+            "provider": "Net.Coffee",
+            "score": 79,
+            "status": "observed",
+            "flags": {
+              "residential": false,
+              "datacenter": true,
+              "mobile": false,
+              "vpn": false,
+              "proxy": false,
+              "tor": false,
+              "crawler": false,
+              "abuser": false
+            },
+            "checked_at": "2026-09-26T00:05:15.491947+00:00",
+            "source": {
+              "url": "https://ip.net.coffee/api/ip/lookup/51.158.101.199",
+              "observed_at": "2026-09-26T00:05:15.491947+00:00",
+              "http_status": 200,
+              "final_url": "https://ip.net.coffee/api/ip/lookup/51.158.101.199",
+              "status": "ok",
+              "sha256": "c47e0031d451cd6e64893300d68792dd9b213fedc4d2c4afab5a8368b5303534",
+              "bytes": 3774
+            }
+          },
+          "reputation_source": {
+            "url": "https://ip.net.coffee/api/ip/lookup/51.158.101.199",
+            "observed_at": "2026-09-26T00:05:15.491947+00:00",
+            "http_status": 200,
+            "final_url": "https://ip.net.coffee/api/ip/lookup/51.158.101.199",
+            "status": "ok",
+            "sha256": "c47e0031d451cd6e64893300d68792dd9b213fedc4d2c4afab5a8368b5303534",
+            "bytes": 3774
+          }
+        }
+      },
+      "ip_reputation": {
+        "score": 79,
+        "status": "observed",
+        "provider": "Net.Coffee",
+        "by_ip": {
+          "51.158.101.199": {
+            "ip": "51.158.101.199",
+            "provider": "Net.Coffee",
+            "score": 79,
+            "status": "observed",
+            "flags": {
+              "residential": false,
+              "datacenter": true,
+              "mobile": false,
+              "vpn": false,
+              "proxy": false,
+              "tor": false,
+              "crawler": false,
+              "abuser": false
+            },
+            "checked_at": "2026-09-26T00:05:15.491947+00:00",
+            "source": {
+              "url": "https://ip.net.coffee/api/ip/lookup/51.158.101.199",
+              "observed_at": "2026-09-26T00:05:15.491947+00:00",
+              "http_status": 200,
+              "final_url": "https://ip.net.coffee/api/ip/lookup/51.158.101.199",
+              "status": "ok",
+              "sha256": "c47e0031d451cd6e64893300d68792dd9b213fedc4d2c4afab5a8368b5303534",
+              "bytes": 3774
+            }
+          }
+        },
+        "reason": null
+      },
+      "is_key": true,
+      "is_fast": false,
+      "key_score": 15.3,
+      "speed_mbps": 22.624,
+      "speed_kbs": 2761.7,
+      "speed_result": {
+        "status": "complete",
+        "complete": true,
+        "verdict": "qualified",
+        "reason": "稳态达标",
+        "error": null,
+        "observed_seconds": 10,
+        "stable_mbps": 22.624,
+        "floor_mbps": 17.555,
+        "peak_mbps": 32.117,
+        "mean_mbps": 18.659,
+        "sample_mbps": [
+          7.78,
+          27.038,
+          8.77,
+          7.263,
+          15.167,
+          19.943,
+          25.254,
+          21.596,
+          21.666,
+          32.117
+        ],
+        "max_stall_seconds": 0.0,
+        "bytes_received": 23543808,
+        "http_status": 200,
+        "ttfb_ms": 2203.0,
+        "rate_limit_mbps": 40.0,
+        "capped": false,
+        "target": "https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg",
+        "started_monotonic": 5006.093,
+        "contention": {
+          "contended": false,
+          "method": "traffic",
+          "contended_seconds": 0,
+          "background_mbps": 0.66,
+          "capacity_mbps": 40.0
+        }
+      },
+      "speed_note": null,
+      "key_reason": "ok",
+      "service_seconds": 72.5,
+      "ai_supported": false,
+      "ai_details": {
+        "openai": true,
+        "claude": true,
+        "gemini": false
+      },
+      "youtube_passed": true,
+      "shield_passed": true,
+      "media_details": {
+        "nf": false,
+        "dp": true
+      },
+      "ip_info": {
+        "country_code": "FR",
+        "votes": {
+          "FR": 3
+        },
+        "status": "confirmed",
+        "confidence": "high",
+        "ip": "51.158.101.199",
+        "records": [
+          {
+            "url": "https://ipinfo.io/51.158.101.199/json",
+            "observed_at": "2026-09-26T00:05:13.604938+00:00",
+            "status": "error",
+            "error": "SSLError",
+            "provider": "ipinfo",
+            "target_ip": "51.158.101.199"
+          },
+          {
+            "url": "https://ipwho.is/51.158.101.199",
+            "observed_at": "2026-09-26T00:05:13.607489+00:00",
+            "http_status": 200,
+            "final_url": "https://ipwho.is/51.158.101.199",
+            "status": "ok",
+            "sha256": "e3cf426aa5ec744ef0a1c53c7c24e86790b352228ee9992960d1506ce8babbd6",
+            "bytes": 666,
+            "provider": "ipwhois",
+            "family": "ipwhois",
+            "target_ip": "51.158.101.199",
+            "ip": "51.158.101.199",
+            "cc": "FR",
+            "city": "Paris"
+          },
+          {
+            "url": "https://api.ipapi.is/?q=51.158.101.199",
+            "observed_at": "2026-09-26T00:05:13.609303+00:00",
+            "http_status": 200,
+            "final_url": "https://api.ipapi.is/?q=51.158.101.199",
+            "status": "ok",
+            "sha256": "9c4277302f85dd1b08b9c1f0517d041866007d4dc945b82b9e9005c93d7d5329",
+            "bytes": 309,
+            "provider": "ipapi.is",
+            "family": "ipapi.is",
+            "target_ip": "51.158.101.199",
+            "ip": "51.158.101.199",
+            "cc": "FR",
+            "city": "Paris 04 Hôtel-de-Ville"
+          },
+          {
+            "url": "https://api.db-ip.com/v2/free/51.158.101.199",
+            "observed_at": "2026-09-26T00:05:14.488267+00:00",
+            "http_status": 200,
+            "final_url": "https://api.db-ip.com/v2/free/51.158.101.199",
+            "status": "ok",
+            "sha256": "05de13958402834c433b54b50160531c126f436e73f6b22525e7172b9120a0aa",
+            "bytes": 209,
+            "provider": "dbip",
+            "family": "dbip",
+            "target_ip": "51.158.101.199",
+            "ip": "51.158.101.199",
+            "cc": "FR",
+            "city": "Paris"
+          }
+        ],
+        "score": 79,
+        "flags": {
+          "residential": false,
+          "datacenter": true,
+          "mobile": false,
+          "vpn": false,
+          "proxy": false,
+          "tor": false,
+          "crawler": false,
+          "abuser": false
+        },
+        "asn": null,
+        "isp": null,
+        "reputation": {
+          "ip": "51.158.101.199",
+          "provider": "Net.Coffee",
+          "score": 79,
+          "status": "observed",
+          "flags": {
+            "residential": false,
+            "datacenter": true,
+            "mobile": false,
+            "vpn": false,
+            "proxy": false,
+            "tor": false,
+            "crawler": false,
+            "abuser": false
+          },
+          "checked_at": "2026-09-26T00:05:15.491947+00:00",
+          "source": {
+            "url": "https://ip.net.coffee/api/ip/lookup/51.158.101.199",
+            "observed_at": "2026-09-26T00:05:15.491947+00:00",
+            "http_status": 200,
+            "final_url": "https://ip.net.coffee/api/ip/lookup/51.158.101.199",
+            "status": "ok",
+            "sha256": "c47e0031d451cd6e64893300d68792dd9b213fedc4d2c4afab5a8368b5303534",
+            "bytes": 3774
+          }
+        },
+        "reputation_source": {
+          "url": "https://ip.net.coffee/api/ip/lookup/51.158.101.199",
+          "observed_at": "2026-09-26T00:05:15.491947+00:00",
+          "http_status": 200,
+          "final_url": "https://ip.net.coffee/api/ip/lookup/51.158.101.199",
+          "status": "ok",
+          "sha256": "c47e0031d451cd6e64893300d68792dd9b213fedc4d2c4afab5a8368b5303534",
+          "bytes": 3774
+        }
+      }
+    },
+    {
+      "orig_name": "🇪🇬 ❇️✨️埃及_1",
+      "final_name": "🇪🇬 ✨️❇️♥️Fast埃及_1_D+",
+      "cc": "EG",
+      "google_region": {
+        "status": "observed",
+        "country_code": "EG",
+        "region_code": "EGY",
+        "gemini_available": true,
+        "source": "gemini_page",
+        "is_sent_to_china": false,
+        "conflict": false,
+        "details": {
+          "google_search": null,
+          "gemini": "EG",
+          "youtube": "EG"
+        },
+        "signals": {
+          "gemini": {
+            "url": "https://gemini.google.com/",
+            "observed_at": "2026-09-26T00:04:27.756992+00:00",
+            "http_status": 200,
+            "final_url": "https://gemini.google.com/",
+            "status": "observed",
+            "sha256": "be68b284ff7ab29e7823b7c63af4489777b2f90ff80216617c0e370a15da4cc3",
+            "bytes": 850331,
+            "country_code": "EG",
+            "candidates": [
+              "EG"
+            ],
+            "gemini_available": true
+          },
+          "youtube": {
+            "url": "https://www.youtube.com/premium",
+            "observed_at": "2026-09-26T00:04:30.106329+00:00",
+            "http_status": 200,
+            "final_url": "https://www.youtube.com/premium",
+            "status": "observed",
+            "sha256": "6ab748a0136b6e10934fcf84182c44e871e809922bed9d9c308c357d2f6912d1",
+            "bytes": 878994,
+            "country_code": "EG",
+            "gl": [
+              "EG"
+            ],
+            "country_codes": [
+              "EG"
+            ]
+          }
+        }
+      },
+      "geo_decision": {
+        "cc": "EG",
+        "country_zh": "埃及",
+        "flag": "🇪🇬",
+        "basis": "gemini_page",
+        "candidate_cc": "EG",
+        "scope": "google_service_region",
+        "confidence": "high",
+        "needs_review": false,
+        "conflict": false,
+        "is_pool": false,
+        "observed_ips": [
+          "102.217.70.166"
+        ],
+        "cf_loc": "EG",
+        "cf_colo": "MRS",
+        "google_cc": "EG",
+        "geoip_cc": "EG",
+        "votes": {
+          "EG": 4
+        },
+        "is_poisoned": false,
+        "poisoned_cc": null,
+        "poison_tag": null,
+        "egress_stable": true
+      },
+      "egress": {
+        "ipv4": {
+          "ip": "102.217.70.166",
+          "source": "cloudflare-trace"
+        },
+        "ipv6": {
+          "ip": null,
+          "source": null
+        },
+        "observed_ips": [
+          "102.217.70.166"
+        ],
+        "observations": [
+          {
+            "url": "https://api.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:04:19.761887+00:00",
+            "http_status": 200,
+            "final_url": "https://api.ipify.org/?format=json",
+            "status": "ok",
+            "sha256": "28775fc051b3e10b6e62e86bf10ac1b764963dee48040d2daba6d56234aca3e1",
+            "bytes": 23,
+            "ip": "102.217.70.166"
+          },
+          {
+            "url": "https://api6.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:04:21.694504+00:00",
+            "status": "error",
+            "error": "ConnectionError"
+          }
+        ],
+        "status": "ok",
+        "cf_trace": {
+          "url": "https://cloudflare.com/cdn-cgi/trace",
+          "observed_at": "2026-09-26T00:04:17.848022+00:00",
+          "http_status": 200,
+          "final_url": "https://cloudflare.com/cdn-cgi/trace",
+          "status": "ok",
+          "sha256": "f0abbfd641dbd34dfa4c3223d96b6c67a0dc42146bb0dc9a38cf139687ced2db",
+          "bytes": 311,
+          "ip": "102.217.70.166",
+          "loc": "EG",
+          "colo": "MRS",
+          "colo_city": "马赛",
+          "colo_cc": "FR"
+        }
+      },
+      "egress_after": {
+        "ipv4": {
+          "ip": "102.217.70.166",
+          "source": "cloudflare-trace"
+        },
+        "ipv6": {
+          "ip": null,
+          "source": null
+        },
+        "observed_ips": [
+          "102.217.70.166"
+        ],
+        "observations": [
+          {
+            "url": "https://api.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:04:35.110007+00:00",
+            "http_status": 200,
+            "final_url": "https://api.ipify.org/?format=json",
+            "status": "ok",
+            "sha256": "28775fc051b3e10b6e62e86bf10ac1b764963dee48040d2daba6d56234aca3e1",
+            "bytes": 23,
+            "ip": "102.217.70.166"
+          },
+          {
+            "url": "https://api6.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:04:37.573144+00:00",
+            "status": "error",
+            "error": "ConnectionError"
+          }
+        ],
+        "status": "ok",
+        "cf_trace": {
+          "url": "https://cloudflare.com/cdn-cgi/trace",
+          "observed_at": "2026-09-26T00:04:32.840695+00:00",
+          "http_status": 200,
+          "final_url": "https://cloudflare.com/cdn-cgi/trace",
+          "status": "ok",
+          "sha256": "75b8a3f79f34a81e2f75583b1bcdbb44b5a3e6720b5b0a4de82537a30f9b136d",
+          "bytes": 307,
+          "ip": "102.217.70.166",
+          "loc": "EG",
+          "colo": "MRS",
+          "colo_city": "马赛",
+          "colo_cc": "FR"
+        }
+      },
+      "exit_ip": "102.217.70.166",
+      "path": "direct",
+      "is_landing": false,
+      "front_node": null,
+      "speed_front_node": null,
+      "front_attempts": null,
+      "liveness": {
+        "alive": true,
+        "latency_ms": 313.0,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 1937.0
+          },
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 313.0
+          }
+        ]
+      },
+      "chain_liveness": null,
+      "delay": 313.0,
+      "is_front_fallback": false,
+      "ip_info_by_ip": {
+        "102.217.70.166": {
+          "country_code": "EG",
+          "votes": {
+            "EG": 3
+          },
+          "status": "confirmed",
+          "confidence": "high",
+          "ip": "102.217.70.166",
+          "records": [
+            {
+              "url": "https://ipinfo.io/102.217.70.166/json",
+              "observed_at": "2026-09-26T00:04:38.729278+00:00",
+              "status": "error",
+              "error": "SSLError",
+              "provider": "ipinfo",
+              "target_ip": "102.217.70.166"
+            },
+            {
+              "url": "https://ipwho.is/102.217.70.166",
+              "observed_at": "2026-09-26T00:04:38.735779+00:00",
+              "http_status": 200,
+              "final_url": "https://ipwho.is/102.217.70.166",
+              "status": "ok",
+              "sha256": "7d59541eccb7d093748063e24640f2d981289b59c6cbaf649d6a32a74331b540",
+              "bytes": 648,
+              "provider": "ipwhois",
+              "family": "ipwhois",
+              "target_ip": "102.217.70.166",
+              "ip": "102.217.70.166",
+              "cc": "EG",
+              "city": "Cairo"
+            },
+            {
+              "url": "https://api.ipapi.is/?q=102.217.70.166",
+              "observed_at": "2026-09-26T00:04:38.742080+00:00",
+              "http_status": 200,
+              "final_url": "https://api.ipapi.is/?q=102.217.70.166",
+              "status": "ok",
+              "sha256": "c740c995d957d48bcf4a2d22eaa6842adcb05a947a6ad4303393cf61e3264259",
+              "bytes": 277,
+              "provider": "ipapi.is",
+              "family": "ipapi.is",
+              "target_ip": "102.217.70.166",
+              "ip": "102.217.70.166",
+              "cc": "EG",
+              "city": "Cairo"
+            },
+            {
+              "url": "https://api.db-ip.com/v2/free/102.217.70.166",
+              "observed_at": "2026-09-26T00:04:39.582552+00:00",
+              "http_status": 200,
+              "final_url": "https://api.db-ip.com/v2/free/102.217.70.166",
+              "status": "ok",
+              "sha256": "d3d2d51bc47607bb429c32178af3ac6bf3a16f711c33d922fa7d4be9f9a43cce",
+              "bytes": 195,
+              "provider": "dbip",
+              "family": "dbip",
+              "target_ip": "102.217.70.166",
+              "ip": "102.217.70.166",
+              "cc": "EG",
+              "city": "Cairo"
+            }
+          ],
+          "score": 90,
+          "flags": {
+            "residential": false,
+            "datacenter": true,
+            "mobile": false,
+            "vpn": false,
+            "proxy": false,
+            "tor": false,
+            "crawler": false,
+            "abuser": false
+          },
+          "asn": null,
+          "isp": null,
+          "reputation": {
+            "ip": "102.217.70.166",
+            "provider": "Net.Coffee",
+            "score": 90,
+            "status": "observed",
+            "flags": {
+              "residential": false,
+              "datacenter": true,
+              "mobile": false,
+              "vpn": false,
+              "proxy": false,
+              "tor": false,
+              "crawler": false,
+              "abuser": false
+            },
+            "checked_at": "2026-09-26T00:04:40.574687+00:00",
+            "source": {
+              "url": "https://ip.net.coffee/api/ip/lookup/102.217.70.166",
+              "observed_at": "2026-09-26T00:04:40.574687+00:00",
+              "http_status": 200,
+              "final_url": "https://ip.net.coffee/api/ip/lookup/102.217.70.166",
+              "status": "ok",
+              "sha256": "dfe98dad2d51dd6296d32b7d21af290c33725fa150d0153708c9887bd88f742c",
+              "bytes": 2148
+            }
+          },
+          "reputation_source": {
+            "url": "https://ip.net.coffee/api/ip/lookup/102.217.70.166",
+            "observed_at": "2026-09-26T00:04:40.574687+00:00",
+            "http_status": 200,
+            "final_url": "https://ip.net.coffee/api/ip/lookup/102.217.70.166",
+            "status": "ok",
+            "sha256": "dfe98dad2d51dd6296d32b7d21af290c33725fa150d0153708c9887bd88f742c",
+            "bytes": 2148
+          }
+        }
+      },
+      "ip_reputation": {
+        "score": 90,
+        "status": "observed",
+        "provider": "Net.Coffee",
+        "by_ip": {
+          "102.217.70.166": {
+            "ip": "102.217.70.166",
+            "provider": "Net.Coffee",
+            "score": 90,
+            "status": "observed",
+            "flags": {
+              "residential": false,
+              "datacenter": true,
+              "mobile": false,
+              "vpn": false,
+              "proxy": false,
+              "tor": false,
+              "crawler": false,
+              "abuser": false
+            },
+            "checked_at": "2026-09-26T00:04:40.574687+00:00",
+            "source": {
+              "url": "https://ip.net.coffee/api/ip/lookup/102.217.70.166",
+              "observed_at": "2026-09-26T00:04:40.574687+00:00",
+              "http_status": 200,
+              "final_url": "https://ip.net.coffee/api/ip/lookup/102.217.70.166",
+              "status": "ok",
+              "sha256": "dfe98dad2d51dd6296d32b7d21af290c33725fa150d0153708c9887bd88f742c",
+              "bytes": 2148
+            }
+          }
+        },
+        "reason": null
+      },
+      "is_key": false,
+      "is_fast": true,
+      "key_score": 0.0,
+      "speed_mbps": 13.643,
+      "speed_kbs": 1665.4,
+      "speed_result": {
+        "status": "complete",
+        "complete": true,
+        "verdict": "qualified",
+        "reason": "稳态达标",
+        "error": null,
+        "observed_seconds": 10,
+        "stable_mbps": 13.643,
+        "floor_mbps": 10.918,
+        "peak_mbps": 15.406,
+        "mean_mbps": 12.755,
+        "sample_mbps": [
+          3.67,
+          12.88,
+          14.637,
+          14.507,
+          14.988,
+          15.406,
+          14.407,
+          15.223,
+          13.427,
+          8.41
+        ],
+        "max_stall_seconds": 0.296,
+        "bytes_received": 15958016,
+        "http_status": 200,
+        "ttfb_ms": 2250.0,
+        "rate_limit_mbps": 40.0,
+        "capped": false,
+        "target": "https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg",
+        "started_monotonic": 4881.843,
+        "contention": {
+          "contended": false,
+          "method": "traffic",
+          "contended_seconds": 0,
+          "background_mbps": 2.17,
+          "capacity_mbps": 40.0
+        }
+      },
+      "speed_note": null,
+      "key_reason": "HTTP协议不支持作前置跳板",
+      "service_seconds": 66.0,
+      "ai_supported": true,
+      "ai_details": {
+        "openai": true,
+        "claude": true,
+        "gemini": true
+      },
+      "youtube_passed": true,
+      "shield_passed": true,
+      "media_details": {
+        "nf": false,
+        "dp": true
+      },
+      "ip_info": {
+        "country_code": "EG",
+        "votes": {
+          "EG": 3
+        },
+        "status": "confirmed",
+        "confidence": "high",
+        "ip": "102.217.70.166",
+        "records": [
+          {
+            "url": "https://ipinfo.io/102.217.70.166/json",
+            "observed_at": "2026-09-26T00:04:38.729278+00:00",
+            "status": "error",
+            "error": "SSLError",
+            "provider": "ipinfo",
+            "target_ip": "102.217.70.166"
+          },
+          {
+            "url": "https://ipwho.is/102.217.70.166",
+            "observed_at": "2026-09-26T00:04:38.735779+00:00",
+            "http_status": 200,
+            "final_url": "https://ipwho.is/102.217.70.166",
+            "status": "ok",
+            "sha256": "7d59541eccb7d093748063e24640f2d981289b59c6cbaf649d6a32a74331b540",
+            "bytes": 648,
+            "provider": "ipwhois",
+            "family": "ipwhois",
+            "target_ip": "102.217.70.166",
+            "ip": "102.217.70.166",
+            "cc": "EG",
+            "city": "Cairo"
+          },
+          {
+            "url": "https://api.ipapi.is/?q=102.217.70.166",
+            "observed_at": "2026-09-26T00:04:38.742080+00:00",
+            "http_status": 200,
+            "final_url": "https://api.ipapi.is/?q=102.217.70.166",
+            "status": "ok",
+            "sha256": "c740c995d957d48bcf4a2d22eaa6842adcb05a947a6ad4303393cf61e3264259",
+            "bytes": 277,
+            "provider": "ipapi.is",
+            "family": "ipapi.is",
+            "target_ip": "102.217.70.166",
+            "ip": "102.217.70.166",
+            "cc": "EG",
+            "city": "Cairo"
+          },
+          {
+            "url": "https://api.db-ip.com/v2/free/102.217.70.166",
+            "observed_at": "2026-09-26T00:04:39.582552+00:00",
+            "http_status": 200,
+            "final_url": "https://api.db-ip.com/v2/free/102.217.70.166",
+            "status": "ok",
+            "sha256": "d3d2d51bc47607bb429c32178af3ac6bf3a16f711c33d922fa7d4be9f9a43cce",
+            "bytes": 195,
+            "provider": "dbip",
+            "family": "dbip",
+            "target_ip": "102.217.70.166",
+            "ip": "102.217.70.166",
+            "cc": "EG",
+            "city": "Cairo"
+          }
+        ],
+        "score": 90,
+        "flags": {
+          "residential": false,
+          "datacenter": true,
+          "mobile": false,
+          "vpn": false,
+          "proxy": false,
+          "tor": false,
+          "crawler": false,
+          "abuser": false
+        },
+        "asn": null,
+        "isp": null,
+        "reputation": {
+          "ip": "102.217.70.166",
+          "provider": "Net.Coffee",
+          "score": 90,
+          "status": "observed",
+          "flags": {
+            "residential": false,
+            "datacenter": true,
+            "mobile": false,
+            "vpn": false,
+            "proxy": false,
+            "tor": false,
+            "crawler": false,
+            "abuser": false
+          },
+          "checked_at": "2026-09-26T00:04:40.574687+00:00",
+          "source": {
+            "url": "https://ip.net.coffee/api/ip/lookup/102.217.70.166",
+            "observed_at": "2026-09-26T00:04:40.574687+00:00",
+            "http_status": 200,
+            "final_url": "https://ip.net.coffee/api/ip/lookup/102.217.70.166",
+            "status": "ok",
+            "sha256": "dfe98dad2d51dd6296d32b7d21af290c33725fa150d0153708c9887bd88f742c",
+            "bytes": 2148
+          }
+        },
+        "reputation_source": {
+          "url": "https://ip.net.coffee/api/ip/lookup/102.217.70.166",
+          "observed_at": "2026-09-26T00:04:40.574687+00:00",
+          "http_status": 200,
+          "final_url": "https://ip.net.coffee/api/ip/lookup/102.217.70.166",
+          "status": "ok",
+          "sha256": "dfe98dad2d51dd6296d32b7d21af290c33725fa150d0153708c9887bd88f742c",
+          "bytes": 2148
+        }
+      }
+    },
+    {
+      "orig_name": "🇲🇾 ❇️✨️Fast马来西亚_1",
+      "final_name": "🇲🇾 ✨️❇️♥️Fast马来西亚_1",
+      "cc": "MY",
+      "google_region": {
+        "status": "observed",
+        "country_code": "MY",
+        "region_code": "MYS",
+        "gemini_available": true,
+        "source": "gemini_page",
+        "is_sent_to_china": false,
+        "conflict": false,
+        "details": {
+          "google_search": null,
+          "gemini": "MY",
+          "youtube": "MY"
+        },
+        "signals": {
+          "gemini": {
+            "url": "https://gemini.google.com/",
+            "observed_at": "2026-09-26T00:04:29.231958+00:00",
+            "http_status": 200,
+            "final_url": "https://gemini.google.com/",
+            "status": "observed",
+            "sha256": "f5d22250eae8a359785211977a252d2d521ae282ce76bcf1f08c41ef6f99a0f1",
+            "bytes": 851122,
+            "country_code": "MY",
+            "candidates": [
+              "MY"
+            ],
+            "gemini_available": true
+          },
+          "youtube": {
+            "url": "https://www.youtube.com/premium",
+            "observed_at": "2026-09-26T00:04:29.987209+00:00",
+            "http_status": 200,
+            "final_url": "https://www.youtube.com/premium",
+            "status": "observed",
+            "sha256": "6ab662414e74672a4bd5c84b29b1441baadb30b07c0174a02402fd66674e9a2b",
+            "bytes": 848835,
+            "country_code": "MY",
+            "gl": [
+              "MY"
+            ],
+            "country_codes": [
+              "MY"
+            ]
+          }
+        }
+      },
+      "geo_decision": {
+        "cc": "MY",
+        "country_zh": "马来西亚",
+        "flag": "🇲🇾",
+        "basis": "gemini_page",
+        "candidate_cc": "MY",
+        "scope": "google_service_region",
+        "confidence": "high",
+        "needs_review": false,
+        "conflict": false,
+        "is_pool": false,
+        "observed_ips": [
+          "58.26.247.228"
+        ],
+        "cf_loc": "MY",
+        "cf_colo": "KUL",
+        "google_cc": "MY",
+        "geoip_cc": "MY",
+        "votes": {
+          "MY": 4
+        },
+        "is_poisoned": false,
+        "poisoned_cc": null,
+        "poison_tag": null,
+        "egress_stable": true
+      },
+      "egress": {
+        "ipv4": {
+          "ip": "58.26.247.228",
+          "source": "cloudflare-trace"
+        },
+        "ipv6": {
+          "ip": null,
+          "source": null
+        },
+        "observed_ips": [
+          "58.26.247.228"
+        ],
+        "observations": [
+          {
+            "url": "https://api.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:04:28.290725+00:00",
+            "http_status": 200,
+            "final_url": "https://api.ipify.org/?format=json",
+            "status": "ok",
+            "sha256": "736abcbd8c0e47b4f7f2a44671f0f859b97f410d5832e70d1821b8eb453bc702",
+            "bytes": 22,
+            "ip": "58.26.247.228"
+          },
+          {
+            "url": "https://api6.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:04:28.951915+00:00",
+            "status": "error",
+            "error": "ConnectionError"
+          }
+        ],
+        "status": "ok",
+        "cf_trace": {
+          "url": "https://cloudflare.com/cdn-cgi/trace",
+          "observed_at": "2026-09-26T00:04:27.783920+00:00",
+          "http_status": 200,
+          "final_url": "https://cloudflare.com/cdn-cgi/trace",
+          "status": "ok",
+          "sha256": "4996aab465a31fbee61be4ffc87df5cbe8ce450f27a01952e09d348503da0545",
+          "bytes": 305,
+          "ip": "58.26.247.228",
+          "loc": "MY",
+          "colo": "KUL",
+          "colo_city": "吉隆坡",
+          "colo_cc": "MY"
+        }
+      },
+      "egress_after": {
+        "ipv4": {
+          "ip": "58.26.247.228",
+          "source": "cloudflare-trace"
+        },
+        "ipv6": {
+          "ip": null,
+          "source": null
+        },
+        "observed_ips": [
+          "58.26.247.228"
+        ],
+        "observations": [
+          {
+            "url": "https://api.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:04:31.176124+00:00",
+            "http_status": 200,
+            "final_url": "https://api.ipify.org/?format=json",
+            "status": "ok",
+            "sha256": "736abcbd8c0e47b4f7f2a44671f0f859b97f410d5832e70d1821b8eb453bc702",
+            "bytes": 22,
+            "ip": "58.26.247.228"
+          },
+          {
+            "url": "https://api6.ipify.org?format=json",
+            "observed_at": "2026-09-26T00:04:32.072064+00:00",
+            "status": "error",
+            "error": "ConnectionError"
+          }
+        ],
+        "status": "ok",
+        "cf_trace": {
+          "url": "https://cloudflare.com/cdn-cgi/trace",
+          "observed_at": "2026-09-26T00:04:30.666620+00:00",
+          "http_status": 200,
+          "final_url": "https://cloudflare.com/cdn-cgi/trace",
+          "status": "ok",
+          "sha256": "45df4ec945260b029f512fbdaae841459bd4902be9fd8a0659eddeea0608261a",
+          "bytes": 322,
+          "ip": "58.26.247.228",
+          "loc": "MY",
+          "colo": "KUL",
+          "colo_city": "吉隆坡",
+          "colo_cc": "MY"
+        }
+      },
+      "exit_ip": "58.26.247.228",
+      "path": "direct",
+      "is_landing": false,
+      "front_node": null,
+      "speed_front_node": null,
+      "front_attempts": null,
+      "liveness": {
+        "alive": true,
+        "latency_ms": 62.0,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 1375.0
+          },
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": true,
+            "ms": 62.0
+          }
+        ]
+      },
+      "chain_liveness": null,
+      "delay": 62.0,
+      "is_front_fallback": false,
+      "ip_info_by_ip": {
+        "58.26.247.228": {
+          "country_code": "MY",
+          "votes": {
+            "MY": 3
+          },
+          "status": "confirmed",
+          "confidence": "high",
+          "ip": "58.26.247.228",
+          "records": [
+            {
+              "url": "https://ipinfo.io/58.26.247.228/json",
+              "observed_at": "2026-09-26T00:04:32.543460+00:00",
+              "status": "error",
+              "error": "SSLError",
+              "provider": "ipinfo",
+              "target_ip": "58.26.247.228"
+            },
+            {
+              "url": "https://ipwho.is/58.26.247.228",
+              "observed_at": "2026-09-26T00:04:32.547044+00:00",
+              "http_status": 200,
+              "final_url": "https://ipwho.is/58.26.247.228",
+              "status": "ok",
+              "sha256": "d7bc14f3504e8075f709b8781badb2181088d285bbee60077d43e8f6411e1cb0",
+              "bytes": 704,
+              "provider": "ipwhois",
+              "family": "ipwhois",
+              "target_ip": "58.26.247.228",
+              "ip": "58.26.247.228",
+              "cc": "MY",
+              "city": "Kuala Lumpur"
+            },
+            {
+              "url": "https://api.ipapi.is/?q=58.26.247.228",
+              "observed_at": "2026-09-26T00:04:32.548260+00:00",
+              "http_status": 200,
+              "final_url": "https://api.ipapi.is/?q=58.26.247.228",
+              "status": "ok",
+              "sha256": "64c593ec378f8b9b322b43442b74802428f403b759976d48c8ef7272d0c76328",
+              "bytes": 337,
+              "provider": "ipapi.is",
+              "family": "ipapi.is",
+              "target_ip": "58.26.247.228",
+              "ip": "58.26.247.228",
+              "cc": "MY",
+              "city": "Kuala Lumpur"
+            },
+            {
+              "url": "https://api.db-ip.com/v2/free/58.26.247.228",
+              "observed_at": "2026-09-26T00:04:33.576258+00:00",
+              "http_status": 200,
+              "final_url": "https://api.db-ip.com/v2/free/58.26.247.228",
+              "status": "ok",
+              "sha256": "236d34e42fd3dca4209d138762b5a7a4beb0e99c294e3758fe1457ce8cf4463f",
+              "bytes": 225,
+              "provider": "dbip",
+              "family": "dbip",
+              "target_ip": "58.26.247.228",
+              "ip": "58.26.247.228",
+              "cc": "MY",
+              "city": "Kuala Lumpur (Kampung Attap)"
+            }
+          ],
+          "score": 100,
+          "flags": {
+            "residential": true,
+            "datacenter": false,
+            "mobile": false,
+            "vpn": false,
+            "proxy": false,
+            "tor": false,
+            "crawler": false,
+            "abuser": false
+          },
+          "asn": null,
+          "isp": null,
+          "reputation": {
+            "ip": "58.26.247.228",
+            "provider": "Net.Coffee",
+            "score": 100,
+            "status": "observed",
+            "flags": {
+              "residential": true,
+              "datacenter": false,
+              "mobile": false,
+              "vpn": false,
+              "proxy": false,
+              "tor": false,
+              "crawler": false,
+              "abuser": false
+            },
+            "checked_at": "2026-09-26T00:04:34.908016+00:00",
+            "source": {
+              "url": "https://ip.net.coffee/api/ip/lookup/58.26.247.228",
+              "observed_at": "2026-09-26T00:04:34.908016+00:00",
+              "http_status": 200,
+              "final_url": "https://ip.net.coffee/api/ip/lookup/58.26.247.228",
+              "status": "ok",
+              "sha256": "f8c9fe5dd25c38b314392f888a10740292b533e0d225e36dda77417c837bf827",
+              "bytes": 3642
+            }
+          },
+          "reputation_source": {
+            "url": "https://ip.net.coffee/api/ip/lookup/58.26.247.228",
+            "observed_at": "2026-09-26T00:04:34.908016+00:00",
+            "http_status": 200,
+            "final_url": "https://ip.net.coffee/api/ip/lookup/58.26.247.228",
+            "status": "ok",
+            "sha256": "f8c9fe5dd25c38b314392f888a10740292b533e0d225e36dda77417c837bf827",
+            "bytes": 3642
+          }
+        }
+      },
+      "ip_reputation": {
+        "score": 100,
+        "status": "observed",
+        "provider": "Net.Coffee",
+        "by_ip": {
+          "58.26.247.228": {
+            "ip": "58.26.247.228",
+            "provider": "Net.Coffee",
+            "score": 100,
+            "status": "observed",
+            "flags": {
+              "residential": true,
+              "datacenter": false,
+              "mobile": false,
+              "vpn": false,
+              "proxy": false,
+              "tor": false,
+              "crawler": false,
+              "abuser": false
+            },
+            "checked_at": "2026-09-26T00:04:34.908016+00:00",
+            "source": {
+              "url": "https://ip.net.coffee/api/ip/lookup/58.26.247.228",
+              "observed_at": "2026-09-26T00:04:34.908016+00:00",
+              "http_status": 200,
+              "final_url": "https://ip.net.coffee/api/ip/lookup/58.26.247.228",
+              "status": "ok",
+              "sha256": "f8c9fe5dd25c38b314392f888a10740292b533e0d225e36dda77417c837bf827",
+              "bytes": 3642
+            }
+          }
+        },
+        "reason": null
+      },
+      "is_key": false,
+      "is_fast": true,
+      "key_score": 0.0,
+      "speed_mbps": 12.916,
+      "speed_kbs": 1576.7,
+      "speed_result": {
+        "status": "complete",
+        "complete": true,
+        "verdict": "qualified",
+        "reason": "稳态达标",
+        "error": null,
+        "observed_seconds": 10,
+        "stable_mbps": 12.916,
+        "floor_mbps": 10.081,
+        "peak_mbps": 15.887,
+        "mean_mbps": 9.934,
+        "sample_mbps": [
+          3.632,
+          4.811,
+          5.97,
+          7.426,
+          9.184,
+          10.978,
+          12.685,
+          13.858,
+          14.905,
+          15.887
+        ],
+        "max_stall_seconds": 0.0,
+        "bytes_received": 12664832,
+        "http_status": 200,
+        "ttfb_ms": 609.0,
+        "rate_limit_mbps": 40.0,
+        "capped": false,
+        "target": "https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg",
+        "started_monotonic": 4813.421,
+        "contention": {
+          "contended": false,
+          "method": "traffic",
+          "contended_seconds": 0,
+          "background_mbps": 0.07,
+          "capacity_mbps": 40.0
+        }
+      },
+      "speed_note": null,
+      "key_reason": "HTTP协议不支持作前置跳板",
+      "service_seconds": 34.0,
+      "ai_supported": true,
+      "ai_details": {
+        "openai": true,
+        "claude": true,
+        "gemini": true
+      },
+      "youtube_passed": true,
+      "shield_passed": true,
+      "media_details": {
+        "nf": false,
+        "dp": false
+      },
+      "ip_info": {
+        "country_code": "MY",
+        "votes": {
+          "MY": 3
+        },
+        "status": "confirmed",
+        "confidence": "high",
+        "ip": "58.26.247.228",
+        "records": [
+          {
+            "url": "https://ipinfo.io/58.26.247.228/json",
+            "observed_at": "2026-09-26T00:04:32.543460+00:00",
+            "status": "error",
+            "error": "SSLError",
+            "provider": "ipinfo",
+            "target_ip": "58.26.247.228"
+          },
+          {
+            "url": "https://ipwho.is/58.26.247.228",
+            "observed_at": "2026-09-26T00:04:32.547044+00:00",
+            "http_status": 200,
+            "final_url": "https://ipwho.is/58.26.247.228",
+            "status": "ok",
+            "sha256": "d7bc14f3504e8075f709b8781badb2181088d285bbee60077d43e8f6411e1cb0",
+            "bytes": 704,
+            "provider": "ipwhois",
+            "family": "ipwhois",
+            "target_ip": "58.26.247.228",
+            "ip": "58.26.247.228",
+            "cc": "MY",
+            "city": "Kuala Lumpur"
+          },
+          {
+            "url": "https://api.ipapi.is/?q=58.26.247.228",
+            "observed_at": "2026-09-26T00:04:32.548260+00:00",
+            "http_status": 200,
+            "final_url": "https://api.ipapi.is/?q=58.26.247.228",
+            "status": "ok",
+            "sha256": "64c593ec378f8b9b322b43442b74802428f403b759976d48c8ef7272d0c76328",
+            "bytes": 337,
+            "provider": "ipapi.is",
+            "family": "ipapi.is",
+            "target_ip": "58.26.247.228",
+            "ip": "58.26.247.228",
+            "cc": "MY",
+            "city": "Kuala Lumpur"
+          },
+          {
+            "url": "https://api.db-ip.com/v2/free/58.26.247.228",
+            "observed_at": "2026-09-26T00:04:33.576258+00:00",
+            "http_status": 200,
+            "final_url": "https://api.db-ip.com/v2/free/58.26.247.228",
+            "status": "ok",
+            "sha256": "236d34e42fd3dca4209d138762b5a7a4beb0e99c294e3758fe1457ce8cf4463f",
+            "bytes": 225,
+            "provider": "dbip",
+            "family": "dbip",
+            "target_ip": "58.26.247.228",
+            "ip": "58.26.247.228",
+            "cc": "MY",
+            "city": "Kuala Lumpur (Kampung Attap)"
+          }
+        ],
+        "score": 100,
+        "flags": {
+          "residential": true,
+          "datacenter": false,
+          "mobile": false,
+          "vpn": false,
+          "proxy": false,
+          "tor": false,
+          "crawler": false,
+          "abuser": false
+        },
+        "asn": null,
+        "isp": null,
+        "reputation": {
+          "ip": "58.26.247.228",
+          "provider": "Net.Coffee",
+          "score": 100,
+          "status": "observed",
+          "flags": {
+            "residential": true,
+            "datacenter": false,
+            "mobile": false,
+            "vpn": false,
+            "proxy": false,
+            "tor": false,
+            "crawler": false,
+            "abuser": false
+          },
+          "checked_at": "2026-09-26T00:04:34.908016+00:00",
+          "source": {
+            "url": "https://ip.net.coffee/api/ip/lookup/58.26.247.228",
+            "observed_at": "2026-09-26T00:04:34.908016+00:00",
+            "http_status": 200,
+            "final_url": "https://ip.net.coffee/api/ip/lookup/58.26.247.228",
+            "status": "ok",
+            "sha256": "f8c9fe5dd25c38b314392f888a10740292b533e0d225e36dda77417c837bf827",
+            "bytes": 3642
+          }
+        },
+        "reputation_source": {
+          "url": "https://ip.net.coffee/api/ip/lookup/58.26.247.228",
+          "observed_at": "2026-09-26T00:04:34.908016+00:00",
+          "http_status": 200,
+          "final_url": "https://ip.net.coffee/api/ip/lookup/58.26.247.228",
+          "status": "ok",
+          "sha256": "f8c9fe5dd25c38b314392f888a10740292b533e0d225e36dda77417c837bf827",
+          "bytes": 3642
+        }
+      }
+    }
+  ],
+  "eliminated": [
+    {
+      "name": "🇭🇰 香港_99_FAKE_D+",
+      "reason": "两轮直连与经前置(🇫🇷 法国_10_⚠️IR_D+)均不可达",
+      "liveness": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ],
+        "recheck": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "ConnectionError"
+            }
+          ]
+        }
+      },
+      "chain_liveness": {
+        "🇫🇷 法国_10_⚠️IR_D+": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "ConnectionError"
+            }
+          ]
+        }
+      },
+      "front_attempts": null,
+      "speed_result": null
+    },
+    {
+      "name": "🇭🇰 香港_2_Lnd",
+      "reason": "两轮直连与经前置(🇫🇷 法国_10_⚠️IR_D+)均不可达",
+      "liveness": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ],
+        "recheck": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "ConnectionError"
+            }
+          ]
+        }
+      },
+      "chain_liveness": {
+        "🇫🇷 法国_10_⚠️IR_D+": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "ConnectionError"
+            }
+          ]
+        }
+      },
+      "front_attempts": null,
+      "speed_result": null
+    },
+    {
+      "name": "🇹🇼 台湾_高雄_1_家宽",
+      "reason": "两轮直连与经前置(🇫🇷 法国_10_⚠️IR_D+)均不可达",
+      "liveness": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ],
+        "recheck": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "ConnectionError"
+            }
+          ]
+        }
+      },
+      "chain_liveness": {
+        "🇫🇷 法国_10_⚠️IR_D+": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "ConnectionError"
+            }
+          ]
+        }
+      },
+      "front_attempts": null,
+      "speed_result": null
+    },
+    {
+      "name": "🇰🇷 韩国_2_D+",
+      "reason": "两轮直连与经前置(🇫🇷 法国_10_⚠️IR_D+)均不可达",
+      "liveness": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ],
+        "recheck": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "ConnectionError"
+            }
+          ]
+        }
+      },
+      "chain_liveness": {
+        "🇫🇷 法国_10_⚠️IR_D+": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "ConnectionError"
+            }
+          ]
+        }
+      },
+      "front_attempts": null,
+      "speed_result": null
+    },
+    {
+      "name": "🇯🇵 ❇️Key日本_1",
+      "reason": "两轮直连与经前置(🇫🇷 法国_10_⚠️IR_D+)均不可达",
+      "liveness": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ReadTimeout"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ReadTimeout"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ReadTimeout"
+          }
+        ],
+        "recheck": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "ReadTimeout"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "ReadTimeout"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "ReadTimeout"
+            }
+          ]
+        }
+      },
+      "chain_liveness": {
+        "🇫🇷 法国_10_⚠️IR_D+": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "ReadTimeout"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "ReadTimeout"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "ReadTimeout"
+            }
+          ]
+        }
+      },
+      "front_attempts": null,
+      "speed_result": null
+    },
+    {
+      "name": "🇯🇵 日本_99_FAKE_D+",
+      "reason": "两轮直连与经前置(🇫🇷 法国_10_⚠️IR_D+)均不可达",
+      "liveness": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ],
+        "recheck": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "ConnectionError"
+            }
+          ]
+        }
+      },
+      "chain_liveness": {
+        "🇫🇷 法国_10_⚠️IR_D+": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "ConnectionError"
+            }
+          ]
+        }
+      },
+      "front_attempts": null,
+      "speed_result": null
+    },
+    {
+      "name": "🇸🇬 Key新加坡_1",
+      "reason": "两轮直连与经前置(🇫🇷 法国_10_⚠️IR_D+)均不可达",
+      "liveness": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "ConnectionError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "ConnectionError"
+          }
+        ],
+        "recheck": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "ConnectionError"
+            }
+          ]
+        }
+      },
+      "chain_liveness": {
+        "🇫🇷 法国_10_⚠️IR_D+": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "ConnectionError"
+            }
+          ]
+        }
+      },
+      "front_attempts": null,
+      "speed_result": null
+    },
+    {
+      "name": "🇺🇸 美国_1_USAI❇️✨️",
+      "reason": "两轮直连与经前置(🇫🇷 法国_10_⚠️IR_D+)均不可达",
+      "liveness": {
+        "alive": false,
+        "latency_ms": null,
+        "attempts": [
+          {
+            "target": "https://www.gstatic.com/generate_204",
+            "ok": false,
+            "error": "SSLError"
+          },
+          {
+            "target": "https://cp.cloudflare.com/generate_204",
+            "ok": false,
+            "error": "SSLError"
+          },
+          {
+            "target": "https://captive.apple.com/hotspot-detect.html",
+            "ok": false,
+            "error": "SSLError"
+          }
+        ],
+        "recheck": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "SSLError"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "SSLError"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "SSLError"
+            }
+          ]
+        }
+      },
+      "chain_liveness": {
+        "🇫🇷 法国_10_⚠️IR_D+": {
+          "alive": false,
+          "latency_ms": null,
+          "attempts": [
+            {
+              "target": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "error": "ConnectionError"
+            },
+            {
+              "target": "https://captive.apple.com/hotspot-detect.html",
+              "ok": false,
+              "error": "SSLError"
+            }
+          ]
+        }
+      },
+      "front_attempts": null,
+      "speed_result": null
+    }
+  ]
+}
