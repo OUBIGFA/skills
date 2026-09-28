@@ -225,7 +225,7 @@ class TestProxyServiceProbe(unittest.TestCase):
     def test_residential_prefix_and_line_priority(self):
         from core.renderer import renumber_node_tag, sort_nodes_by_region_and_landing
 
-        # 1. format_node_name 校验：🏠 作为优质家宽前置徽章，排在 ♥️ 之后、Key/Fast 之前，且不带 _家宽 后缀
+        # 1. format_node_name 校验：🏠 作为优质家宽前置徽章，排在 ♥️ 之后、Key/Fast 之前，且不带 _Res 后缀
         n1 = format_node_name(cc="TW", slot=1, is_residential=True)
         self.assertEqual(n1, "🇹🇼 🏠台湾_1")
 
@@ -314,8 +314,8 @@ class TestProxyServiceProbe(unittest.TestCase):
         self.assertNotIn("♥️", res_map["4.4.4.4"])
         # 排序顺位: 优质家宽享有线路优先 (line_prio=0)，排在普通机房之前
         self.assertEqual(res_map["1.1.1.1"], "🇹🇼 🏠台湾_1")
-        # 低分家宽获得 _家宽 后缀，且享有线路优先 (line_prio=0)，排在优质机房 (line_prio=1) 之前
-        self.assertEqual(res_map["2.2.2.2"], "🇹🇼 台湾_2_家宽")
+        # 低分家宽获得 _Res 后缀，且享有线路优先 (line_prio=0)，排在优质机房 (line_prio=1) 之前
+        self.assertEqual(res_map["2.2.2.2"], "🇹🇼 台湾_2_Res")
         self.assertEqual(res_map["3.3.3.3"], "🇹🇼 ♥️台湾_3")
         self.assertEqual(res_map["4.4.4.4"], "🇹🇼 台湾_4")
 
@@ -323,26 +323,27 @@ class TestProxyServiceProbe(unittest.TestCase):
         from core.renderer import build_proxy_groups, renumber_node_tag
         # 1. 命名与冲突测试：又是家宽又是专线只保留专线
         n_res_only = format_node_name(cc="US", slot=1, has_res_suffix=True)
-        self.assertEqual(n_res_only, "🇺🇸 美国_1_家宽")
+        self.assertEqual(n_res_only, "🇺🇸 美国_1_Res")
         n_conflict = format_node_name(cc="US", slot=2, is_iplc=True, has_res_suffix=True)
         self.assertEqual(n_conflict, "🇺🇸 美国_2_IPLC")
+        self.assertNotIn("Res", n_conflict)
         self.assertNotIn("家宽", n_conflict)
 
         # 2. renumber_node_tag 冲突与后缀测试
-        self.assertEqual(renumber_node_tag("🇺🇸 美国_1_家宽", 10, is_iplc=True), "🇺🇸 美国_10_IPLC")
-        self.assertEqual(renumber_node_tag("🇺🇸 美国_1_家宽", 10), "🇺🇸 美国_10_家宽")
+        self.assertEqual(renumber_node_tag("🇺🇸 美国_1_Res", 10, is_iplc=True), "🇺🇸 美国_10_IPLC")
+        self.assertEqual(renumber_node_tag("🇺🇸 美国_1_Res", 10), "🇺🇸 美国_10_Res")
 
-        # 3. 落地分组包含测试：🔒️ 落地节点 自动归集 🏠 和 _家宽
+        # 3. 落地分组包含测试：🔒️ 落地节点 自动归集 🏠 和 _Res
         dummy_proxies = [
             {"name": "🇺🇸 🏠美国_1", "type": "vless", "server": "1.1.1.1", "port": 443},
-            {"name": "🇺🇸 美国_2_家宽", "type": "vless", "server": "2.2.2.2", "port": 443},
+            {"name": "🇺🇸 美国_2_Res", "type": "vless", "server": "2.2.2.2", "port": 443},
             {"name": "🇺🇸 美国_3_IPLC", "type": "vless", "server": "3.3.3.3", "port": 443},
             {"name": "🇺🇸 美国_4_Lnd", "type": "vless", "server": "4.4.4.4", "port": 443},
         ]
         groups = build_proxy_groups(dummy_proxies)
         landing_grp = next(g for g in groups if g["name"] == "🔒️ 落地节点")
         self.assertIn("🇺🇸 🏠美国_1", landing_grp["proxies"])
-        self.assertIn("🇺🇸 美国_2_家宽", landing_grp["proxies"])
+        self.assertIn("🇺🇸 美国_2_Res", landing_grp["proxies"])
         self.assertIn("🇺🇸 美国_4_Lnd", landing_grp["proxies"])
         self.assertNotIn("🇺🇸 美国_3_IPLC", landing_grp["proxies"])
 
