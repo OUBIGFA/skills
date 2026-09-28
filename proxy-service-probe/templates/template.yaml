@@ -267,6 +267,7 @@ rules:
 
   # --- 用户自定义翻墙域名 ---
 - DOMAIN-SUFFIX,filen.io,🌏️ 节点选择
+- DOMAIN-SUFFIX,xd.com,🌏️ 节点选择
 - DOMAIN-SUFFIX,pokepay.cc,🌏️ 节点选择
 - DOMAIN-SUFFIX,okx.com,🌏️ 节点选择
 - DOMAIN-SUFFIX,bitmart.com,🌏️ 节点选择

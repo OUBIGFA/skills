@@ -16,7 +16,7 @@ description: 对代理节点执行服务能力测试（IP属地检测、AI解锁
 > 1. **全量服务检测**：本技能默认执行涵盖 IP 属地、AI 三大平台解锁、Playwright Chromium YouTube 免登录实播、4 站免盾检测与国际流媒体解锁。严禁擅自启用轻量模式；`--no-browser` 仅作为用户显式指定或系统无浏览器环境时的降级保底选项。
 > 2. **测速非主动技能契约**：**节点持续下载测速为非主动技能**。默认流水线仅执行 3 秒轻量防断流快检（<16KB 淘汰）；**仅当用户明确主动要求**（如指令中包含“测速”、“测试节点速度”、“测速筛选”或显式传入 `--speed-test`）时，才启动完整持续下载测速流水线并执行 Key 节点遴选与打标。本地与 GitHub Actions 使用同一套代码与判据，`--profile auto` 按环境自动选择资源参数；两处各自独立完整运行，不做云端粗筛 + 本地精测的拆分协同。
 > 3. **编号稳定契约**：流水线默认保留原节点编号（属地未变即不改号），新节点按国家补空号；**仅当用户明确要求重排序/重编号**时才传 `--resort`，且重排序必定先定位置再从 1 重新编号。
-> 4. **空间测绘订阅搜索主动契约 (FoFa / 360 Quake)**：**空间测绘搜索与订阅抓取为非主动触发能力**。默认流水线绝不主动发起网络资产扫描；**仅当用户明确主动要求搜索订阅**（如指令中包含“搜索订阅”、“FoFa 搜索订阅”、“Quake 搜索订阅”或显式调用 `fofa_search.py` / 传入 `--input fofa:...` / `--input quake:...` / `--input spatial:...`）时才启动。FoFa Token/Key 与 Quake Key 以独立变量形式在技能主目录下的 [fofa_config.json](fofa_config.json) 中进行统一配置与引用；默认单页拉取 80 条目标资产；双引擎具备高容错独立性，单一引擎故障不阻断另一个，搜索到的目标订阅地址自动执行规范化全局去重；**单订阅源节点数 > 200 自动过滤丢弃**，以杜绝公开低质聚合源与大量重复死节点浪费测试时间。详见 [fofa-subscription-search.md](references/fofa-subscription-search.md)。
+> 4. **空间测绘与 GitHub Gist 订阅搜索主动契约 (FoFa / 360 Quake / GitHub Gist)**：**空间测绘与代码片段搜索抓取为非主动触发能力**。默认流水线绝不主动发起网络资产扫描或代码检索；**仅当用户明确主动要求搜索订阅**（如指令中包含“搜索订阅”、“FoFa 搜索订阅”、“Quake 搜索订阅”、“Gist 搜索订阅”或显式调用 `fofa_search.py` / `gist_search.py` / 传入 `--input fofa:...` / `--input quake:...` / `--input spatial:...` / `--input gist:...`）时才启动。FoFa/Quake 以独立变量形式在 [fofa_config.json](fofa_config.json) 中配置；Gist 检索在 [gist_config.json](gist_config.json) 中配置，采用**方案 B (Fastly CDN Raw 免控直链拉取)**，默认抓取 20 条最新有效目标；**单订阅源节点数 > 200 自动过滤丢弃**，以杜绝公开低质聚合源与大量重复死节点浪费测试时间。详见 [fofa-subscription-search.md](references/fofa-subscription-search.md) 与 [gist-subscription-search.md](references/gist-subscription-search.md)。
 > 5. **合流并入与编号排序契约**：每次拉取完订阅并经去重、全量测活测速与服务检测后，若要并入其他目标订阅配置（Clash YAML / sing-box JSON），**默认根据规则重新排序和编号，优先保留目标订阅的原节点以及原有编号**，新节点按国家在空缺/后续分配空号补齐（并按标准地区聚拢排序）；**仅当用户明确要求中间插入（`--insert` 或 `--resort`）时**，才打破原有编号壁垒，完全按能力顺位（`✨️ > ❇️ > Key > Fast > _NF > _D+ > ♥️`）重排序并从 1 重新依次递增连续编号。详见 [local-operations.md](references/local-operations.md)。
 
 1. **测试范围与判定依据**：
@@ -43,7 +43,8 @@ description: 对代理节点执行服务能力测试（IP属地检测、AI解锁
    - **Key 优选与配额**：TLS-TCP 强加密加分，亚太核心区（`HK`, `TW`, `JP`, `SG`, `KR`）优先加分，并执行区域配额限制。
    - **直连 / 需前置节点区分（两条流水线一致）**：先并发直连测活；首轮不通的节点低并发直连复测，同时经最多 3 个不同服务器的已判活合格协议前置测活。经前置测通立即进入完整服务检测，服务拿不到公网出口时换备用前置；不要求事先评出 Key。开启测速时，落地测速等待直连前置的带宽与出口证据（含空闲重测），按 Key 候选 → 备用档（稳态 >= 6 Mbps、最低 >= 3 Mbps）最多备 3 个前置，无样本换下一个。汇总才统一淘汰、评 Key；实测落地即使没有原落地标记也绝不作 Key/Front。最终前置池必须保留至少一条已验证的落地链路，否则该落地不导出。未测速时仍做前置测活和服务检测，但不授 Key/Fast；不再使用本机客户端端口兜底。`--no-landing-probe` 关闭前置复测，云端不做前置链式测活。详见 [testing-criteria.md](references/testing-criteria.md) 5.5 节。
    - **打标与规范命名体系**：
-     - 前置标识顺序：严格为 `[国旗] [✨️] [❇️] [♥️] [Key / Fast] [国家][_城市]_[编号][落地后缀][流媒体后缀][来源后缀]`。
+     - 前置标识顺序：严格为 `[国旗] [✨️] [❇️] [♥️] [Key / Fast] [国家][_城市]_[编号][IPLC后缀][落地后缀][流媒体后缀][来源后缀]`。
+     - `_IPLC`：测试节点中带有 IPLC 或专线标识时保留 `_IPLC` 后缀，且该后缀严格排在所有后置后缀的第一位（位于编号之后、落地/流媒体/来源后缀之前，如 `🇭🇰 ❇️香港_1_IPLC_NF`、`🇯🇵 ✨️❇️♥️Key日本_1_IPLC`）。
      - `✨️`：综合全通能力徽章（AI五大全通 + Groq解锁 + YouTube免登录实播通过 + 四站免盾）。
      - `❇️`：AI 五大核心全解锁（OpenAI + Claude + Gemini + HuggingFace + Grok）。
      - `♥️`：高信誉/纯净 IP 徽章（Net.Coffee IP 质量信誉评分 >= 80 分，且出口稳定、所有出口均有绑定证据；带 `_⚠️CN` 等污染标记的节点不授予）。
@@ -109,11 +110,20 @@ python <skill>/scripts/fofa_search.py --probe --output final.yaml
 python <skill>/scripts/probe_services.py --input spatial:recommended --output final.yaml
 python <skill>/scripts/probe_services.py --input quake:recommended --output final.yaml
 
-# 12. 测活测速并直接合流并入现有目标订阅配置 (默认保留底库原节点及编号，新节点补空号排位)
+# 12. 用户主动要求从 GitHub Gist 检索最新有效订阅与节点 (方案 B Fastly CDN 免控直链拉取，默认 20 条最新有效目标)
+python <skill>/scripts/gist_search.py --output gist_proxies.yaml
+python <skill>/scripts/gist_search.py --preset subs --output subs_proxies.yaml
+python <skill>/scripts/gist_search.py --probe --output final.yaml
+# 或主流水线直接传入 Gist 源:
+python <skill>/scripts/probe_services.py --input gist:recommended --output final.yaml
+python <skill>/scripts/probe_services.py --input gist:subs --output final.yaml
+
+# 13. 测活测速并直接合流并入现有目标订阅配置 (默认保留底库原节点及编号，新节点补空号排位)
 python <skill>/scripts/probe_services.py --input <输入源> --merge-into <底库.yaml>
 python <skill>/scripts/fofa_search.py --probe --merge-into <底库.yaml>
+python <skill>/scripts/gist_search.py --probe --merge-into <底库.yaml>
 
-# 13. 合流时启用中间插入模式 (打破原编号完全重排序并重新连续编号)
+# 14. 合流时启用中间插入模式 (打破原编号完全重排序并重新连续编号)
 python <skill>/scripts/probe_services.py --input <输入源> --merge-into <底库.yaml> --insert
 # 或离线合并现有配置:
 python <skill>/scripts/merge_configs.py --base <底库.yaml> --add <待并入.yaml> [--insert] --apply
@@ -122,6 +132,7 @@ python <skill>/scripts/merge_configs.py --base <底库.yaml> --add <待并入.ya
 ## 按需查阅
 
 - **空间测绘订阅搜索、Quake 语法优化与多源节点提取**：读 [fofa-subscription-search.md](references/fofa-subscription-search.md)。
+- **GitHub Gist 订阅搜索、CDN 免控拉取与直链解析**：读 [gist-subscription-search.md](references/gist-subscription-search.md)。
 - **IP 属地升级、送中处理与抽查证据规则**：读 [geolocation.md](references/geolocation.md)。
 - **测试判据与详细规范**：读 [testing-criteria.md](references/testing-criteria.md)。
 - **运行环境、内核配置、TUN 共存与 GitHub Actions 云端运行**：读 [runner-environment.md](references/runner-environment.md)；工作流模板见 [node-probe.yml](assets/github-actions/node-probe.yml)。

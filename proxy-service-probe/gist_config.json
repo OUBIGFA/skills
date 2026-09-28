@@ -1,0 +1,11 @@
+{
+  "max_age_hours": 48,
+  "default_targets": 20,
+  "max_nodes_per_subscription": 200,
+  "proxy": "http://127.0.0.1:3067",
+  "timeout": 12,
+  "default_query": [
+    "filename:yaml proxies",
+    "filename:txt \"subscribe?token=\""
+  ]
+}

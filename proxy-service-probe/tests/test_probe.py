@@ -141,6 +141,87 @@ class TestProxyServiceProbe(unittest.TestCase):
         self.assertEqual(results[1]["cc"], "US")
         self.assertIn("✨️❇️美国_1_USAI_NF", results[1]["final_name"])
 
+    def test_iplc_suffix_preservation_and_first_ordering(self):
+        from core.renderer import renumber_node_tag, sort_nodes_by_region_and_landing
+
+        # 1. format_node_name 校验：_IPLC 永远排在所有后缀第一位
+        n1 = format_node_name(cc="JP", slot=1, is_iplc=True)
+        self.assertEqual(n1, "🇯🇵 日本_1_IPLC")
+
+        n2 = format_node_name(cc="HK", slot=2, is_iplc=True, media_details={"nf": True})
+        self.assertEqual(n2, "🇭🇰 香港_2_IPLC_NF")
+
+        n3 = format_node_name(
+            cc="US", slot=1, is_iplc=True, is_landing=True, is_usai=True,
+            media_details={"nf": True, "dp": True}
+        )
+        self.assertEqual(n3, "🇺🇸 美国_1_IPLC_USAI_NF_D+")
+
+        n4 = format_node_name(
+            cc="JP", slot=3, is_iplc=True, is_landing=True, is_chromego=True
+        )
+        self.assertEqual(n4, "🇯🇵 日本_3_IPLC_Lnd_ChromeGo")
+
+        n5 = format_node_name(
+            cc="SG", slot=1, is_iplc=True, poison_tag="_⚠️CN"
+        )
+        self.assertEqual(n5, "🇸🇬 新加坡_1_IPLC_⚠️CN")
+
+        # 2. tag_and_rename_nodes 批量测试：自动识别 IPLC / 专线 标识并排在后缀第一位
+        batch = [
+            {
+                "proxy": {"name": "🇸🇬新加坡专线02|BGP|流媒体", "type": "ss", "server": "1.1.1.1", "port": 8388},
+                "cc": "SG",
+                "media_details": {"nf": True}
+            },
+            {
+                "proxy": {"name": "🇯🇵 日本 IPLC 01", "type": "vless", "server": "2.2.2.2", "port": 443},
+                "cc": "JP",
+                "is_landing": True,
+                "media_details": {"nf": True, "dp": True}
+            },
+            {
+                "raw_node": {"tag": "深港IPLC-01", "type": "trojan", "server": "3.3.3.3", "server_port": 443},
+                "cc": "HK",
+                "ai_supported": True
+            },
+            {
+                "proxy": {"name": "普通直连节点", "type": "vless", "server": "4.4.4.4", "port": 443},
+                "cc": "HK",
+                "media_details": {"nf": True}
+            }
+        ]
+        tag_and_rename_nodes(batch)
+
+        by_cc = {r["cc"]: r for r in batch if r["cc"] != "HK"}
+        hk_nodes = [r for r in batch if r["cc"] == "HK"]
+
+        sg_node = by_cc["SG"]
+        self.assertTrue(sg_node["is_iplc"])
+        self.assertEqual(sg_node["final_name"], "🇸🇬 新加坡_1_IPLC_NF")
+
+        jp_node = by_cc["JP"]
+        self.assertTrue(jp_node["is_iplc"])
+        self.assertEqual(jp_node["final_name"], "🇯🇵 日本_1_IPLC_Lnd_NF_D+")
+
+        hk_iplc = next(r for r in hk_nodes if r["is_iplc"])
+        self.assertEqual(hk_iplc["final_name"], "🇭🇰 ❇️香港_1_IPLC")
+
+        hk_normal = next(r for r in hk_nodes if not r["is_iplc"])
+        self.assertEqual(hk_normal["final_name"], "🇭🇰 香港_2_NF")
+
+        # 3. renumber_node_tag 与 resort 校验：IPLC 依然排在所有后缀的第一位
+        renamed1 = renumber_node_tag("🇭🇰 ❇️香港_1_IPLC_NF", 5)
+        self.assertEqual(renamed1, "🇭🇰 ❇️香港_5_IPLC_NF")
+
+        renamed_legacy = renumber_node_tag("🇭🇰 ❇️香港_1_NF_IPLC", 5)
+        self.assertEqual(renamed_legacy, "🇭🇰 ❇️香港_5_IPLC_NF")
+
+        # 重排序 resort=True 下保持 IPLC 后缀与第一顺位
+        resorted = sort_nodes_by_region_and_landing(batch, resort=True)
+        resorted_sg = next(r for r in resorted if r["cc"] == "SG")
+        self.assertEqual(resorted_sg["final_name"], "🇸🇬 新加坡_1_IPLC_NF")
+
     def test_reputation_orders_same_country_same_capability(self):
         def row(name, score):
             return {

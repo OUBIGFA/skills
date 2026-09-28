@@ -71,6 +71,15 @@ class RenameTests(unittest.TestCase):
                          ['🇭🇰 香港_1', '🇭🇰 香港_2', '🇺🇸 美国_2', '🇺🇸 美国_3', '（保留原名）'])
         self.assertEqual(mapping['raw-2'], '🇺🇸 美国_3')
 
+    def test_normalize_iplc_suffix_preserves_and_orders_first(self):
+        from sort_nodes import normalize_iplc_suffix
+        self.assertEqual(normalize_iplc_suffix('NF_IPLC', '🇭🇰 香港_1_NF_IPLC'), 'IPLC_NF')
+        self.assertEqual(normalize_iplc_suffix('IPLC_NF', '🇭🇰 香港_1_IPLC_NF'), 'IPLC_NF')
+        self.assertEqual(normalize_iplc_suffix('NF', '🇸🇬 新加坡专线02'), 'IPLC_NF')
+        self.assertEqual(normalize_iplc_suffix('', '深港专线-01'), 'IPLC')
+        self.assertEqual(normalize_iplc_suffix('USAI_NF', '🇺🇸 美国IPLC专线01'), 'IPLC_USAI_NF')
+        self.assertEqual(normalize_iplc_suffix('NF', '🇯🇵 日本_1_NF'), 'NF')
+
 
 if __name__ == '__main__':
     unittest.main()

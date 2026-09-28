@@ -151,8 +151,8 @@ def _is_key(p):
     return p.get("_is_key") is True or "Key" in name
 
 
-def renumber_node_tag(old_name, slot, is_hq=False):
-    """根据目标编号重构节点名称（保留已有能力徽章、前缀与后缀）。"""
+def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False):
+    """根据目标编号重构节点名称（保留已有能力徽章、前缀与后缀，且 IPLC 后缀排在第一位）。"""
     flag_match = re.search(r'^([\U0001F1E6-\U0001F1FF]{2}|🏳️|\U0001F3F3\uFE0F?)\s*', old_name)
     flag = flag_match.group(0) if flag_match else ""
     rest = old_name[len(flag):]
@@ -163,6 +163,7 @@ def renumber_node_tag(old_name, slot, is_hq=False):
     hq = bool(is_hq and not is_polluted)
     key = bool(re.search(r'(?i)\bkey(?![a-z])', rest))
     fast = bool(re.search(r'(?i)\bfast(?![a-z])', rest))
+    has_iplc = bool(is_iplc or re.search(r'(?i)iplc|专线', old_name))
 
     prefix = ""
     if sparkle:
@@ -182,12 +183,26 @@ def renumber_node_tag(old_name, slot, is_hq=False):
         country = m.group(1)
         raw_suffix = m.group(3)
         clean_suffix = re.sub(r'(?:✨\uFE0F?|❇\uFE0F?|♥\uFE0F?|\bKey\b|\bFast\b)', '', raw_suffix, flags=re.I).strip()
+        if has_iplc:
+            clean_suffix = re.sub(r'(?i)(?:^|_)iplc(?=_|$)', '', clean_suffix)
+            clean_suffix = re.sub(r'(?:^|_)专线\d*(?=_|$)', '', clean_suffix)
+            clean_suffix = re.sub(r'_+', '_', clean_suffix).strip('_')
+            clean_suffix = f"_IPLC_{clean_suffix}" if clean_suffix else "_IPLC"
         return f"{flag}{prefix}{country}_{slot}{clean_suffix}"
 
     m_old = re.search(r'^(.*?)_(\d+)(.*)$', old_name)
     if m_old:
-        return f"{m_old.group(1)}_{slot}{m_old.group(3)}"
-    return f"{old_name}_{slot}"
+        country = m_old.group(1)
+        raw_suffix = m_old.group(3)
+        if has_iplc:
+            clean_suffix = re.sub(r'(?i)(?:^|_)iplc(?=_|$)', '', raw_suffix)
+            clean_suffix = re.sub(r'(?:^|_)专线\d*(?=_|$)', '', clean_suffix)
+            clean_suffix = re.sub(r'_+', '_', clean_suffix).strip('_')
+            clean_suffix = f"_IPLC_{clean_suffix}" if clean_suffix else "_IPLC"
+            return f"{country}_{slot}{clean_suffix}"
+        return f"{country}_{slot}{raw_suffix}"
+    iplc_extra = "_IPLC" if has_iplc and not re.search(r'(?i)_iplc', old_name) else ""
+    return f"{old_name}_{slot}{iplc_extra}"
 
 
 def sort_nodes_by_region_and_landing(items, resort=False):
@@ -309,12 +324,32 @@ def sort_nodes_by_region_and_landing(items, resort=False):
             sorted_items.extend(combined)
             continue
 
+        def _is_iplc(item, name):
+            if isinstance(item, dict):
+                if item.get("is_iplc") is True or item.get("_is_iplc") is True:
+                    return True
+                p = item.get("proxy")
+                if isinstance(p, dict) and (p.get("_is_iplc") is True or p.get("is_iplc") is True):
+                    return True
+                raw = item.get("raw_node")
+                if isinstance(raw, dict) and (raw.get("_is_iplc") is True or raw.get("is_iplc") is True):
+                    return True
+                orig = (item.get("_orig_name") or item.get("orig_name") or
+                        (p.get("_orig_name") or p.get("orig_name") if isinstance(p, dict) else "") or
+                        (raw.get("_orig_name") or raw.get("orig_name") if isinstance(raw, dict) else ""))
+                if orig and re.search(r'(?i)iplc|专线', str(orig)):
+                    return True
+            return bool(re.search(r'(?i)iplc|专线', name))
+
         # 定好位置再编号：每个国家/地区内的节点位置确定后，从 1 开始严格依次递增重新编号
         for slot_idx, item in enumerate(combined, start=1):
             old_name = _get_name(item)
-            new_name = _renumber_tag(old_name, slot_idx, is_hq=_is_hq(item, old_name))
+            has_iplc_flag = _is_iplc(item, old_name)
+            new_name = _renumber_tag(old_name, slot_idx, is_hq=_is_hq(item, old_name), is_iplc=has_iplc_flag)
 
             if isinstance(item, dict):
+                if has_iplc_flag:
+                    item["is_iplc"] = True
                 if "tag" in item:
                     item["tag"] = new_name
                 if "name" in item:
@@ -326,11 +361,15 @@ def sort_nodes_by_region_and_landing(items, resort=False):
                         item["proxy"]["name"] = new_name
                     if "tag" in item["proxy"]:
                         item["proxy"]["tag"] = new_name
+                    if has_iplc_flag:
+                        item["proxy"]["_is_iplc"] = True
                 if "raw_node" in item and isinstance(item["raw_node"], dict):
                     if "tag" in item["raw_node"]:
                         item["raw_node"]["tag"] = new_name
                     if "name" in item["raw_node"]:
                         item["raw_node"]["name"] = new_name
+                    if has_iplc_flag:
+                        item["raw_node"]["_is_iplc"] = True
                 if "slot" in item:
                     item["slot"] = slot_idx
                 if "assigned_slot" in item:
