@@ -477,15 +477,37 @@ class TestProxyServiceProbe(unittest.TestCase):
 
     def test_shield_requires_complete_resolved_observations(self):
         from core.shield_probe import SHIELD_TARGETS, shield_passed
+        # 验证 claude 目标 URL 已更新为 https://claude.ai/，anthropic 目标保留为 https://www.anthropic.com/
+        claude_target = next(t for t in SHIELD_TARGETS if t["name"] == "claude")
+        self.assertEqual(claude_target["url"], "https://claude.ai/")
+        anthropic_target = next(t for t in SHIELD_TARGETS if t["name"] == "anthropic")
+        self.assertEqual(anthropic_target["url"], "https://www.anthropic.com/")
+
         names = [t["name"] for t in SHIELD_TARGETS]
+        # names 顺序: cloudflare, chatgpt, anthropic, gemini, claude
 
         def rows(*statuses):
             return {n: {"status": s} for n, s in zip(names, statuses)}
-        # 至少 2 站直接通过或质询自动解除即判定免盾；未观测、阻断与未解除质询不计入
-        self.assertTrue(shield_passed(rows("passed", "auto_passed", "blocked", "challenge")))
-        self.assertTrue(shield_passed(rows("auto_passed", "auto_passed", "unknown", "unknown")))
-        self.assertFalse(shield_passed(rows("passed", "challenge", "blocked", "unknown")))
-        self.assertFalse(shield_passed(rows("unknown", "unknown", "unknown", "unknown")))
+
+        # 1. claude (https://claude.ai/) 过盾 + 其他四站中任意一站过盾 -> True
+        self.assertTrue(shield_passed(rows("passed", "blocked", "blocked", "blocked", "passed")))       # cloudflare 过盾
+        self.assertTrue(shield_passed(rows("blocked", "auto_passed", "blocked", "blocked", "passed")))   # chatgpt 过盾
+        self.assertTrue(shield_passed(rows("blocked", "blocked", "passed", "blocked", "passed")))       # anthropic 过盾
+        self.assertTrue(shield_passed(rows("blocked", "blocked", "blocked", "auto_passed", "passed")))   # gemini 过盾
+        self.assertTrue(shield_passed(rows("passed", "passed", "passed", "passed", "passed")))          # 全过盾
+
+        # 2. claude (https://claude.ai/) 过盾，但其他四站均未过盾 -> False
+        self.assertFalse(shield_passed(rows("blocked", "blocked", "blocked", "blocked", "passed")))
+        self.assertFalse(shield_passed(rows("unknown", "challenge", "blocked", "unknown", "passed")))
+
+        # 3. 其他四站全通，但 claude (https://claude.ai/) 未过盾 (blocked / challenge / unknown) -> False
+        self.assertFalse(shield_passed(rows("passed", "passed", "passed", "passed", "blocked")))
+        self.assertFalse(shield_passed(rows("passed", "passed", "passed", "passed", "challenge")))
+        self.assertFalse(shield_passed(rows("passed", "passed", "passed", "passed", "unknown")))
+
+        # 4. 未观测或空字典 -> False
+        self.assertFalse(shield_passed(rows("passed", "challenge", "blocked", "unknown", "unknown")))
+        self.assertFalse(shield_passed(rows("unknown", "unknown", "unknown", "unknown", "unknown")))
         self.assertFalse(shield_passed({}))
 
     def test_renderer(self):

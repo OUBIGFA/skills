@@ -71,7 +71,8 @@ status_code: 200 AND NOT response: "<html" AND (response: "proxies:" OR response
 
 | 预设别名 (`--preset`) | FoFa 语法 | 360 Quake 语法 |
 | :--- | :--- | :--- |
-| **`recommended` (推荐主力)** | `(server="nginx" \|\| server="caddy" \|\| server="cloudflare" \|\| server="openresty") && header="subscription-userinfo" && body="proxies:" && body!="<html"` | `status_code: 200 AND NOT response: "<html" AND (response: "nginx" OR response: "caddy" OR response: "cloudflare" OR response: "openresty") AND (response: "subscription-userinfo" OR (response: "upload=" AND response: "download=")) AND response: "proxies:"` |
+| **`residential` (官方优先主力)**<br>*(别名: `isp`, `home`)* | `(server="nginx" \|\| server="caddy" \|\| server="cloudflare" \|\| server="openresty") && header="subscription-userinfo" && body="proxies:" && body!="<html" && (body="家宽" \|\| body="住宅" \|\| body="双ISP" \|\| body="Hinet" \|\| body="HKT" \|\| body="ISP")` | `status_code: 200 AND NOT response: "<html" AND (response: "subscription-userinfo" OR response: "upload=") AND response: "proxies:" AND (response: "家宽" OR response: "住宅" OR response: "Hinet" OR response: "HKT" OR response: "ISP")` |
+| **`recommended` (工业反代+计费)** | `(server="nginx" \|\| server="caddy" \|\| server="cloudflare" \|\| server="openresty") && header="subscription-userinfo" && body="proxies:" && body!="<html"` | `status_code: 200 AND NOT response: "<html" AND (response: "nginx" OR response: "caddy" OR response: "cloudflare" OR response: "openresty") AND (response: "subscription-userinfo" OR (response: "upload=" AND response: "download=")) AND response: "proxies:"` |
 | **`billing` (动态计费)** | `(header="upload=" && header="download=" && header="total=") && body="proxies:" && body!="<html"` | `status_code: 200 AND NOT response: "<html" AND response: "upload=" AND response: "download=" AND response: "total=" AND response: "proxies:"` |
 | **`comprehensive` (原版综合)**| `status_code="200" && body!="<html" && (body="proxies:" \|\| body="\"outbounds\":" \|\| (header="text/plain" && (body="dm1lc3M6" \|\| body="c3M6Ly" \|\| body="dHJvamFuOi")))` | `status_code: 200 AND NOT response: "<html" AND (response: "proxies:" OR response: "\"outbounds\":" OR response: "dm1lc3M6" OR response: "c3M6Ly" OR response: "dHJvamFuOi")` |
 | **`vless` (VLESS/Reality)** | `body="proxies:" && body="type: vless" && status_code="200" && body!="<html"` | `status_code: 200 AND NOT response: "<html" AND response: "proxies:" AND response: "vless"` |
@@ -116,11 +117,11 @@ status_code="200" && body!="<html" && (body="proxies:" || body="\"outbounds\":" 
 ## 5. 命令行使用指南
 
 ```bash
-# 1. 默认双引擎协同：同时使用 FoFa 与 360 Quake 检索并全局去重导出
+# 1. 默认双引擎协同：优先检索家宽/双ISP/高纯净度订阅 (FoFa + 360 Quake 协同并全局去重)
 python scripts/fofa_search.py --output spatial_proxies.yaml
 
-# 2. 指定单引擎运行 (仅 FoFa 或 仅 Quake)
-python scripts/fofa_search.py --engine quake --preset recommended --output quake_nodes.yaml
+# 2. 指定单引擎运行 (如 仅 Quake 家宽 / 仅 FoFa Hysteria 2)
+python scripts/fofa_search.py --engine quake --preset residential --output quake_residential.yaml
 python scripts/fofa_search.py --engine fofa --preset hy2 --output fofa_hy2.yaml
 
 # 3. 使用 Quake 自定义语法
@@ -132,7 +133,7 @@ python scripts/fofa_search.py --dry-run-targets
 # 5. 一键联动：抓取节点后直接调用主流水线进行全套服务能力检测与配置渲染
 python scripts/fofa_search.py --probe --output final_probed.yaml
 
-# 6. 主流水线直接以测绘源作为输入
-python scripts/probe_services.py --input spatial:recommended --output out.yaml
-python scripts/probe_services.py --input quake:recommended --output out.yaml
+# 6. 主流水线直接以测绘源作为输入 (默认优先 residential 家宽/优质过盾)
+python scripts/probe_services.py --input spatial:residential --output out.yaml
+python scripts/probe_services.py --input quake:residential --output out.yaml
 ```

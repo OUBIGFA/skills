@@ -71,6 +71,7 @@ class TestFoFaSearch(unittest.TestCase):
 
     def test_resolve_query(self):
         # 预设解析
+        self.assertEqual(resolve_query("residential"), PRESET_QUERIES["residential"])
         self.assertEqual(resolve_query("recommended"), PRESET_QUERIES["recommended"])
         self.assertEqual(resolve_query("hy2"), PRESET_QUERIES["hy2"])
         self.assertEqual(resolve_query("vless"), PRESET_QUERIES["vless"])
@@ -79,7 +80,8 @@ class TestFoFaSearch(unittest.TestCase):
         custom = 'body="test" && port="443"'
         self.assertEqual(resolve_query(custom), custom)
         # 空值默认
-        self.assertEqual(resolve_query(None), PRESET_QUERIES[DEFAULT_PRESET])
+        self.assertEqual(DEFAULT_PRESET, "residential")
+        self.assertEqual(resolve_query(None), PRESET_QUERIES["residential"])
 
     def test_extract_nuxt_targets(self):
         # 构造模拟 Nuxt 序列化数据: Nuxt 3 将状态序列化为 JSON 数组嵌于 <script> 中

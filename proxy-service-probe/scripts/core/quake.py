@@ -20,21 +20,25 @@ DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 
 # 360 Quake 订阅检索语法体系
 PRESET_QUAKE_QUERIES = {
-    # 推荐主力：工业级反代 + 动态订阅/计费头特征 (高活性无死节点)
+    # 官方优先主力：家宽/双ISP/高纯净度过盾优质订阅 (优先检索 Hinet/HKT/双ISP/住宅/商业计费特征)
+    "residential": 'status_code: 200 AND NOT response: "<html" AND (response: "subscription-userinfo" OR response: "upload=") AND response: "proxies:" AND (response: "家宽" OR response: "住宅" OR response: "Hinet" OR response: "HKT" OR response: "ISP")',
+    "isp": 'status_code: 200 AND NOT response: "<html" AND (response: "subscription-userinfo" OR response: "upload=") AND response: "proxies:" AND (response: "家宽" OR response: "住宅" OR response: "Hinet" OR response: "HKT" OR response: "ISP")',
+    "home": 'status_code: 200 AND NOT response: "<html" AND (response: "subscription-userinfo" OR response: "upload=") AND response: "proxies:" AND (response: "家宽" OR response: "住宅" OR response: "Hinet" OR response: "HKT" OR response: "ISP")',
+    # 方案二：工业级反代 + 动态订阅/计费头特征 (高活性无死节点)
     "recommended": 'status_code: 200 AND NOT response: "<html" AND (response: "nginx" OR response: "caddy" OR response: "cloudflare" OR response: "openresty") AND (response: "subscription-userinfo" OR (response: "upload=" AND response: "download=")) AND response: "proxies:"',
-    # 方案二：动态计费特征断言 (标准商业面板)
+    # 方案三：动态计费特征断言 (标准商业面板)
     "billing": 'status_code: 200 AND NOT response: "<html" AND response: "upload=" AND response: "download=" AND response: "total=" AND response: "proxies:"',
-    # 方案三：用户原版综合型参考语法 (多协议正文断言)
+    # 方案四：用户原版综合型参考语法 (多协议正文断言)
     "comprehensive": 'status_code: 200 AND NOT response: "<html" AND (response: "proxies:" OR response: "\\"outbounds\\":" OR response: "dm1lc3M6" OR response: "c3M6Ly" OR response: "dHJvamFuOi")',
-    # 方案四：VLESS / Reality 节点专项订阅
+    # 方案五：VLESS / Reality 节点专项订阅
     "vless": 'status_code: 200 AND NOT response: "<html" AND response: "proxies:" AND response: "vless"',
-    # 方案五：Hysteria 2 极速节点专项订阅
+    # 方案六：Hysteria 2 极速节点专项订阅
     "hy2": 'status_code: 200 AND NOT response: "<html" AND response: "hysteria2" AND response: "server"',
-    # 方案六：通用 subscription-userinfo 动态流量池
+    # 方案七：通用 subscription-userinfo 动态流量池
     "sub_userinfo": 'status_code: 200 AND response: "subscription-userinfo"'
 }
 
-DEFAULT_QUAKE_PRESET = "recommended"
+DEFAULT_QUAKE_PRESET = "residential"
 
 
 def resolve_quake_query(query_or_preset: Optional[str], default_query: Optional[str] = None) -> str:
@@ -73,7 +77,14 @@ def search_quake_targets(query: Optional[str] = None, config: Optional[Dict[str,
     使用 360 Quake 空间测绘 API (POST /api/v3/search/quake_service) 检索目标订阅源。
     返回目标 URL 列表（去重）。若未配置 quake_key 或请求异常，安全返回空列表，不抛出异常阻断整体流程。
     """
-    cfg = config or {}
+    if config is not None:
+        cfg = config
+    else:
+        try:
+            from core.fofa import load_fofa_config
+            cfg = load_fofa_config()
+        except Exception:
+            cfg = {}
     quake_key = (
         cfg.get("quake_key")
         or os.environ.get("QUAKE_KEY")

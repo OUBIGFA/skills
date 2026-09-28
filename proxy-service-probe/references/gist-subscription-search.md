@@ -49,7 +49,8 @@ GitHub Gist 与空间测绘引擎（FoFa / 360 Quake）在 `proxy-service-probe`
 
 | 预设标识 (`--preset`) | 内部查询语法 | 命中目标与特征 |
 | :--- | :--- | :--- |
-| **`recommended`**<br>*(推荐主力，默认)* | `filename:yaml proxies` +<br>`filename:txt "subscribe?token="` | **双源并进（默认）**：同时抓取最新有效 Clash YAML 与商用机场直连 Token 订阅，智能去重并按最新更新时间倒序呈现前 20 条 |
+| **`residential`**<br>*(官方优先主力，默认)*<br>*(别名: `isp`, `home`)* | `filename:yaml "ISP" proxies`<br>`filename:yaml "Hinet" proxies`<br>`filename:yaml "HKT" proxies`<br>`filename:yaml "家宽" proxies`<br>`filename:yaml "住宅" proxies`<br>`filename:txt "subscribe?token=" "ISP"`<br>`filename:txt "subscribe?token=" "Hinet"` | **多源定向聚合（默认）**：多路并发抓取包含商用家宽、原生双 ISP、知名落地运营商（Hinet/HKT）的最新高质量配置与直链订阅，去重并按最新更新时间倒序呈现前 20 条 |
+| **`recommended`**<br>*(通用双源)* | `filename:yaml proxies` +<br>`filename:txt "subscribe?token="` | **双源并进**：同时抓取最新有效通用 Clash YAML 与商用机场直连 Token 订阅，智能去重并按更新时间呈现 |
 | **`subs`**<br>*(商用机场直链金矿)* | `filename:txt "subscribe?token="` | **独立挖掘（可单独调用）**：专门检索包含商用面板 `subscribe?token=` 的直连订阅文件列表 |
 | **`clash`** | `filename:yaml proxies` | 单独检索最新 Clash/Mihomo YAML 配置文件 |
 | **`singbox`** | `filename:json "outbounds" "vless"` | 最新 sing-box 1.8+ 出站配置，含 VLESS Reality |
@@ -92,7 +93,7 @@ GitHub Gist 与空间测绘引擎（FoFa / 360 Quake）在 `proxy-service-probe`
 ## 6. CLI 命令行大全
 
 ```bash
-# 1. 默认推荐搜索 (抓取最新 20 条有效 Gist 并提取节点至 gist_proxies.yaml)
+# 1. 默认官方推荐搜索 (优先检索家宽/双ISP/高纯净度订阅，抓取最新 20 条有效 Gist 并提取节点)
 python scripts/gist_search.py --output gist_proxies.yaml
 
 # 2. 挖掘商用机场直连 Token 订阅
@@ -113,10 +114,10 @@ python scripts/gist_search.py --probe --output final.yaml
 # 7. 检索、测试并直接合流并入既有目标底库配置
 python scripts/gist_search.py --probe --merge-into base_template.yaml
 
-# 8. 通过主流水线 probe_services.py 直接指定 Gist 输入源
-python scripts/probe_services.py --input gist:recommended --output final.yaml
+# 8. 通过主流水线 probe_services.py 直接指定 Gist 输入源 (默认优先 residential 家宽/优质过盾)
+python scripts/probe_services.py --input gist:residential --output final.yaml
 python scripts/probe_services.py --input gist:subs --output final.yaml
 
 # 9. 通过通用搜索工具 fofa_search.py 指定 Gist 引擎
-python scripts/fofa_search.py --engine gist --preset recommended -o gist_nodes.yaml
+python scripts/fofa_search.py --engine gist --preset residential -o gist_nodes.yaml
 ```

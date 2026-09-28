@@ -77,7 +77,7 @@ def parse_args(argv=None):
     parser.add_argument("--output", "-o", default="gist_proxies.yaml",
                         help="输出节点文件路径 (默认: gist_proxies.yaml)")
     parser.add_argument("--preset", "-p", choices=list(PRESET_GIST_QUERIES.keys()), default=DEFAULT_GIST_PRESET,
-                        help="预设查询语法: recommended (推荐主力Clash), subs (商用机场直连直链), singbox, hy2, base64, comprehensive")
+                        help="预设查询语法: residential (官方优先主力: 家宽/双ISP/优质过盾), recommended (双源Clash+直链), subs (商用机场直连直链), clash, singbox, hy2, base64, comprehensive")
     parser.add_argument("--query", "-q", default=None,
                         help="自定义 Gist 查询语法 (若指定将覆盖 --preset)")
     parser.add_argument("--config", "-c", default=None,

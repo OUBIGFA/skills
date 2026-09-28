@@ -27,7 +27,35 @@ from core.parsers import load_proxies
 
 # Gist 搜索预设语法库
 PRESET_GIST_QUERIES = {
-    # 推荐主力（默认）：双源并进（最新 Clash YAML + 商用机场直连订阅），自动聚合取最新
+    # 官方优先主力：家宽/双ISP/高纯净度过盾优质订阅 (多源定向聚合检索)
+    "residential": [
+        'filename:yaml "ISP" proxies',
+        'filename:yaml "Hinet" proxies',
+        'filename:yaml "HKT" proxies',
+        'filename:yaml "家宽" proxies',
+        'filename:yaml "住宅" proxies',
+        'filename:txt "subscribe?token=" "ISP"',
+        'filename:txt "subscribe?token=" "Hinet"'
+    ],
+    "isp": [
+        'filename:yaml "ISP" proxies',
+        'filename:yaml "Hinet" proxies',
+        'filename:yaml "HKT" proxies',
+        'filename:yaml "家宽" proxies',
+        'filename:yaml "住宅" proxies',
+        'filename:txt "subscribe?token=" "ISP"',
+        'filename:txt "subscribe?token=" "Hinet"'
+    ],
+    "home": [
+        'filename:yaml "ISP" proxies',
+        'filename:yaml "Hinet" proxies',
+        'filename:yaml "HKT" proxies',
+        'filename:yaml "家宽" proxies',
+        'filename:yaml "住宅" proxies',
+        'filename:txt "subscribe?token=" "ISP"',
+        'filename:txt "subscribe?token=" "Hinet"'
+    ],
+    # 方案二：双源并进（最新 Clash YAML + 商用机场直连订阅），自动聚合取最新
     "recommended": ["filename:yaml proxies", 'filename:txt "subscribe?token="'],
     # 机场直链订阅：单独挖掘包含商用面板 subscribe?token= 的订阅直链文件 (高价值金矿)
     "subs": 'filename:txt "subscribe?token="',
@@ -43,7 +71,7 @@ PRESET_GIST_QUERIES = {
     "comprehensive": 'filename:yaml OR filename:json "proxies:" OR "outbounds"'
 }
 
-DEFAULT_GIST_PRESET = "recommended"
+DEFAULT_GIST_PRESET = "residential"
 DEFAULT_TARGETS = 20
 DEFAULT_MAX_AGE_HOURS = 48
 DEFAULT_MAX_NODES_PER_SUB = 200

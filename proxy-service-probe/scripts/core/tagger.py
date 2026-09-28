@@ -176,7 +176,19 @@ def tag_and_rename_nodes(results, resort=False):
 
         yt_pass = r.get("youtube_passed", False)
         cf_pass = r.get("shield_passed", False)
-        # 综合全通 ✨️: 必须同时满足 AI五大全通 + Groq解锁 + YouTube免登实播 + 四站免盾 (只有解锁Groq才能给✨️)
+
+        # 若观测详情中包含免盾目标，则二次严格核验: https://claude.ai 必须过盾 + 其他四站中至少一站过盾
+        if r.get("shield_details") and isinstance(r["shield_details"], dict):
+            sd = r["shield_details"]
+            def _sd_pass(val):
+                return val.get("status") in ("passed", "auto_passed") if isinstance(val, dict) else val in ("passed", "auto_passed")
+            if "claude" in sd and not _sd_pass(sd["claude"]):
+                cf_pass = False
+            other_keys = [k for k in sd.keys() if k not in ("claude", "claude_ai")]
+            if other_keys and not any(_sd_pass(sd[k]) for k in other_keys):
+                cf_pass = False
+
+        # 综合全通 ✨️: 必须同时满足 AI五大全通 + Groq解锁 + YouTube免登实播 + 免盾 (https://claude.ai 过盾 + 其他四站有一站过盾，只有解锁Groq才能给✨️)
         if r.get("youtube_details") or r.get("shield_details"):
             sparkle = bool(ai_sup and groq_pass and yt_pass and cf_pass)
         elif "youtube_passed" in r and "shield_passed" in r and (yt_pass or cf_pass):

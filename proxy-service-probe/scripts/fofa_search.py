@@ -70,7 +70,7 @@ def parse_args(argv=None):
     parser.add_argument("--engine", "-e", choices=["all", "fofa", "quake", "gist"], default="all",
                         help="搜索引擎: all (FoFa + 360 Quake 双引擎协同检索), fofa, quake, gist (GitHub Gist 检索, 默认: all)")
     parser.add_argument("--preset", "-p", choices=list(PRESET_QUERIES.keys()), default=DEFAULT_PRESET,
-                        help="预设查询语法: recommended (推荐主力), billing (动态计费), vless, hy2, sub_userinfo, comprehensive")
+                        help="预设查询语法: residential (官方优先主力: 家宽/双ISP/高纯净度过盾), recommended (工业反代+计费), billing, vless, hy2, sub_userinfo, comprehensive")
     parser.add_argument("--query", "-q", default=None,
                         help="自定义 FoFa 查询语法 (若指定将覆盖 --preset)")
     parser.add_argument("--quake-query", default=None,

@@ -248,6 +248,90 @@ class TestAIProbe(unittest.TestCase):
         self.assertIn("✨️", r2["final_name"])
         self.assertIn("❇️", r2["final_name"])
 
+        # 样本3: AI + Groq + YT 通过，但 claude 过盾失败 -> 剥夺 ✨️
+        r3 = {
+            "proxy": {"name": "🇺🇸 美国_3"},
+            "cc": "US",
+            "ai_supported": True,
+            "ai_details": {"groq": True},
+            "youtube_passed": True,
+            "shield_passed": False,
+            "youtube_details": {"status": "passed"},
+            "shield_details": {
+                "cloudflare": {"status": "passed"},
+                "chatgpt": {"status": "passed"},
+                "claude": {"status": "blocked"},
+                "gemini": {"status": "passed"}
+            },
+        }
+        tag_and_rename_nodes([r3])
+        self.assertNotIn("✨️", r3["final_name"])
+        self.assertIn("❇️", r3["final_name"])
+
+        # 样本4: AI + Groq + YT 通过，且 claude 与其他站过盾成功 -> 授予 ✨️
+        r4 = {
+            "proxy": {"name": "🇺🇸 美国_4"},
+            "cc": "US",
+            "ai_supported": True,
+            "ai_details": {"groq": True},
+            "youtube_passed": True,
+            "shield_passed": True,
+            "youtube_details": {"status": "passed"},
+            "shield_details": {
+                "cloudflare": {"status": "passed"},
+                "chatgpt": {"status": "passed"},
+                "anthropic": {"status": "passed"},
+                "gemini": {"status": "passed"},
+                "claude": {"status": "passed"}
+            },
+        }
+        tag_and_rename_nodes([r4])
+        self.assertIn("✨️", r4["final_name"])
+        self.assertIn("❇️", r4["final_name"])
+
+        # 样本5: claude 通过但其他四站均未通过 -> 剥夺 ✨️
+        r5 = {
+            "proxy": {"name": "🇺🇸 美国_5"},
+            "cc": "US",
+            "ai_supported": True,
+            "ai_details": {"groq": True},
+            "youtube_passed": True,
+            "shield_passed": False,
+            "youtube_details": {"status": "passed"},
+            "shield_details": {
+                "cloudflare": {"status": "blocked"},
+                "chatgpt": {"status": "blocked"},
+                "anthropic": {"status": "blocked"},
+                "gemini": {"status": "blocked"},
+                "claude": {"status": "passed"}
+            },
+        }
+        tag_and_rename_nodes([r5])
+        self.assertNotIn("✨️", r5["final_name"])
+        self.assertIn("❇️", r5["final_name"])
+
+        # 样本6: claude 通过且其他四站中仅 anthropic 一站通过 -> 成功授予 ✨️
+        r6 = {
+            "proxy": {"name": "🇺🇸 美国_6"},
+            "cc": "US",
+            "ai_supported": True,
+            "ai_details": {"groq": True},
+            "youtube_passed": True,
+            "shield_passed": True,
+            "youtube_details": {"status": "passed"},
+            "shield_details": {
+                "cloudflare": {"status": "blocked"},
+                "chatgpt": {"status": "blocked"},
+                "anthropic": {"status": "passed"},
+                "gemini": {"status": "blocked"},
+                "claude": {"status": "passed"}
+            },
+        }
+        tag_and_rename_nodes([r6])
+        self.assertIn("✨️", r6["final_name"])
+        self.assertIn("❇️", r6["final_name"])
+
+
 
 if __name__ == "__main__":
     unittest.main()

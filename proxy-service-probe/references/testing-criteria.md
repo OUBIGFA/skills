@@ -98,17 +98,18 @@
 - **监控目标**：
   1. `cloudflare`: `https://www.cloudflare.com/`（弱挑战首页）
   2. `chatgpt`: `https://chatgpt.com/`
-  3. `claude`: `https://www.anthropic.com/`
+  3. `anthropic`: `https://www.anthropic.com/`
   4. `gemini`: `https://gemini.google.com/`
+  5. `claude`: `https://claude.ai/`
 - **质询识别特征（Challenge Markers）**：
   - 响应头 `cf-mitigated: challenge`
-  - 页面正文特征：`just a moment`, `checking your browser`, `verify you are human`, `cf-chl-`, `checking if the site connection is secure`, `请完成安全验证` 等。
+  - 页面正文特征：`just a moment`, `checking your browser`, `verify you are human`, `cf-chl-`, `checking if the site connection is secure`, `challenges.cloudflare.com`, `turnstile`, `请完成安全验证` 等。
   - 状态码 `403`, `451`, `1020` 等阻断码。
 - **执行阶段**：
   - **HTTP 初查**：使用 Chrome 140 仿真头请求各目标，快速分类 `passed`、`challenge`、`blocked`。
   - **浏览器复核**：针对重点节点或全量节点，在 Playwright Chromium 中加载页面并等待最多 8 秒，验证质询是否能自动通过。
 - **免盾判定规则（`shield_passed`）**：
-  4 站中**至少 2 站**直接通过（`passed`）或质询自动解除（`auto_passed`）即判定为“规定网站免盾”；未观测（`unknown`）、阻断（`blocked`）与质询未解除（`challenge`）的站点不计入通过数。有浏览器观测的站点以浏览器结果为准，否则以 HTTP 结果为准。
+  必须同时满足：**`https://claude.ai/` (`claude`) 站过盾（`passed` 或 `auto_passed`），且其他四站（`cloudflare`, `chatgpt`, `anthropic`, `gemini`）中至少有一站过盾（`passed` 或 `auto_passed`）**，才判定为“规定网站免盾”并具备授予 `✨️` 徽章的过盾资格；未观测（`unknown`）、阻断（`blocked`）与质询未解除（`challenge`）的站点不计入通过数。有浏览器观测的站点以浏览器结果为准，否则以 HTTP 结果为准。
 
 ---
 
@@ -189,8 +190,8 @@ Key 节点是专门用于在落地节点（`_Lnd`/`_USAI`）建立多跳链路�
 ### 6.2 标签位解析
 1. **国旗 Emoji**：根据 `geo_decision.cc` 生成。送中节点保留已确认的实际属地并附 `_⚠️CN`；普通强分歧/证据不足用 `🏳️ 未知`，不拿原名当检测结论。
 2. **前置能力徽章（国旗后、国名前，严格有序）**：
-   - **`✨️`**：综合全通能力徽章（必须同时满足：① AI三大全通；② YouTube 免登实播通过；③ 四站免盾达成）。
-   - **`❇️`**：AI 三大全通（ChatGPT + Claude + Gemini 均通过）。
+   - **`✨️`**：综合全通能力徽章（必须同时满足：① AI五大全通 + Groq解锁；② YouTube 免登录实播通过；③ 免盾达成：https://claude.ai/ 过盾且其他四站有一站过盾）。
+   - **`❇️`**：AI 五大核心全解锁（OpenAI + Claude + Gemini + HuggingFace + Grok 均通过）。
    - **`♥️`**：高信誉 IP（Net.Coffee 信誉分 >= 80，出口稳定且全部出口有绑定证据；送中/污染节点不授予）。
    - **`Key`**：评选出的优质直连前置跳板节点。
    - **`Fast`**：主动完整测速达到 Key/Fast 级（稳态 >= 12 Mbps 且最低 >= 6 Mbps）但未被选为 Key 的节点（如 HTTP 高速节点、超出国家配额的节点）。
