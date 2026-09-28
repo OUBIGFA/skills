@@ -295,6 +295,16 @@ def normalize_iplc_suffix(suf, tag=""):
     return f"IPLC_{clean}" if clean else "IPLC"
 
 
+def strip_res_suffix(suf):
+    """剔除自定义后缀中的 家宽/双ISP/住宅 及非标运营商标识，保持后缀纯净标准。"""
+    if not suf:
+        return ""
+    clean = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)*(?:双isp|家宽|住宅|residential)+(?=_|$)', '', suf)
+    clean = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)(?=_|$)', '', clean)
+    clean = re.sub(r'_+', '_', clean).strip('_')
+    return clean
+
+
 def _build_plan(nodes):
     plan = []
     for i, o in enumerate(nodes):
@@ -317,6 +327,7 @@ def _build_plan(nodes):
             country = COUNTRY_ZH.get(cc, '') if cc else ''
 
         suf = normalize_iplc_suffix(suf, tag)
+        suf = strip_res_suffix(suf)
 
         plan.append({
             'i': i,

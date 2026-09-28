@@ -135,7 +135,7 @@ def _is_landing(p):
         return p["_is_landing"]
     if isinstance(p.get("is_landing"), bool):
         return p["is_landing"]
-    if "_Lnd" in name or "_USAI" in name or "_家宽" in name:
+    if "_Lnd" in name or "_USAI" in name:
         return True
     # 旧 detour 可能残留在 Key 直连节点上，不能借此将前置节点链回自身。
     if p.get("_is_key") is True or re.search(r'(?i)\bkey(?![a-z])', name):
@@ -151,8 +151,8 @@ def _is_key(p):
     return p.get("_is_key") is True or "Key" in name
 
 
-def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False):
-    """根据目标编号重构节点名称（保留已有能力徽章、前缀与后缀，且 IPLC 后缀排在第一位）。"""
+def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential=False):
+    """根据目标编号重构节点名称（保留已有能力徽章、前缀与后缀，且 IPLC 后缀排在第一梯队，家宽统一使用 🏠 前缀徽章）。"""
     flag_match = re.search(r'^([\U0001F1E6-\U0001F1FF]{2}|🏳️|\U0001F3F3\uFE0F?)\s*', old_name)
     flag = flag_match.group(0) if flag_match else ""
     rest = old_name[len(flag):]
@@ -161,6 +161,7 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False):
     ai = bool("❇️" in rest or "❇" in rest)
     is_polluted = bool("_⚠️" in rest)
     hq = bool(is_hq and not is_polluted)
+    has_res = bool(is_residential or "🏠" in rest or re.search(r'(?i)家宽|双isp|住宅|residential', old_name))
     key = bool(re.search(r'(?i)\bkey(?![a-z])', rest))
     fast = bool(re.search(r'(?i)\bfast(?![a-z])', rest))
     has_iplc = bool(is_iplc or re.search(r'(?i)iplc|专线', old_name))
@@ -172,37 +173,50 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False):
         prefix += "❇️"
     if hq:
         prefix += "♥️"
+    if has_res:
+        prefix += "🏠"
     if key:
         prefix += "Key"
     elif fast:
         prefix += "Fast"
 
-    cleaned_rest = re.sub(r'^(?:[✨❇️♥️♥]️?|\s+|Key|Fast)+', '', rest, flags=re.I)
+    cleaned_rest = re.sub(r'^(?:[✨❇️♥️♥🏠]️?|\s+|Key|Fast)+', '', rest, flags=re.I)
     m = re.search(r'^(.*?)_(\d+)(.*)$', cleaned_rest)
     if m:
         country = m.group(1)
+        # 清除残留于国家段的原节点家宽名称（不再保留如 HiNet家宽, 双ISP家宽, Seller双ISP 等中缀）
+        country = re.sub(r'(?i)(?:^|_)?(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)*(?:双isp|家宽|住宅|residential)+(?=_|$)?', '', country).strip('_')
+        country = re.sub(r'(?i)(?:^|_)?(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)(?=_|$)', '', country).strip('_')
         raw_suffix = m.group(3)
-        clean_suffix = re.sub(r'(?:✨\uFE0F?|❇\uFE0F?|♥\uFE0F?|\bKey\b|\bFast\b)', '', raw_suffix, flags=re.I).strip()
-        if has_iplc:
-            clean_suffix = re.sub(r'(?i)(?:^|_)iplc(?=_|$)', '', clean_suffix)
-            clean_suffix = re.sub(r'(?:^|_)专线\d*(?=_|$)', '', clean_suffix)
-            clean_suffix = re.sub(r'_+', '_', clean_suffix).strip('_')
-            clean_suffix = f"_IPLC_{clean_suffix}" if clean_suffix else "_IPLC"
-        return f"{flag}{prefix}{country}_{slot}{clean_suffix}"
+        clean_suffix = re.sub(r'(?:✨\uFE0F?|❇\uFE0F?|♥\uFE0F?|🏠\uFE0F?|\bKey\b|\bFast\b)', '', raw_suffix, flags=re.I).strip()
+        clean_suffix = re.sub(r'(?i)(?:^|_)iplc(?=_|$)', '', clean_suffix)
+        clean_suffix = re.sub(r'(?:^|_)专线\d*(?=_|$)', '', clean_suffix)
+        clean_suffix = re.sub(r'(?i)(?:^|_)家宽(?=_|$)', '', clean_suffix)
+        clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)*(?:双isp|家宽|住宅|residential)+(?=_|$)', '', clean_suffix)
+        clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)(?=_|$)', '', clean_suffix)
+        clean_suffix = re.sub(r'_+', '_', clean_suffix).strip('_')
+        prefix_suf = "_IPLC" if has_iplc else ""
+        final_suf = f"{prefix_suf}_{clean_suffix}" if (prefix_suf and clean_suffix) else (prefix_suf or (f"_{clean_suffix}" if clean_suffix else ""))
+        return f"{flag}{prefix}{country}_{slot}{final_suf}"
 
     m_old = re.search(r'^(.*?)_(\d+)(.*)$', old_name)
     if m_old:
         country = m_old.group(1)
+        country = re.sub(r'(?i)(?:^|_)?(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)*(?:双isp|家宽|住宅|residential)+(?=_|$)?', '', country).strip('_')
+        country = re.sub(r'(?i)(?:^|_)?(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)(?=_|$)', '', country).strip('_')
         raw_suffix = m_old.group(3)
-        if has_iplc:
-            clean_suffix = re.sub(r'(?i)(?:^|_)iplc(?=_|$)', '', raw_suffix)
-            clean_suffix = re.sub(r'(?:^|_)专线\d*(?=_|$)', '', clean_suffix)
-            clean_suffix = re.sub(r'_+', '_', clean_suffix).strip('_')
-            clean_suffix = f"_IPLC_{clean_suffix}" if clean_suffix else "_IPLC"
-            return f"{country}_{slot}{clean_suffix}"
-        return f"{country}_{slot}{raw_suffix}"
-    iplc_extra = "_IPLC" if has_iplc and not re.search(r'(?i)_iplc', old_name) else ""
-    return f"{old_name}_{slot}{iplc_extra}"
+        clean_suffix = re.sub(r'(?i)(?:^|_)iplc(?=_|$)', '', raw_suffix)
+        clean_suffix = re.sub(r'(?:^|_)专线\d*(?=_|$)', '', clean_suffix)
+        clean_suffix = re.sub(r'(?i)(?:^|_)家宽(?=_|$)', '', clean_suffix)
+        clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)*(?:双isp|家宽|住宅|residential)+(?=_|$)', '', clean_suffix)
+        clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)(?=_|$)', '', clean_suffix)
+        clean_suffix = re.sub(r'_+', '_', clean_suffix).strip('_')
+        prefix_suf = "_IPLC" if has_iplc else ""
+        final_suf = f"{prefix_suf}_{clean_suffix}" if (prefix_suf and clean_suffix) else (prefix_suf or (f"_{clean_suffix}" if clean_suffix else ""))
+        return f"{flag}{prefix}{country}_{slot}{final_suf}"
+    prefix_extra = "_IPLC" if (has_iplc and not re.search(r'(?i)_iplc', old_name)) else ""
+    res_prefix = "🏠" if (has_res and "🏠" not in old_name) else ""
+    return f"{res_prefix}{old_name}_{slot}{prefix_extra}"
 
 
 def sort_nodes_by_region_and_landing(items, resort=False):
@@ -238,7 +252,41 @@ def sort_nodes_by_region_and_landing(items, resort=False):
             if isinstance(proxy, dict) and (proxy.get('dialer-proxy') or proxy.get('detour')):
                 return True
         name = _get_name(item)
-        return ('_Lnd' in name) or ('_USAI' in name) or ('_家宽' in name)
+        return ('_Lnd' in name) or ('_USAI' in name)
+
+    def _is_iplc(item, name):
+        if isinstance(item, dict):
+            if item.get("is_iplc") is True or item.get("_is_iplc") is True:
+                return True
+            p = item.get("proxy")
+            if isinstance(p, dict) and (p.get("_is_iplc") is True or p.get("is_iplc") is True):
+                return True
+            raw = item.get("raw_node")
+            if isinstance(raw, dict) and (raw.get("_is_iplc") is True or raw.get("is_iplc") is True):
+                return True
+            orig = (item.get("_orig_name") or item.get("orig_name") or
+                    (p.get("_orig_name") or p.get("orig_name") if isinstance(p, dict) else "") or
+                    (raw.get("_orig_name") or raw.get("orig_name") if isinstance(raw, dict) else ""))
+            if orig and re.search(r'(?i)iplc|专线', str(orig)):
+                return True
+        return bool(re.search(r'(?i)iplc|专线', name))
+
+    def _is_res(item, name):
+        if isinstance(item, dict):
+            if item.get("is_residential") is True or item.get("_is_residential") is True:
+                return True
+            p = item.get("proxy")
+            if isinstance(p, dict) and (p.get("_is_residential") is True or p.get("is_residential") is True):
+                return True
+            raw = item.get("raw_node")
+            if isinstance(raw, dict) and (raw.get("_is_residential") is True or raw.get("is_residential") is True):
+                return True
+            orig = (item.get("_orig_name") or item.get("orig_name") or
+                    (p.get("_orig_name") or p.get("orig_name") if isinstance(p, dict) else "") or
+                    (raw.get("_orig_name") or raw.get("orig_name") if isinstance(raw, dict) else ""))
+            if orig and ("🏠" in str(orig) or re.search(r'(?i)家宽|双isp|住宅|residential', str(orig))):
+                return True
+        return bool("🏠" in name or re.search(r'(?i)家宽|双isp|住宅|residential', name))
 
     def _reputation(item):
         if not isinstance(item, dict):
@@ -276,6 +324,8 @@ def sort_nodes_by_region_and_landing(items, resort=False):
         ai = 0 if ('❇️' in name or '❇' in name) else 1
         key = 0 if re.search(r'(?i)\bkey(?![a-z])', name) else 1
         fast = 0 if re.search(r'(?i)\bfast(?![a-z])', name) else 1
+        # 顺序权重跟专线节点一样: 专线 (_IPLC) 与 家宽 (_家宽) 共享线路优先权
+        line_prio = 0 if (_is_iplc(item, name) or _is_res(item, name)) else 1
         is_polluted = 1 if ('_⚠️' in name) else 0
         reputation = _reputation(item)
         score = valid_reputation_score(reputation.get('score'))
@@ -288,9 +338,9 @@ def sort_nodes_by_region_and_landing(items, resort=False):
         slot = int(m.group(1)) if m else 9999
         if not resort:
             return (slot, name)
-        # 先按 ✨️ > ❇️ > Key > Fast > _NF > _D+ 硬分层；干净节点优于污染节点；
+        # 先按 ✨️ > ❇️ > Key > Fast > 专线/家宽(line_prio) > _NF > _D+ 硬分层；干净节点优于污染节点；
         # ♥️ 与信誉分只在上述标签完全相同的节点之间决定先后，不跨越标签层级
-        return (sparkle, ai, key, fast, nf, dp, is_polluted, hq, has_score, reputation_rank, slot, name)
+        return (sparkle, ai, key, fast, line_prio, nf, dp, is_polluted, hq, has_score, reputation_rank, slot, name)
 
     country_buckets = {}
     country_order = []
@@ -324,32 +374,18 @@ def sort_nodes_by_region_and_landing(items, resort=False):
             sorted_items.extend(combined)
             continue
 
-        def _is_iplc(item, name):
-            if isinstance(item, dict):
-                if item.get("is_iplc") is True or item.get("_is_iplc") is True:
-                    return True
-                p = item.get("proxy")
-                if isinstance(p, dict) and (p.get("_is_iplc") is True or p.get("is_iplc") is True):
-                    return True
-                raw = item.get("raw_node")
-                if isinstance(raw, dict) and (raw.get("_is_iplc") is True or raw.get("is_iplc") is True):
-                    return True
-                orig = (item.get("_orig_name") or item.get("orig_name") or
-                        (p.get("_orig_name") or p.get("orig_name") if isinstance(p, dict) else "") or
-                        (raw.get("_orig_name") or raw.get("orig_name") if isinstance(raw, dict) else ""))
-                if orig and re.search(r'(?i)iplc|专线', str(orig)):
-                    return True
-            return bool(re.search(r'(?i)iplc|专线', name))
-
         # 定好位置再编号：每个国家/地区内的节点位置确定后，从 1 开始严格依次递增重新编号
         for slot_idx, item in enumerate(combined, start=1):
             old_name = _get_name(item)
             has_iplc_flag = _is_iplc(item, old_name)
-            new_name = _renumber_tag(old_name, slot_idx, is_hq=_is_hq(item, old_name), is_iplc=has_iplc_flag)
+            has_res_flag = _is_res(item, old_name)
+            new_name = _renumber_tag(old_name, slot_idx, is_hq=_is_hq(item, old_name), is_iplc=has_iplc_flag, is_residential=has_res_flag)
 
             if isinstance(item, dict):
                 if has_iplc_flag:
                     item["is_iplc"] = True
+                if has_res_flag:
+                    item["is_residential"] = True
                 if "tag" in item:
                     item["tag"] = new_name
                 if "name" in item:
@@ -363,6 +399,8 @@ def sort_nodes_by_region_and_landing(items, resort=False):
                         item["proxy"]["tag"] = new_name
                     if has_iplc_flag:
                         item["proxy"]["_is_iplc"] = True
+                    if has_res_flag:
+                        item["proxy"]["_is_residential"] = True
                 if "raw_node" in item and isinstance(item["raw_node"], dict):
                     if "tag" in item["raw_node"]:
                         item["raw_node"]["tag"] = new_name
@@ -370,6 +408,8 @@ def sort_nodes_by_region_and_landing(items, resort=False):
                         item["raw_node"]["name"] = new_name
                     if has_iplc_flag:
                         item["raw_node"]["_is_iplc"] = True
+                    if has_res_flag:
+                        item["raw_node"]["_is_residential"] = True
                 if "slot" in item:
                     item["slot"] = slot_idx
                 if "assigned_slot" in item:

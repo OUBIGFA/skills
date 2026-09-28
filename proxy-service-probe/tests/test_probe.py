@@ -222,6 +222,45 @@ class TestProxyServiceProbe(unittest.TestCase):
         resorted_sg = next(r for r in resorted if r["cc"] == "SG")
         self.assertEqual(resorted_sg["final_name"], "🇸🇬 新加坡_1_IPLC_NF")
 
+    def test_residential_prefix_and_line_priority(self):
+        from core.renderer import renumber_node_tag, sort_nodes_by_region_and_landing
+
+        # 1. format_node_name 校验：🏠 作为优质家宽前置徽章，排在 ♥️ 之后、Key/Fast 之前，且不带 _家宽 后缀
+        n1 = format_node_name(cc="TW", slot=1, is_residential=True)
+        self.assertEqual(n1, "🇹🇼 🏠台湾_1")
+
+        n2 = format_node_name(cc="HK", slot=2, is_residential=True, media_details={"dp": True})
+        self.assertEqual(n2, "🇭🇰 🏠香港_2_D+")
+
+        n3 = format_node_name(cc="TW", slot=3, is_iplc=True, is_residential=True)
+        self.assertEqual(n3, "🇹🇼 🏠台湾_3_IPLC")
+
+        # 2. renumber_node_tag 清除旧的 HiNet家宽/双ISP 等杂质并规范化为 🏠 前缀徽章
+        renamed1 = renumber_node_tag("🇹🇼 ✨️Fast台湾_HiNet家宽_15", 3)
+        self.assertEqual(renamed1, "🇹🇼 ✨️🏠Fast台湾_3")
+
+        renamed2 = renumber_node_tag("🇲🇽 ✨️Fast墨西哥_Seller双ISP_9", 4)
+        self.assertEqual(renamed2, "🇲🇽 ✨️🏠Fast墨西哥_4")
+
+        renamed3 = renumber_node_tag("🇭🇰 🏠Fast香港_双ISP家宽_5", 2)
+        self.assertEqual(renamed3, "🇭🇰 🏠Fast香港_2")
+
+        # 3. 家宽节点与专线节点共享线路优先级 (line_prio)，在能力相同情况下均优先于普通机房节点，且家宽不作落地沉底
+        batch = [
+            {"proxy": {"name": "普通机房节点", "type": "vless", "server": "1.1.1.1", "port": 443}, "cc": "US", "is_fast": True},
+            {"proxy": {"name": "美国专线IPLC", "type": "vless", "server": "2.2.2.2", "port": 443}, "cc": "US", "is_fast": True, "is_iplc": True},
+            {"proxy": {"name": "美国原生双ISP家宽", "type": "vless", "server": "3.3.3.3", "port": 443}, "cc": "US", "is_fast": True, "is_residential": True},
+        ]
+        tag_and_rename_nodes(batch, resort=True)
+        # 前两个应为专线和家宽（均排在普通机房节点之前）
+        names = [r["final_name"] for r in batch]
+        self.assertIn("美国_3", names[2])  # 普通机房节点排在第 3
+        self.assertTrue("IPLC" in names[0] or "🏠" in names[0])
+        self.assertTrue("IPLC" in names[1] or "🏠" in names[1])
+        # 且家宽节点不带 _Lnd，不是落地节点
+        res_node = next(r for r in batch if "🏠" in r["final_name"])
+        self.assertNotIn("_Lnd", res_node["final_name"])
+
     def test_reputation_orders_same_country_same_capability(self):
         def row(name, score):
             return {
