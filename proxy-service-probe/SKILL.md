@@ -65,7 +65,7 @@ description: 对代理节点执行服务能力测试（IP属地检测、AI解锁
 4. **模版一致性与策略组规则同步 (严格同步 freenode 规范)**：
    - **`🛡️ Front前置`**：`["⚡ Fast自动选择", "DIRECT"] + [所有 Key 节点名称]`。若本批无 Key 节点则使用备用前置，再降级为可用直连节点。**落地节点绝对禁止进入前置跳板组**。
    - **`⚡ Fast自动选择`**：`url-test`，优先所有 Key；无 Key 时与前置组使用相同的备用前置池，再回落到可用直连节点或 `DIRECT`，绝不包含落地。
-   - **`🔒️ 落地节点`**：自动归集所有落地节点，Clash/Mihomo 注入 `dialer-proxy: "🛡️ Front前置"`，sing-box 注入 `detour: "🛡️ Front前置"`。
+   - **`🔒️ 落地节点`**：自动归集所有落地节点以及带有 `🏠` 徽章的家宽/住宅节点；纯链式落地节点（`_Lnd` / `_USAI`）Clash/Mihomo 注入 `dialer-proxy: "🛡️ Front前置"`，sing-box 注入 `detour: "🛡️ Front前置"`。
    - **母版原文渲染**：母版为技能内 `templates/template.yaml`（格式对齐 freenode，可手动修改），导出只替换 `proxies` / `proxy-groups` 两段，注释与空行逐字保留；测试开始前先校验母版语法与规则引用。详见 [config-rendering.md](references/config-rendering.md) 第 5 节。
    - **双份配置同步导出**：`probe_singbox.py` 结束时同时生成 sing-box（`.json`）与 Clash/Mihomo（`.yaml`）；`probe_services.py` 只导出 `.yaml`；`convert_dual.py` 可将现有 sing-box JSON 或 Clash/Mihomo YAML 规范化并同步导出两种格式。两份配置结构同步，均包含 17 个标准策略组（前置、自动、手动、综合全通、AI、Google、流媒体、落地节点等）与分流规则。
 

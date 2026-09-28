@@ -159,7 +159,7 @@ class TestKeyEvaluator(unittest.TestCase):
 
     def test_landing_role_and_old_key_flags_are_rechecked(self):
         speed = {"status": "complete", "verdict": "qualified", "stable_mbps": 20.0, "floor_mbps": 15.0}
-        for name, landing in (("unmarked", True), ("🇹🇼 台湾_1_家宽", False)):
+        for name, landing in (("unmarked", True), ("🇹🇼 🏠台湾_1", False)):
             with self.subTest(name=name):
                 row = {"proxy": {"name": name, "type": "trojan", "_is_key": True, "_key_score": 99},
                        "exit_ip": "1.1.1.1", "is_landing": landing, "speed_result": speed}
@@ -236,7 +236,8 @@ class TestRendererGroupingSync(unittest.TestCase):
             {"name": "🇯🇵 ✨️❇️Key日本_1", "type": "trojan", "_is_key": True, "_key_score": 42.0},
             {"name": "🇭🇰 ❇️Key香港_1", "type": "vmess", "_is_key": True, "_key_score": 39.0},
             {"name": "🇺🇸 ✨️❇️Fast美国_1", "type": "http", "_is_fast": True},
-            {"name": "🇺🇸 ❇️美国_2_Lnd", "type": "ss", "_is_landing": True}
+            {"name": "🇺🇸 ❇️美国_2_Lnd", "type": "ss", "_is_landing": True},
+            {"name": "🇹🇼 🏠台湾_1", "type": "vless"}
         ]
 
         cfg = render_clash_config(proxies)
@@ -261,10 +262,16 @@ class TestRendererGroupingSync(unittest.TestCase):
         self.assertNotIn("🇺🇸 ✨️❇️Fast美国_1", fast_members)
         self.assertNotIn("🇺🇸 ❇️美国_2_Lnd", fast_members)
 
-        # 3. 验证落地节点自动注入 dialer-proxy: 🛡️ Front前置
+        # 3. 验证 🔒️ 落地节点 包含链式落地节点以及带有 🏠 徽章的家宽节点
+        landing_members = groups["🔒️ 落地节点"]["proxies"]
+        self.assertIn("🇺🇸 ❇️美国_2_Lnd", landing_members)
+        self.assertIn("🇹🇼 🏠台湾_1", landing_members)
+
+        # 4. 验证落地节点自动注入 dialer-proxy: 🛡️ Front前置，直连 🏠 家宽节点不注入 dialer-proxy
         clean_proxies = {p["name"]: p for p in cfg["proxies"]}
         self.assertEqual(clean_proxies["🇺🇸 ❇️美国_2_Lnd"].get("dialer-proxy"), "🛡️ Front前置")
         self.assertNotIn("dialer-proxy", clean_proxies["🇯🇵 ✨️❇️Key日本_1"])
+        self.assertNotIn("dialer-proxy", clean_proxies["🇹🇼 🏠台湾_1"])
 
 
 class TestSafetyAndIsolation(unittest.TestCase):
