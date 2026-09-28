@@ -239,7 +239,7 @@ def make_standard_singbox_config(cleaned_proxies, qualified_tags=None, sparkle_t
     #    与 Clash/Mihomo 的 dialer-proxy 注入保持一致；直连节点不带 detour，杜绝循环前置引用
     #    WireGuard 属于 endpoint，放入顶层 endpoints，策略组可直接引用其 tag
     processed_proxies, endpoints = [], []
-    runtime_keys = {"is_landing", "is_key", "final_name", "orig_name", "assigned_slot", "slot", "cc"}
+    runtime_keys = {"is_landing", "is_key", "is_iplc", "final_name", "orig_name", "assigned_slot", "slot", "cc"}
     for p, cp_clash in zip(sorted_proxies, clash_proxies):
         cp = {k: deepcopy(v) for k, v in p.items()
               if not k.startswith("_") and k not in runtime_keys}

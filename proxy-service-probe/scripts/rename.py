@@ -22,7 +22,7 @@ import time
 from common import (NODE_TYPES, ensure_utf8_stdout, load_session, pair_nodes,
                     remap_refs, reorder_outbounds, strip_node_detours, write_config)
 from geodata import flag, region_rank
-from sort_nodes import detect_suffix, format_tag, parse_standard_tag
+from sort_nodes import detect_suffix, format_tag, normalize_iplc_suffix, parse_standard_tag
 
 ensure_utf8_stdout()
 
@@ -119,6 +119,7 @@ def main():
         else:
             suf = detect_suffix(tag, cc_target)
             sep = '_'
+        suf = normalize_iplc_suffix(suf, tag)
         if ok and ov.get('cc'):
             cc = ov['cc']
             country = ov.get('country_zh') or r.get('country_zh') or cc

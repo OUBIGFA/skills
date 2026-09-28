@@ -13,6 +13,7 @@ import os
 import re
 import time
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Tuple, Any
 
 import requests
@@ -409,23 +410,33 @@ def fetch_subscription_nodes(targets: List[str], config: Optional[Dict[str, Any]
     collected_proxies: List[Dict[str, Any]] = []
     crawl_list = targets[:max_targets] if max_targets else targets
 
-    for idx, target in enumerate(crawl_list, 1):
+    def _fetch_single(target: str) -> List[Dict[str, Any]]:
         r = _make_request(target, headers=client_headers, proxy_url=proxy, timeout=timeout)
         if not r or r.status_code != 200 or len(r.text) < 20:
-            continue
-
+            return []
         try:
             nodes = load_proxies(r.text)
             if nodes:
                 if limit > 0 and len(nodes) > limit:
                     print(f"      [跳过超量源] 目标 {target} 节点数 ({len(nodes)}) 超过上限 ({limit})，丢弃以防低质公开聚合源干扰")
-                    continue
-                # 记录来源 target URL
+                    return []
                 for n in nodes:
                     n.setdefault("_source_target", target)
-                collected_proxies.extend(nodes)
+                return nodes
         except Exception:
             pass
+        return []
+
+    workers = min(16, max(4, len(crawl_list))) if crawl_list else 1
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_map = {executor.submit(_fetch_single, t): t for t in crawl_list}
+        for future in as_completed(future_map):
+            try:
+                res = future.result()
+                if res:
+                    collected_proxies.extend(res)
+            except Exception:
+                pass
 
     return deduplicate_and_sort_proxies(collected_proxies)
 

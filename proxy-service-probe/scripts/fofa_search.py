@@ -52,8 +52,10 @@ from core.fofa import (
 
 if sys.platform == "win32":
     try:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
 
@@ -65,8 +67,8 @@ def parse_args(argv=None):
     )
     parser.add_argument("--output", "-o", default="fofa_proxies.yaml",
                         help="输出节点文件路径 (默认: fofa_proxies.yaml)")
-    parser.add_argument("--engine", "-e", choices=["all", "fofa", "quake"], default="all",
-                        help="测绘引擎: all (FoFa + 360 Quake 双引擎协同检索), fofa, quake (默认: all)")
+    parser.add_argument("--engine", "-e", choices=["all", "fofa", "quake", "gist"], default="all",
+                        help="搜索引擎: all (FoFa + 360 Quake 双引擎协同检索), fofa, quake, gist (GitHub Gist 检索, 默认: all)")
     parser.add_argument("--preset", "-p", choices=list(PRESET_QUERIES.keys()), default=DEFAULT_PRESET,
                         help="预设查询语法: recommended (推荐主力), billing (动态计费), vless, hy2, sub_userinfo, comprehensive")
     parser.add_argument("--query", "-q", default=None,
@@ -119,43 +121,91 @@ def main(argv=None):
     if args.timeout:
         cfg["timeout"] = args.timeout
 
-    actual_query = resolve_query(args.query or args.preset, cfg.get("default_query"))
-    print(f"[*] 选用搜索预设/语法: {args.preset} -> {actual_query}")
-    if cfg.get("proxy"):
-        print(f"[*] 请求代理: {cfg['proxy']}")
+    if args.engine == "gist":
+        from core.gist import (
+            search_gist_targets,
+            fetch_gist_nodes,
+            resolve_gist_query,
+            load_gist_config
+        )
+        gist_cfg = load_gist_config(args.config if args.config and "gist" in args.config else None)
+        if args.proxy:
+            gist_cfg["proxy"] = args.proxy
+        if args.timeout:
+            gist_cfg["timeout"] = args.timeout
 
-    print(f"\n[1/3] 正在通过空间测绘引擎检索目标订阅源 (第 {args.page} 页, 最多 {args.page_size} 条)...")
-    start_time = time.time()
-    targets, stats = search_all_targets(
-        query_or_preset=args.query or args.preset,
-        config=cfg,
-        engine=args.engine,
-        page=args.page,
-        page_size=args.page_size,
-        quake_query=args.quake_query
-    )
-    elapsed = time.time() - start_time
-    print(f"      检索完成 (耗时 {elapsed:.2f}s)，发现 {len(targets)} 个独立候选目标地址")
+        g_query = resolve_gist_query(args.query or args.preset)
+        query_str = " + ".join(str(q) for q in g_query) if isinstance(g_query, list) else str(g_query)
+        print(f"[*] 选用 Gist 搜索预设/语法: {args.preset} -> {query_str}")
+        if gist_cfg.get("proxy"):
+            print(f"[*] 请求代理: {gist_cfg['proxy']}")
 
-    if not targets:
-        print("[!] 未检索到有效目标。建议检查查询语法或 Token 授权状态。")
-        return 1
+        print(f"\n[1/3] 正在通过 GitHub Gist 检索最新有效代理订阅源 (最多 {args.max_targets or 20} 条)...")
+        start_time = time.time()
+        targets, stats = search_gist_targets(
+            query=g_query,
+            config=gist_cfg,
+            max_targets=args.max_targets or 20,
+            max_age_hours=48.0
+        )
+        elapsed = time.time() - start_time
+        print(f"      检索完成 (耗时 {elapsed:.2f}s)，发现 {len(targets)} 个时效达标的独立 Gist")
 
-    if args.dry_run_targets:
-        print("\n[+] 发现的目标订阅源地址列表:")
-        for idx, t in enumerate(targets, 1):
-            print(f"  [{idx:2d}] {t}")
-        return 0
+        if not targets:
+            print("[!] 未检索到有效 Gist 目标。建议检查查询语法或放宽时效窗口。")
+            return 1
 
-    print(f"\n[2/3] 正在遍历抓取并解析订阅源中的节点 (并发/串行超时: {cfg.get('timeout', 12)}s)...")
-    proxies = fetch_subscription_nodes(
-        targets,
-        config=cfg,
-        max_targets=args.max_targets,
-        timeout=int(cfg.get("timeout") or 8),
-        max_nodes_per_sub=args.max_nodes_per_sub
-    )
-    print(f"      抓取完成，共提取到 {len(proxies)} 个独立有效代理节点 (已去重)")
+        if args.dry_run_targets:
+            print("\n[+] 发现的目标 Gist 列表:")
+            for idx, t in enumerate(targets, 1):
+                print(f"  [{idx:2d}] {t['gist_url']} (更新于: {t.get('updated_at', '未知')})")
+            return 0
+
+        print(f"\n[2/3] 正在通过方案 B (Fastly CDN Raw 直链) 并发免控抓取与解析节点...")
+        proxies = fetch_gist_nodes(
+            targets,
+            config=gist_cfg,
+            max_nodes_per_sub=args.max_nodes_per_sub
+        )
+        print(f"      抓取完成，共提取到 {len(proxies)} 个独立有效代理节点 (已去重)")
+    else:
+        actual_query = resolve_query(args.query or args.preset, cfg.get("default_query"))
+        print(f"[*] 选用搜索预设/语法: {args.preset} -> {actual_query}")
+        if cfg.get("proxy"):
+            print(f"[*] 请求代理: {cfg['proxy']}")
+
+        print(f"\n[1/3] 正在通过空间测绘引擎检索目标订阅源 (第 {args.page} 页, 最多 {args.page_size} 条)...")
+        start_time = time.time()
+        targets, stats = search_all_targets(
+            query_or_preset=args.query or args.preset,
+            config=cfg,
+            engine=args.engine,
+            page=args.page,
+            page_size=args.page_size,
+            quake_query=args.quake_query
+        )
+        elapsed = time.time() - start_time
+        print(f"      检索完成 (耗时 {elapsed:.2f}s)，发现 {len(targets)} 个独立候选目标地址")
+
+        if not targets:
+            print("[!] 未检索到有效目标。建议检查查询语法或 Token 授权状态。")
+            return 1
+
+        if args.dry_run_targets:
+            print("\n[+] 发现的目标订阅源地址列表:")
+            for idx, t in enumerate(targets, 1):
+                print(f"  [{idx:2d}] {t}")
+            return 0
+
+        print(f"\n[2/3] 正在遍历抓取并解析订阅源中的节点 (并发/串行超时: {cfg.get('timeout', 12)}s)...")
+        proxies = fetch_subscription_nodes(
+            targets,
+            config=cfg,
+            max_targets=args.max_targets,
+            timeout=int(cfg.get("timeout") or 8),
+            max_nodes_per_sub=args.max_nodes_per_sub
+        )
+        print(f"      抓取完成，共提取到 {len(proxies)} 个独立有效代理节点 (已去重)")
 
     if not proxies:
         print("[!] 未能从目标订阅源提取到可用节点 (可能由于临时不可达或需要特殊凭据)。")

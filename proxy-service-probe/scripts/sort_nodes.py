@@ -284,6 +284,17 @@ def detect_suffix(tag, cc=None):
     return '_'.join(out)
 
 
+def normalize_iplc_suffix(suf, tag=""):
+    """若原 tag 或现有后缀中包含 IPLC/专线 标识，保留 IPLC 后缀并排在所有后缀的第一位。"""
+    has_iplc = bool(re.search(r'(?i)iplc|专线', suf) or re.search(r'(?i)iplc|专线', tag))
+    if not has_iplc:
+        return suf
+    clean = re.sub(r'(?i)(?:^|_)iplc(?=_|$)', '', suf)
+    clean = re.sub(r'(?:^|_)专线\d*(?=_|$)', '', clean)
+    clean = re.sub(r'_+', '_', clean).strip('_')
+    return f"IPLC_{clean}" if clean else "IPLC"
+
+
 def _build_plan(nodes):
     plan = []
     for i, o in enumerate(nodes):
@@ -304,6 +315,8 @@ def _build_plan(nodes):
             suf = detect_suffix(tag, cc)
             sep = '_'
             country = COUNTRY_ZH.get(cc, '') if cc else ''
+
+        suf = normalize_iplc_suffix(suf, tag)
 
         plan.append({
             'i': i,

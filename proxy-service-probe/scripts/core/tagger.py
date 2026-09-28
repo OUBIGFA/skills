@@ -67,10 +67,10 @@ def parse_canonical_node(name):
 def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
                      is_high_quality=False, is_key=False, is_fast=False,
                      is_landing=False, is_usai=False, media_details=None,
-                     is_chromego=False, poison_tag=None, city=""):
+                     is_chromego=False, poison_tag=None, city="", is_iplc=False):
     """
     构造符合规范的节点名称:
-    [国旗] [✨️] [❇️] [♥️] [Key/Fast] [国家][_城市]_[编号][落地后缀][流媒体后缀][来源后缀]
+    [国旗] [✨️] [❇️] [♥️] [Key/Fast] [国家][_城市]_[编号][IPLC后缀][落地后缀][流媒体后缀][来源后缀][污染标记]
     """
     if poison_tag:
         ai_supported = comprehensive_sparkle = is_usai = is_high_quality = False
@@ -93,7 +93,9 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
     # 2. 基础名称与编号
     country_part = f"{prefix_tags}{cname}{f'_{city}' if city else ''}_{slot}"
 
-    # 3. 后置后缀组合: 落地 (_USAI / _Lnd) -> 流媒体 (_NF / _D+) -> 来源
+    # 3. 后置后缀组合: IPLC (_IPLC) -> 落地 (_USAI / _Lnd) -> 流媒体 (_NF / _D+) -> 来源 (_ChromeGo) -> 污染标记
+    iplc_suffix = "_IPLC" if is_iplc else ""
+
     lnd_suffix = ""
     if is_landing:
         lnd_suffix = "_USAI" if is_usai else "_Lnd"
@@ -107,7 +109,7 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
 
     cg_suffix = "_ChromeGo" if is_chromego else ""
 
-    return f"{flag} {country_part}{lnd_suffix}{media_suffix}{cg_suffix}{poison_tag or ''}"
+    return f"{flag} {country_part}{iplc_suffix}{lnd_suffix}{media_suffix}{cg_suffix}{poison_tag or ''}"
 
 
 def _orig_name(r):
@@ -218,6 +220,22 @@ def tag_and_rename_nodes(results, resort=False):
             if orig_has_dp:
                 media_details["dp"] = True
 
+        raw = r.get("raw_node") if isinstance(r.get("raw_node"), dict) else {}
+        raw_name = raw.get("tag") or raw.get("name") or raw.get("_orig_name") or ""
+
+        # IPLC 专线识别：测试节点中有 IPLC/专线 标识的保留 IPLC 后缀，排在所有后缀第一位
+        is_iplc = bool(
+            r.get("is_iplc")
+            or p.get("_is_iplc")
+            or raw.get("_is_iplc")
+            or re.search(r'(?i)iplc|专线', orig)
+            or re.search(r'(?i)iplc|专线', pname)
+            or re.search(r'(?i)iplc|专线', raw_name)
+            or re.search(r'(?i)iplc|专线', r.get("name") or "")
+            or re.search(r'(?i)iplc|专线', r.get("tag") or "")
+        )
+        r["is_iplc"] = is_iplc
+
         new_name = format_node_name(
             cc=cc,
             slot=slot,
@@ -231,7 +249,8 @@ def tag_and_rename_nodes(results, resort=False):
             media_details=media_details,
             is_chromego=is_cg,
             poison_tag=poison_tag,
-            city=city
+            city=city,
+            is_iplc=is_iplc
         )
 
         # 杜绝任何同名碰撞
@@ -250,7 +269,8 @@ def tag_and_rename_nodes(results, resort=False):
                 media_details=media_details,
                 is_chromego=is_cg,
                 poison_tag=poison_tag,
-                city=city
+                city=city,
+                is_iplc=is_iplc
             )
             r["assigned_slot"] = extra_slot
 
@@ -259,13 +279,17 @@ def tag_and_rename_nodes(results, resort=False):
             p["name"] = new_name
             p["_is_key"] = is_key
             p["_is_fast"] = is_fast
+            p["_is_iplc"] = is_iplc
             p["_key_score"] = r.get("key_score", 0.0)
             p["_ip_reputation"] = r.get("ip_reputation")
+        if "raw_node" in r and isinstance(r["raw_node"], dict):
+            r["raw_node"]["_is_iplc"] = is_iplc
 
         r["final_name"] = new_name
         r["slot"] = r["assigned_slot"]
         r["is_key"] = is_key
         r["is_fast"] = is_fast
+        r["is_iplc"] = is_iplc
         r["comprehensive_sparkle"] = sparkle
         r["is_high_quality"] = is_hq
         r["is_usai"] = is_usai

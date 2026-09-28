@@ -466,7 +466,12 @@ def load_proxies(source):
     if isinstance(source, str):
         source = source.strip()
         s_lower = source.lower()
-        if (s_lower in ("fofa", "quake", "spatial") or
+        if s_lower == "gist" or s_lower.startswith("gist:"):
+            from core.gist import search_and_fetch_gist_proxies
+            query_or_preset = source[5:].strip() or None if s_lower.startswith("gist:") else None
+            proxies, _ = search_and_fetch_gist_proxies(query_or_preset=query_or_preset)
+            return proxies
+        elif (s_lower in ("fofa", "quake", "spatial") or
                 s_lower.startswith(("fofa:", "quake:", "spatial:"))):
             from core.fofa import search_and_fetch_proxies
             if s_lower.startswith("quake:"):
