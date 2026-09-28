@@ -151,7 +151,7 @@ def _is_key(p):
     return p.get("_is_key") is True or "Key" in name
 
 
-def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential=False):
+def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential=None):
     """根据目标编号重构节点名称（保留已有能力徽章、前缀与后缀，且 IPLC 后缀排在第一梯队，家宽统一使用 🏠 前缀徽章）。"""
     flag_match = re.search(r'^([\U0001F1E6-\U0001F1FF]{2}|🏳️|\U0001F3F3\uFE0F?)\s*', old_name)
     flag = flag_match.group(0) if flag_match else ""
@@ -161,7 +161,16 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
     ai = bool("❇️" in rest or "❇" in rest)
     is_polluted = bool("_⚠️" in rest)
     hq = bool(is_hq and not is_polluted)
-    has_res = bool(is_residential or "🏠" in rest or re.search(r'(?i)家宽|双isp|住宅|residential', old_name))
+    # 规则升级：符合 ♥️ 标准的家宽节点获得 🏠，且与 ♥️ 互斥（避免两者并存，更简洁）
+    res_candidate = bool("🏠" in rest or re.search(r'(?i)家宽|双isp|住宅|residential', old_name))
+    if is_residential is True:
+        has_res = True
+    elif is_residential is False:
+        has_res = False
+    else:
+        # 未显式指定时的保底（如单测或文本转换）
+        has_res = res_candidate
+
     key = bool(re.search(r'(?i)\bkey(?![a-z])', rest))
     fast = bool(re.search(r'(?i)\bfast(?![a-z])', rest))
     has_iplc = bool(is_iplc or re.search(r'(?i)iplc|专线', old_name))
@@ -171,10 +180,10 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
         prefix += "✨️"
     if ai:
         prefix += "❇️"
-    if hq:
-        prefix += "♥️"
     if has_res:
         prefix += "🏠"
+    elif hq:
+        prefix += "♥️"
     if key:
         prefix += "Key"
     elif fast:
@@ -273,14 +282,28 @@ def sort_nodes_by_region_and_landing(items, resort=False):
 
     def _is_res(item, name):
         if isinstance(item, dict):
+            # 1. 显式布尔值优先
             if item.get("is_residential") is True or item.get("_is_residential") is True:
                 return True
+            if item.get("is_residential") is False or item.get("_is_residential") is False:
+                return False
             p = item.get("proxy")
-            if isinstance(p, dict) and (p.get("_is_residential") is True or p.get("is_residential") is True):
-                return True
+            if isinstance(p, dict):
+                if p.get("_is_residential") is True or p.get("is_residential") is True:
+                    return True
+                if p.get("_is_residential") is False or p.get("is_residential") is False:
+                    return False
             raw = item.get("raw_node")
-            if isinstance(raw, dict) and (raw.get("_is_residential") is True or raw.get("is_residential") is True):
-                return True
+            if isinstance(raw, dict):
+                if raw.get("_is_residential") is True or raw.get("is_residential") is True:
+                    return True
+                if raw.get("_is_residential") is False or raw.get("is_residential") is False:
+                    return False
+            # 2. 检查是否有信誉观测：若有实测且未达标 (<80)，严禁判定为家宽 🏠
+            rep = _reputation(item)
+            sc = valid_reputation_score(rep.get("score"))
+            if rep.get("status") == "observed" and sc is not None and sc < 80:
+                return False
             orig = (item.get("_orig_name") or item.get("orig_name") or
                     (p.get("_orig_name") or p.get("orig_name") if isinstance(p, dict) else "") or
                     (raw.get("_orig_name") or raw.get("orig_name") if isinstance(raw, dict) else ""))

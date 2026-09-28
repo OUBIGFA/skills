@@ -261,6 +261,60 @@ class TestProxyServiceProbe(unittest.TestCase):
         res_node = next(r for r in batch if "🏠" in r["final_name"])
         self.assertNotIn("_Lnd", res_node["final_name"])
 
+    def test_residential_hq_exclusivity_and_requirement(self):
+        # 1. format_node_name: 🏠 与 ♥️ 严格互斥，家宽满足高质量时仅显示 🏠，避免两者并存
+        n_res_hq = format_node_name(cc="TW", slot=1, is_residential=True, is_high_quality=True)
+        self.assertEqual(n_res_hq, "🇹🇼 🏠台湾_1")
+        self.assertNotIn("♥️", n_res_hq)
+
+        n_norm_hq = format_node_name(cc="TW", slot=2, is_residential=False, is_high_quality=True)
+        self.assertEqual(n_norm_hq, "🇹🇼 ♥️台湾_2")
+        self.assertNotIn("🏠", n_norm_hq)
+
+        # 2. tag_and_rename_nodes 深度实测：
+        # - 家宽且信誉 >= 80 -> 获得 🏠（且不带 ♥️）
+        # - 家宽但信誉 < 80  -> 剥离 🏠，也不得 ♥️（降级为普通无标节点）
+        # - 机房且信誉 >= 80 -> 获得 ♥️（不带 🏠）
+        # - 机房且信誉 < 80  -> 无 ♥️ 无 🏠
+        batch = [
+            {
+                "proxy": {"name": "优质家宽节点", "type": "vless", "server": "1.1.1.1", "port": 443},
+                "cc": "TW", "is_residential": True,
+                "ip_reputation": {"score": 88, "status": "observed"}
+            },
+            {
+                "proxy": {"name": "低分家宽节点", "type": "vless", "server": "2.2.2.2", "port": 443},
+                "cc": "TW", "is_residential": True,
+                "ip_reputation": {"score": 45, "status": "observed"}
+            },
+            {
+                "proxy": {"name": "优质机房节点", "type": "vless", "server": "3.3.3.3", "port": 443},
+                "cc": "TW", "is_residential": False,
+                "ip_reputation": {"score": 92, "status": "observed"}
+            },
+            {
+                "proxy": {"name": "普通机房节点", "type": "vless", "server": "4.4.4.4", "port": 443},
+                "cc": "TW", "is_residential": False,
+                "ip_reputation": {"score": 30, "status": "observed"}
+            },
+        ]
+        tag_and_rename_nodes(batch, resort=True)
+        res_map = {r["proxy"]["server"]: r["final_name"] for r in batch}
+        # 优质家宽 -> 🏠台湾_x (带 🏠, 不带 ♥️)
+        self.assertIn("🏠", res_map["1.1.1.1"])
+        self.assertNotIn("♥️", res_map["1.1.1.1"])
+        # 低分家宽 -> 剥离 🏠，无 🏠 无 ♥️
+        self.assertNotIn("🏠", res_map["2.2.2.2"])
+        self.assertNotIn("♥️", res_map["2.2.2.2"])
+        # 优质机房 -> 带 ♥️, 无 🏠
+        self.assertIn("♥️", res_map["3.3.3.3"])
+        self.assertNotIn("🏠", res_map["3.3.3.3"])
+        # 普通机房 -> 无 🏠 无 ♥️
+        self.assertNotIn("🏠", res_map["4.4.4.4"])
+        self.assertNotIn("♥️", res_map["4.4.4.4"])
+        # 排序顺位: 优质家宽享有线路优先 (line_prio=0)，排在普通机房之前
+        self.assertEqual(res_map["1.1.1.1"], "🇹🇼 🏠台湾_1")
+
     def test_reputation_orders_same_country_same_capability(self):
         def row(name, score):
             return {
