@@ -432,7 +432,8 @@ def build_proxy_groups(proxies, front_fallback=None):
     3. 落地节点：所有落地节点默认绑定 dialer-proxy: 🛡️ Front前置。
     """
     all_names = [(p.get("name") or p.get("tag")) for p in proxies if (p.get("name") or p.get("tag"))]
-    landing = [(p.get("name") or p.get("tag")) for p in proxies if _is_landing(p)]
+    # 落地节点专属组归集所有落地节点 (_Lnd / _USAI) 以及带有 🏠 徽章的家宽/双ISP节点
+    landing = [(p.get("name") or p.get("tag")) for p in proxies if (_is_landing(p) or "🏠" in (p.get("name") or p.get("tag") or ""))]
     directs = [(p.get("name") or p.get("tag")) for p in proxies if not _is_landing(p)]
 
     # 遴选 Key 前置跳板节点 (按评分排序，落地绝不进入)

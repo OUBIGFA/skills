@@ -63,7 +63,7 @@ def is_landing_role(proxy):
         proxy.get("_is_landing") or
         "_Lnd" in name or
         "_USAI" in name or
-        "_家宽" in name or
+        "🏠" in name or
         proxy.get("dialer-proxy")
     )
 
