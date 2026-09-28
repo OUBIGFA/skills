@@ -5,7 +5,12 @@
   "proxy": "http://127.0.0.1:3067",
   "timeout": 12,
   "default_query": [
-    "filename:yaml proxies",
-    "filename:txt \"subscribe?token=\""
+    "filename:yaml \"ISP\" proxies",
+    "filename:yaml \"Hinet\" proxies",
+    "filename:yaml \"HKT\" proxies",
+    "filename:yaml \"家宽\" proxies",
+    "filename:yaml \"住宅\" proxies",
+    "filename:txt \"subscribe?token=\" \"ISP\"",
+    "filename:txt \"subscribe?token=\" \"Hinet\""
   ]
 }

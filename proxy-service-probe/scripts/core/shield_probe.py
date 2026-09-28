@@ -11,14 +11,16 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like 
 SHIELD_TARGETS = [
     {"name": "cloudflare", "url": "https://www.cloudflare.com/", "markers": ("cloudflare",)},
     {"name": "chatgpt", "url": "https://chatgpt.com/", "markers": ("chatgpt",)},
-    {"name": "claude", "url": "https://www.anthropic.com/", "markers": ("anthropic", "claude")},
+    {"name": "anthropic", "url": "https://www.anthropic.com/", "markers": ("anthropic", "claude")},
     {"name": "gemini", "url": "https://gemini.google.com/", "markers": ("gemini",)},
+    {"name": "claude", "url": "https://claude.ai/", "markers": ("claude", "anthropic")},
 ]
 SHIELD_MIN_PASSED = 2
 
 CHALLENGE_MARKERS = (
     "just a moment", "checking your browser", "verify you are human", "verify that you are human",
     "performing security verification", "cf-chl-", "checking if the site connection is secure",
+    "challenges.cloudflare.com", "turnstile",
     "请验证您是真人", "正在验证您是否是真人", "请完成安全验证",
 )
 
@@ -133,10 +135,24 @@ def probe_sites_browser(proxy_url, targets=None):
 def shield_passed(results):
     """
     免盾判定标准 (若有浏览器观测则以浏览器为准，否则以 HTTP 为准):
-    4 站中至少 SHIELD_MIN_PASSED 站直接通过或质询自动解除即判定免盾；
+    必须同时满足:
+    1. https://claude.ai/ (claude) 站过盾 (passed 或 auto_passed)；
+    2. 其他四站 (cloudflare, chatgpt, anthropic, gemini) 中至少有一站过盾 (passed 或 auto_passed)。
     未观测 (unknown)、阻断或质询未解除的站点不计入通过数。
     """
     if not results:
         return False
-    rows = [results.get(t["name"]) or {} for t in SHIELD_TARGETS]
-    return sum(item.get("status") in ("passed", "auto_passed") for item in rows) >= SHIELD_MIN_PASSED
+
+    def _passed(item):
+        if isinstance(item, dict):
+            return item.get("status") in ("passed", "auto_passed")
+        if isinstance(item, str):
+            return item in ("passed", "auto_passed")
+        return False
+
+    claude_res = results.get("claude") or results.get("claude_ai")
+    if not _passed(claude_res):
+        return False
+
+    other_names = [t["name"] for t in SHIELD_TARGETS if t["name"] not in ("claude", "claude_ai")]
+    return any(_passed(results.get(name)) for name in other_names)

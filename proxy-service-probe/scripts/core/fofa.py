@@ -56,21 +56,25 @@ t4HRyaBPCQQsIoErdChZj8g7DdxWheuiKoN4gbfK4W1APCcuhUA=
 
 # 预设经实测验证的高活性订阅搜索语法
 PRESET_QUERIES = {
-    # 推荐主力：工业级反代 + 动态订阅计量特征 (实测存活率最高，不写死日期)
+    # 官方优先主力：家宽/双ISP/高纯净度过盾优质订阅 (优先检索 Hinet/HKT/双ISP/住宅/商业计费特征)
+    "residential": '(server="nginx" || server="caddy" || server="cloudflare" || server="openresty") && header="subscription-userinfo" && body="proxies:" && body!="<html" && (body="家宽" || body="住宅" || body="双ISP" || body="Hinet" || body="HKT" || body="ISP")',
+    "isp": '(server="nginx" || server="caddy" || server="cloudflare" || server="openresty") && header="subscription-userinfo" && body="proxies:" && body!="<html" && (body="家宽" || body="住宅" || body="双ISP" || body="Hinet" || body="HKT" || body="ISP")',
+    "home": '(server="nginx" || server="caddy" || server="cloudflare" || server="openresty") && header="subscription-userinfo" && body="proxies:" && body!="<html" && (body="家宽" || body="住宅" || body="双ISP" || body="Hinet" || body="HKT" || body="ISP")',
+    # 方案二：工业级反代 + 动态订阅计量特征 (实测存活率高，不写死日期)
     "recommended": '(server="nginx" || server="caddy" || server="cloudflare" || server="openresty") && header="subscription-userinfo" && body="proxies:" && body!="<html"',
-    # 方案二：动态计费特征 + 协议断言 (长期托管订阅源)
+    # 方案三：动态计费特征 + 协议断言 (长期托管订阅源)
     "billing": '(header="upload=" && header="download=" && header="total=") && body="proxies:" && body!="<html"',
-    # 方案三：VLESS / Reality 节点专项订阅
+    # 方案四：VLESS / Reality 节点专项订阅
     "vless": 'body="proxies:" && body="type: vless" && status_code="200" && body!="<html"',
-    # 方案四：Hysteria 2 极速节点专项订阅
+    # 方案五：Hysteria 2 极速节点专项订阅
     "hy2": 'body="type: hysteria2" && body="server" && status_code="200" && body!="<html"',
-    # 方案五：通用 subscription-userinfo 动态流量池
+    # 方案六：通用 subscription-userinfo 动态流量池
     "sub_userinfo": 'header="subscription-userinfo" && status_code="200"',
-    # 方案六：多协议综合型搜索
+    # 方案七：多协议综合型搜索
     "comprehensive": 'status_code="200" && body!="<html" && (body="proxies:" || body="\\"outbounds\\":" || (header="text/plain" && (body="dm1lc3M6" || body="c3M6Ly" || body="dHJvamFuOi")))'
 }
 
-DEFAULT_PRESET = "recommended"
+DEFAULT_PRESET = "residential"
 DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 SUBSCRIPTION_UA = "ClashforWindows/0.20.39"
 

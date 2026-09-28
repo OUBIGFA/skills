@@ -73,12 +73,14 @@ class TestGistSearchBasics(unittest.TestCase):
             self.assertEqual(cfg["timeout"], 9)
 
     def test_resolve_gist_query(self):
+        self.assertEqual(DEFAULT_GIST_PRESET, "residential")
+        self.assertEqual(resolve_gist_query("residential"), PRESET_GIST_QUERIES["residential"])
         self.assertEqual(resolve_gist_query("recommended"), PRESET_GIST_QUERIES["recommended"])
         self.assertEqual(resolve_gist_query("subs"), PRESET_GIST_QUERIES["subs"])
         self.assertEqual(resolve_gist_query("hy2"), PRESET_GIST_QUERIES["hy2"])
         custom = 'filename:yaml "my-secret-proxy"'
         self.assertEqual(resolve_gist_query(custom), custom)
-        self.assertEqual(resolve_gist_query(None), PRESET_GIST_QUERIES[DEFAULT_GIST_PRESET])
+        self.assertEqual(resolve_gist_query(None), PRESET_GIST_QUERIES["residential"])
 
 
 class TestGistParsingAndFiltering(unittest.TestCase):
