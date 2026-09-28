@@ -78,16 +78,17 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
     flag = flag_emoji(cc)
     cname = country_name_zh(cc)
 
-    # 1. 前置标识组合 (严格顺序: ✨️ -> ❇️ -> ♥️ -> 🏠 -> Key/Fast)
+    # 1. 前置标识组合 (严格顺序: ✨️ -> ❇️ -> ♥️ / 🏠 -> Key/Fast)
     prefix_tags = ""
     if comprehensive_sparkle:
         prefix_tags += "✨️"
     if ai_supported:
         prefix_tags += "❇️"
-    if is_high_quality:
-        prefix_tags += "♥️"
+    # 规则升级：符合 ♥️ 标准的家宽节点获得 🏠（🏠 与 ♥️ 互斥，家宽获得 🏠 即代表符合高纯净度，避免两者并存，更简洁）
     if is_residential:
         prefix_tags += "🏠"
+    elif is_high_quality:
+        prefix_tags += "♥️"
     if is_key:
         prefix_tags += "Key"
     elif is_fast:
@@ -251,9 +252,27 @@ def tag_and_rename_nodes(results, resort=False):
         )
         r["is_iplc"] = is_iplc
 
-        # 家宽 / 双ISP 识别：测试节点中有 家宽/双ISP/住宅/🏠 标识或真实住宅IP检测达标的打上 🏠 前缀徽章
-        is_res = bool(
-            r.get("is_residential")
+        # 家宽 / 双ISP 候选识别：全面支持网络层出口 IP 属性 (Net.Coffee / ISP / ASN) 与节点名称 / 属性
+        ip_info = r.get("ip_info") or p.get("_ip_info") or {}
+        ip_flags = ip_info.get("flags") or {}
+        isp_text = f"{ip_info.get('isp', '')} {ip_info.get('asn', '')}".lower()
+        for entry in (r.get("ip_info_by_ip") or {}).values():
+            if isinstance(entry, dict):
+                flags = entry.get("flags") or {}
+                if flags.get("residential") is True:
+                    ip_flags["residential"] = True
+                isp_text += f" {entry.get('isp', '')} {entry.get('asn', '')}".lower()
+
+        is_known_res_isp = any(k in isp_text for k in [
+            'hinet', 'chunghwa', 'hkt', 'pccw', 'hkbn', 'home broadband',
+            'broadband', 'telecom', 'turing', 'comcast', 'at&t', 'spectrum',
+            'charter', 'verizon', 'bigleaf', 'residential'
+        ])
+
+        is_res_cand = bool(
+            ip_flags.get("residential") is True
+            or (is_known_res_isp and ip_flags.get("datacenter") is False)
+            or r.get("is_residential")
             or p.get("is_residential")
             or p.get("_is_residential")
             or raw.get("is_residential")
@@ -269,6 +288,13 @@ def tag_and_rename_nodes(results, resort=False):
             or re.search(r'(?i)家宽|双isp|住宅|residential', r.get("name") or "")
             or re.search(r'(?i)家宽|双isp|住宅|residential', r.get("tag") or "")
         )
+
+        # 核心准则升级：只有符合 ♥️ 标准（is_hq=True）的家宽节点才能获得 🏠 徽章
+        # 若已有信誉实测数据或明确质量结论，必须满足 is_hq；若无实测数据(离线/单元测试兼容)且显式指定了 is_residential，且无污染，则沿用
+        if rep.get("status") == "observed" or "is_high_quality" in r or "ip_reputation" in r:
+            is_res = bool(is_res_cand and is_hq)
+        else:
+            is_res = bool(is_res_cand and (is_hq or r.get("is_residential") or p.get("is_residential") or "🏠" in orig or "🏠" in pname))
         r["is_residential"] = is_res
 
         # 清除残留于城市/自定义段的原节点家宽名称（不再保留如 HiNet家宽, 双ISP家宽, Seller双ISP 等中缀）
