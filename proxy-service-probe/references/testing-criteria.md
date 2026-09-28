@@ -109,7 +109,7 @@
   - **HTTP 初查**：使用 Chrome 140 仿真头请求各目标，快速分类 `passed`、`challenge`、`blocked`。
   - **浏览器复核**：针对重点节点或全量节点，在 Playwright Chromium 中加载页面并等待最多 8 秒，验证质询是否能自动通过。
 - **免盾判定规则（`shield_passed`）**：
-  必须同时满足：**`https://claude.ai/` (`claude`) 站过盾（`passed` 或 `auto_passed`），且其他四站（`cloudflare`, `chatgpt`, `anthropic`, `gemini`）中至少有一站过盾（`passed` 或 `auto_passed`）**，才判定为“规定网站免盾”并具备授予 `✨️` 徽章的过盾资格；未观测（`unknown`）、阻断（`blocked`）与质询未解除（`challenge`）的站点不计入通过数。有浏览器观测的站点以浏览器结果为准，否则以 HTTP 结果为准。
+  必须满足：**核心盾标通过（Cloudflare 官网 或 Claude/Anthropic 官方体系直接通过或质询自动解除），且在全部 5 站（`cloudflare`, `chatgpt`, `anthropic`, `gemini`, `claude`）中至少有 2 站过盾（`passed` 或 `auto_passed`）**，才判定为“规定网站免盾”并具备授予 `✨️` 徽章的过盾资格；未观测（`unknown`）、阻断（`blocked`）与质询未解除（`challenge`）的站点不计入通过数。有浏览器观测的站点以浏览器结果为准，否则以 HTTP 结果为准。
 
 ---
 
