@@ -152,7 +152,7 @@ def _is_key(p):
 
 
 def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential=None, has_res_suffix=None):
-    """根据目标编号重构节点名称（保留已有能力徽章、前缀与后缀，且 IPLC 后缀排在第一梯队，家宽高分使用 🏠 前缀徽章，低分使用 _Res 后缀，若是专线则只保留专线）。"""
+    """根据目标编号重构节点名称（保留已有能力徽章、前缀与后缀，且 IPLC 后缀排在第一梯队，家宽高分使用 🏠 前缀徽章，低分使用 _ISP 后缀，若是专线则只保留专线）。"""
     flag_match = re.search(r'^([\U0001F1E6-\U0001F1FF]{2}|🏳️|\U0001F3F3\uFE0F?)\s*', old_name)
     flag = flag_match.group(0) if flag_match else ""
     rest = old_name[len(flag):]
@@ -162,7 +162,7 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
     is_polluted = bool("_⚠️" in rest)
     hq = bool(is_hq and not is_polluted)
     has_iplc = bool(is_iplc or re.search(r'(?i)iplc|专线', old_name))
-    res_candidate = bool("🏠" in rest or re.search(r'(?i)家宽|双isp|住宅|residential|\bres\b|_res', old_name))
+    res_candidate = bool("🏠" in rest or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', old_name))
 
     if is_residential is True:
         has_res = True
@@ -176,7 +176,7 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
         elif has_res_suffix is False:
             has_res_suf = False
         else:
-            has_res_suf = bool(re.search(r'(?i)_(?:res|家宽)(?=_|$)', old_name))
+            has_res_suf = bool(re.search(r'(?i)_(?:isp|res|家宽)(?=_|$)', old_name))
     else:
         # 未显式指定时的保底（如单测或纯文本转换）
         if has_res_suffix is True:
@@ -186,7 +186,7 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
             has_res = res_candidate
             has_res_suf = False
         else:
-            if re.search(r'(?i)_(?:res|家宽)(?=_|$)', old_name):
+            if re.search(r'(?i)_(?:isp|res|家宽)(?=_|$)', old_name):
                 has_res = False
                 has_res_suf = not has_iplc
             else:
@@ -221,11 +221,11 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
         clean_suffix = re.sub(r'(?:✨\uFE0F?|❇\uFE0F?|♥\uFE0F?|🏠\uFE0F?|\bKey\b|\bFast\b)', '', raw_suffix, flags=re.I).strip()
         clean_suffix = re.sub(r'(?i)(?:^|_)iplc(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'(?:^|_)专线\d*(?=_|$)', '', clean_suffix)
-        clean_suffix = re.sub(r'(?i)(?:^|_)(?:res|家宽)(?=_|$)', '', clean_suffix)
+        clean_suffix = re.sub(r'(?i)(?:^|_)(?:isp|res|家宽)(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)*(?:双isp|家宽|住宅|residential)+(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'_+', '_', clean_suffix).strip('_')
-        prefix_suf = "_IPLC" if has_iplc else ("_Res" if has_res_suf else "")
+        prefix_suf = "_IPLC" if has_iplc else ("_ISP" if has_res_suf else "")
         final_suf = f"{prefix_suf}_{clean_suffix}" if (prefix_suf and clean_suffix) else (prefix_suf or (f"_{clean_suffix}" if clean_suffix else ""))
         return f"{flag}{prefix}{country}_{slot}{final_suf}"
 
@@ -237,14 +237,14 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
         raw_suffix = m_old.group(3)
         clean_suffix = re.sub(r'(?i)(?:^|_)iplc(?=_|$)', '', raw_suffix)
         clean_suffix = re.sub(r'(?:^|_)专线\d*(?=_|$)', '', clean_suffix)
-        clean_suffix = re.sub(r'(?i)(?:^|_)(?:res|家宽)(?=_|$)', '', clean_suffix)
+        clean_suffix = re.sub(r'(?i)(?:^|_)(?:isp|res|家宽)(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)*(?:双isp|家宽|住宅|residential)+(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'_+', '_', clean_suffix).strip('_')
-        prefix_suf = "_IPLC" if has_iplc else ("_Res" if has_res_suf else "")
+        prefix_suf = "_IPLC" if has_iplc else ("_ISP" if has_res_suf else "")
         final_suf = f"{prefix_suf}_{clean_suffix}" if (prefix_suf and clean_suffix) else (prefix_suf or (f"_{clean_suffix}" if clean_suffix else ""))
         return f"{flag}{prefix}{country}_{slot}{final_suf}"
-    prefix_extra = "_IPLC" if (has_iplc and not re.search(r'(?i)_iplc', old_name)) else ("_Res" if (has_res_suf and not re.search(r'(?i)_(?:res|家宽)', old_name)) else "")
+    prefix_extra = "_IPLC" if (has_iplc and not re.search(r'(?i)_iplc', old_name)) else ("_ISP" if (has_res_suf and not re.search(r'(?i)_(?:isp|res|家宽)', old_name)) else "")
     res_prefix = "🏠" if (has_res and "🏠" not in old_name) else ""
     return f"{res_prefix}{old_name}_{slot}{prefix_extra}"
 
@@ -357,10 +357,10 @@ def sort_nodes_by_region_and_landing(items, resort=False):
             orig = (item.get("_orig_name") or item.get("orig_name") or
                     (p.get("_orig_name") or p.get("orig_name") if isinstance(p, dict) else "") or
                     (raw.get("_orig_name") or raw.get("orig_name") if isinstance(raw, dict) else ""))
-            is_cand = orig and ("🏠" in str(orig) or re.search(r'(?i)家宽|双isp|住宅|residential|\bres\b|_res', str(orig)))
+            is_cand = orig and ("🏠" in str(orig) or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', str(orig)))
             if is_cand and rep.get("status") == "observed" and sc is not None and sc < 80:
                 return True
-        return bool(re.search(r'(?i)_(?:res|家宽)(?=_|$)', name))
+        return bool(re.search(r'(?i)_(?:isp|res|家宽)(?=_|$)', name))
 
     def _reputation(item):
         if not isinstance(item, dict):
@@ -398,7 +398,7 @@ def sort_nodes_by_region_and_landing(items, resort=False):
         ai = 0 if ('❇️' in name or '❇' in name) else 1
         key = 0 if re.search(r'(?i)\bkey(?![a-z])', name) else 1
         fast = 0 if re.search(r'(?i)\bfast(?![a-z])', name) else 1
-        # 顺序权重跟专线节点一样: 专线 (_IPLC) 与 家宽 (🏠 及 _Res) 共享线路优先权 (line_prio = 0)
+        # 顺序权重跟专线节点一样: 专线 (_IPLC) 与 家宽 (🏠 及 _ISP) 共享线路优先权 (line_prio = 0)
         line_prio = 0 if (_is_iplc(item, name) or _is_res(item, name) or _has_res_suffix(item, name)) else 1
         is_polluted = 1 if ('_⚠️' in name) else 0
         reputation = _reputation(item)
@@ -519,8 +519,8 @@ def build_proxy_groups(proxies, front_fallback=None):
     3. 落地节点：所有落地节点默认绑定 dialer-proxy: 🛡️ Front前置。
     """
     all_names = [(p.get("name") or p.get("tag")) for p in proxies if (p.get("name") or p.get("tag"))]
-    # 落地节点专属组归集所有落地节点 (_Lnd / _USAI) 以及所有家宽节点（带有 🏠 徽章或带有 _Res 后缀）
-    landing = [(p.get("name") or p.get("tag")) for p in proxies if (_is_landing(p) or "🏠" in (p.get("name") or p.get("tag") or "") or re.search(r'(?i)_(?:res|家宽)(?=_|$)', (p.get("name") or p.get("tag") or "")))]
+    # 落地节点专属组归集所有落地节点 (_Lnd / _USAI) 以及所有家宽节点（带有 🏠 徽章或带有 _ISP 后缀）
+    landing = [(p.get("name") or p.get("tag")) for p in proxies if (_is_landing(p) or "🏠" in (p.get("name") or p.get("tag") or "") or re.search(r'(?i)_(?:isp|res|家宽)(?=_|$)', (p.get("name") or p.get("tag") or "")))]
     directs = [(p.get("name") or p.get("tag")) for p in proxies if not _is_landing(p)]
 
     # 遴选 Key 前置跳板节点 (按评分排序，落地绝不进入)

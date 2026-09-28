@@ -71,7 +71,7 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
                      is_residential=False, has_res_suffix=False):
     """
     构造符合规范的节点名称:
-    [国旗] [✨️] [❇️] [♥️ / 🏠] [Key/Fast] [国家][_城市]_[编号][IPLC/Res后缀][落地后缀][流媒体后缀][来源后缀][污染标记]
+    [国旗] [✨️] [❇️] [♥️ / 🏠] [Key/Fast] [国家][_城市]_[编号][IPLC/ISP后缀][落地后缀][流媒体后缀][来源后缀][污染标记]
     """
     if poison_tag:
         ai_supported = comprehensive_sparkle = is_usai = is_high_quality = False
@@ -97,12 +97,12 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
     # 2. 基础名称与编号
     country_part = f"{prefix_tags}{cname}{f'_{city}' if city else ''}_{slot}"
 
-    # 3. 后置后缀组合: 线路后缀 (IPLC / Res) -> 落地 (_USAI / _Lnd) -> 流媒体 (_NF / _D+) -> 来源 (_ChromeGo) -> 污染标记
-    # 规则：又是家宽又是专线的则只保留专线 (_IPLC)；低分家宽加上英文缩写 _Res 后缀（不出现中文）
+    # 3. 后置后缀组合: 线路后缀 (IPLC / ISP) -> 落地 (_USAI / _Lnd) -> 流媒体 (_NF / _D+) -> 来源 (_ChromeGo) -> 污染标记
+    # 规则：又是家宽又是专线的则只保留专线 (_IPLC)；低分家宽加上英文缩写 _ISP 后缀（不出现中文）
     if is_iplc:
         line_suffix = "_IPLC"
     elif has_res_suffix:
-        line_suffix = "_Res"
+        line_suffix = "_ISP"
     else:
         line_suffix = ""
 
@@ -283,11 +283,11 @@ def tag_and_rename_nodes(results, resort=False):
             or "🏠" in raw_name
             or "🏠" in (r.get("name") or "")
             or "🏠" in (r.get("tag") or "")
-            or re.search(r'(?i)家宽|双isp|住宅|residential|\bres\b|_res', orig)
-            or re.search(r'(?i)家宽|双isp|住宅|residential|\bres\b|_res', pname)
-            or re.search(r'(?i)家宽|双isp|住宅|residential|\bres\b|_res', raw_name)
-            or re.search(r'(?i)家宽|双isp|住宅|residential|\bres\b|_res', r.get("name") or "")
-            or re.search(r'(?i)家宽|双isp|住宅|residential|\bres\b|_res', r.get("tag") or "")
+            or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', orig)
+            or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', pname)
+            or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', raw_name)
+            or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', r.get("name") or "")
+            or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', r.get("tag") or "")
         )
 
         # 核心准则升级：
@@ -297,7 +297,7 @@ def tag_and_rename_nodes(results, resort=False):
         else:
             is_res_hq = bool(is_res_cand and (is_hq or r.get("is_residential") or p.get("is_residential") or "🏠" in orig or "🏠" in pname))
 
-        # 2. 分数低于 80 但又是家宽节点的，加上英文缩写家宽后缀 (_Res，不出现任何中文)；又是家宽又是专线的则只保留专线 (_IPLC)
+        # 2. 分数低于 80 但又是家宽节点的，加上英文缩写家宽后缀 (_ISP，不出现任何中文)；又是家宽又是专线的则只保留专线 (_IPLC)
         has_res_suf = bool(is_res_cand and not is_res_hq and not is_iplc)
         r["is_residential"] = is_res_hq
         r["has_res_suffix"] = has_res_suf
