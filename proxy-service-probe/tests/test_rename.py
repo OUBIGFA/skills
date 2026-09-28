@@ -80,6 +80,14 @@ class RenameTests(unittest.TestCase):
         self.assertEqual(normalize_iplc_suffix('USAI_NF', '🇺🇸 美国IPLC专线01'), 'IPLC_USAI_NF')
         self.assertEqual(normalize_iplc_suffix('NF', '🇯🇵 日本_1_NF'), 'NF')
 
+    def test_strip_res_suffix(self):
+        from sort_nodes import strip_res_suffix
+        self.assertEqual(strip_res_suffix('NF_家宽'), 'NF')
+        self.assertEqual(strip_res_suffix('HiNet家宽'), '')
+        self.assertEqual(strip_res_suffix('IPLC_双ISP家宽_NF'), 'IPLC_NF')
+        self.assertEqual(strip_res_suffix('Seller双ISP_D+'), 'D+')
+        self.assertEqual(strip_res_suffix('NF'), 'NF')
+
 
 if __name__ == '__main__':
     unittest.main()

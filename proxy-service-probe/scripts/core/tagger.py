@@ -28,7 +28,7 @@ def parse_existing_slot(name):
         return None
     # 去除国旗与前缀标签
     cleaned = re.sub(r'^(?:(?:[\U0001F1E6-\U0001F1FF]{2}|🏳️|\S+)\s*)', '', name.strip())
-    cleaned = re.sub(r'^(?:[❇✨♥️♥]️?|\s+|Key|Fast)+', '', cleaned)
+    cleaned = re.sub(r'^(?:[❇✨♥️♥🏠]️?|\s+|Key|Fast)+', '', cleaned)
     m = re.search(r'_(?:[A-Za-z]+_)?(\d+)(?:_|$)', cleaned)
     if not m:
         m = re.search(r'_(\d+)', cleaned)
@@ -36,7 +36,7 @@ def parse_existing_slot(name):
 
 
 _FLAG_RE = re.compile(r'^([\U0001F1E6-\U0001F1FF]{2}|🏳️?)\s*')
-_BADGES_RE = re.compile(r'^(?:[✨❇♥]️?|Key|Fast)*')
+_BADGES_RE = re.compile(r'^(?:[✨❇♥🏠]️?|Key|Fast)*')
 _CITY_SLOT_RE = re.compile(r'^(?:_([^_\d\s]+))?_(\d+)(?!\d)')
 
 
@@ -67,17 +67,18 @@ def parse_canonical_node(name):
 def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
                      is_high_quality=False, is_key=False, is_fast=False,
                      is_landing=False, is_usai=False, media_details=None,
-                     is_chromego=False, poison_tag=None, city="", is_iplc=False):
+                     is_chromego=False, poison_tag=None, city="", is_iplc=False,
+                     is_residential=False):
     """
     构造符合规范的节点名称:
-    [国旗] [✨️] [❇️] [♥️] [Key/Fast] [国家][_城市]_[编号][IPLC后缀][落地后缀][流媒体后缀][来源后缀][污染标记]
+    [国旗] [✨️] [❇️] [♥️] [🏠] [Key/Fast] [国家][_城市]_[编号][IPLC后缀][落地后缀][流媒体后缀][来源后缀][污染标记]
     """
     if poison_tag:
         ai_supported = comprehensive_sparkle = is_usai = is_high_quality = False
     flag = flag_emoji(cc)
     cname = country_name_zh(cc)
 
-    # 1. 前置标识组合 (严格顺序: ✨️ -> ❇️ -> ♥️ -> Key/Fast)
+    # 1. 前置标识组合 (严格顺序: ✨️ -> ❇️ -> ♥️ -> 🏠 -> Key/Fast)
     prefix_tags = ""
     if comprehensive_sparkle:
         prefix_tags += "✨️"
@@ -85,6 +86,8 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
         prefix_tags += "❇️"
     if is_high_quality:
         prefix_tags += "♥️"
+    if is_residential:
+        prefix_tags += "🏠"
     if is_key:
         prefix_tags += "Key"
     elif is_fast:
@@ -248,6 +251,31 @@ def tag_and_rename_nodes(results, resort=False):
         )
         r["is_iplc"] = is_iplc
 
+        # 家宽 / 双ISP 识别：测试节点中有 家宽/双ISP/住宅/🏠 标识或真实住宅IP检测达标的打上 🏠 前缀徽章
+        is_res = bool(
+            r.get("is_residential")
+            or p.get("is_residential")
+            or p.get("_is_residential")
+            or raw.get("is_residential")
+            or raw.get("_is_residential")
+            or "🏠" in orig
+            or "🏠" in pname
+            or "🏠" in raw_name
+            or "🏠" in (r.get("name") or "")
+            or "🏠" in (r.get("tag") or "")
+            or re.search(r'(?i)家宽|双isp|住宅|residential', orig)
+            or re.search(r'(?i)家宽|双isp|住宅|residential', pname)
+            or re.search(r'(?i)家宽|双isp|住宅|residential', raw_name)
+            or re.search(r'(?i)家宽|双isp|住宅|residential', r.get("name") or "")
+            or re.search(r'(?i)家宽|双isp|住宅|residential', r.get("tag") or "")
+        )
+        r["is_residential"] = is_res
+
+        # 清除残留于城市/自定义段的原节点家宽名称（不再保留如 HiNet家宽, 双ISP家宽, Seller双ISP 等中缀）
+        if city:
+            city = re.sub(r'(?i)(?:^|_)?(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)*(?:双isp|家宽|住宅|residential)+(?=_|$)?', '', city).strip('_')
+            city = re.sub(r'(?i)(?:^|_)?(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)(?=_|$)', '', city).strip('_')
+
         new_name = format_node_name(
             cc=cc,
             slot=slot,
@@ -262,7 +290,8 @@ def tag_and_rename_nodes(results, resort=False):
             is_chromego=is_cg,
             poison_tag=poison_tag,
             city=city,
-            is_iplc=is_iplc
+            is_iplc=is_iplc,
+            is_residential=is_res
         )
 
         # 杜绝任何同名碰撞
@@ -282,7 +311,8 @@ def tag_and_rename_nodes(results, resort=False):
                 is_chromego=is_cg,
                 poison_tag=poison_tag,
                 city=city,
-                is_iplc=is_iplc
+                is_iplc=is_iplc,
+                is_residential=is_res
             )
             r["assigned_slot"] = extra_slot
 
@@ -292,16 +322,19 @@ def tag_and_rename_nodes(results, resort=False):
             p["_is_key"] = is_key
             p["_is_fast"] = is_fast
             p["_is_iplc"] = is_iplc
+            p["_is_residential"] = is_res
             p["_key_score"] = r.get("key_score", 0.0)
             p["_ip_reputation"] = r.get("ip_reputation")
         if "raw_node" in r and isinstance(r["raw_node"], dict):
             r["raw_node"]["_is_iplc"] = is_iplc
+            r["raw_node"]["_is_residential"] = is_res
 
         r["final_name"] = new_name
         r["slot"] = r["assigned_slot"]
         r["is_key"] = is_key
         r["is_fast"] = is_fast
         r["is_iplc"] = is_iplc
+        r["is_residential"] = is_res
         r["comprehensive_sparkle"] = sparkle
         r["is_high_quality"] = is_hq
         r["is_usai"] = is_usai
