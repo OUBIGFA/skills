@@ -12,34 +12,55 @@ SHIELD_TARGETS = [
     {"name": "cloudflare", "url": "https://www.cloudflare.com/", "markers": ("cloudflare",)},
     {"name": "chatgpt", "url": "https://chatgpt.com/", "markers": ("chatgpt",)},
     {"name": "anthropic", "url": "https://www.anthropic.com/", "markers": ("anthropic", "claude")},
-    {"name": "gemini", "url": "https://gemini.google.com/", "markers": ("gemini",)},
+    {"name": "gemini", "url": "https://gemini.google.com/", "markers": ("gemini", "google")},
     {"name": "claude", "url": "https://claude.ai/", "markers": ("claude", "anthropic")},
 ]
 SHIELD_MIN_PASSED = 2
 
 CHALLENGE_MARKERS = (
     "just a moment", "checking your browser", "verify you are human", "verify that you are human",
-    "performing security verification", "cf-chl-", "checking if the site connection is secure",
-    "challenges.cloudflare.com", "turnstile",
+    "performing security verification", "cf-chl-", "cf-browser-verification", "cf-challenge-",
+    "checking if the site connection is secure", "challenge-running", "challenge-stage",
+    "challenge-form", "cf_chl_opt",
     "请验证您是真人", "正在验证您是否是真人", "请完成安全验证",
 )
 
 
 def classify_http_response(status, headers, text, target):
-    """分类 HTTP 初查结果。"""
+    """分类 HTTP / 浏览器页面初查结果，准确区分真实拦截质询与正常业务页面。"""
     lower_headers = {k.lower(): v for k, v in headers.items()}
     lower_text = text.lower()
 
-    if lower_headers.get("cf-mitigated", "").lower() == "challenge" or any(m in lower_text for m in CHALLENGE_MARKERS):
-        return {"status": "challenge", "reason": "challenge_page"}
+    # 1. 显式 Cloudflare 质询响应头
+    if lower_headers.get("cf-mitigated", "").lower() == "challenge":
+        return {"status": "challenge", "reason": "cf_mitigated_header"}
+
+    # 2. 状态码阻断与质询
     if status in (403, 451):
+        if any(m in lower_text for m in CHALLENGE_MARKERS):
+            return {"status": "challenge", "reason": "challenge_page_403"}
         return {"status": "blocked", "reason": f"http_{status}"}
     if status == 429:
         return {"status": "unknown", "reason": "rate_limited"}
+    if status == 503 and any(m in lower_text for m in CHALLENGE_MARKERS):
+        return {"status": "challenge", "reason": "challenge_page_503"}
     if not (200 <= status < 300):
         return {"status": "unknown", "reason": f"http_{status}"}
+
+    # 3. 200 响应下的访问阻断
     if any(m in lower_text for m in ("access denied", "you have been blocked", "error code: 1020")):
         return {"status": "blocked", "reason": "access_denied_page"}
+
+    # 4. 200 响应下的硬性人机盾特征 (必须为真实拦截容器，避免正常网页包含介绍词被误判)
+    has_challenge = any(m in lower_text for m in (
+        "challenge-form", "challenge-stage", "challenge-running",
+        "<title>just a moment", "<title>attention required", "cf-browser-verification",
+        "checking if the site connection is secure"
+    ))
+    if has_challenge:
+        return {"status": "challenge", "reason": "challenge_page_200"}
+
+    # 5. 校验目标站标志性内容
     if not any(m in lower_text for m in target["markers"]):
         return {"status": "unknown", "reason": "unrecognized_page"}
 
@@ -135,10 +156,11 @@ def probe_sites_browser(proxy_url, targets=None):
 def shield_passed(results):
     """
     免盾判定标准 (若有浏览器观测则以浏览器为准，否则以 HTTP 为准):
-    必须同时满足:
-    1. https://claude.ai/ (claude) 站过盾 (passed 或 auto_passed)；
-    2. 其他四站 (cloudflare, chatgpt, anthropic, gemini) 中至少有一站过盾 (passed 或 auto_passed)。
-    未观测 (unknown)、阻断或质询未解除的站点不计入通过数。
+    免盾的核心是节点未被 Cloudflare WAF / 人机验证拦截，能够顺畅访问受保护的站点。
+    判定标准:
+    1. 核心目标通过: Cloudflare 官网 或 Claude/Anthropic 官方体系 (claude / anthropic) 至少一站直接通过或质询自动解除；
+    2. 且在全部 5 站 (cloudflare, anthropic, chatgpt, gemini, claude) 中，至少有 SHIELD_MIN_PASSED 站 (>=2) 通过。
+    未观测 (unknown)、阻断 (blocked) 或质询未解除 (challenge) 的站点不计入通过数。
     """
     if not results:
         return False
@@ -150,9 +172,13 @@ def shield_passed(results):
             return item in ("passed", "auto_passed")
         return False
 
-    claude_res = results.get("claude") or results.get("claude_ai")
-    if not _passed(claude_res):
+    cf_pass = _passed(results.get("cloudflare"))
+    claude_pass = _passed(results.get("claude")) or _passed(results.get("claude_ai")) or _passed(results.get("anthropic"))
+
+    # 核心盾标 (Cloudflare 或 Claude/Anthropic 官方体系) 必须有通过
+    if not (cf_pass or claude_pass):
         return False
 
-    other_names = [t["name"] for t in SHIELD_TARGETS if t["name"] not in ("claude", "claude_ai")]
-    return any(_passed(results.get(name)) for name in other_names)
+    # 且全部监控站点中至少 2 站通过
+    total_passed = sum(1 for t in SHIELD_TARGETS if _passed(results.get(t["name"])))
+    return total_passed >= SHIELD_MIN_PASSED

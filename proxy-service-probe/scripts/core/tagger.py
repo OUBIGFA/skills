@@ -68,10 +68,10 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
                      is_high_quality=False, is_key=False, is_fast=False,
                      is_landing=False, is_usai=False, media_details=None,
                      is_chromego=False, poison_tag=None, city="", is_iplc=False,
-                     is_residential=False):
+                     is_residential=False, has_res_suffix=False):
     """
     构造符合规范的节点名称:
-    [国旗] [✨️] [❇️] [♥️] [🏠] [Key/Fast] [国家][_城市]_[编号][IPLC后缀][落地后缀][流媒体后缀][来源后缀][污染标记]
+    [国旗] [✨️] [❇️] [♥️ / 🏠] [Key/Fast] [国家][_城市]_[编号][IPLC/家宽后缀][落地后缀][流媒体后缀][来源后缀][污染标记]
     """
     if poison_tag:
         ai_supported = comprehensive_sparkle = is_usai = is_high_quality = False
@@ -97,8 +97,14 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
     # 2. 基础名称与编号
     country_part = f"{prefix_tags}{cname}{f'_{city}' if city else ''}_{slot}"
 
-    # 3. 后置后缀组合: IPLC (_IPLC) -> 落地 (_USAI / _Lnd) -> 流媒体 (_NF / _D+) -> 来源 (_ChromeGo) -> 污染标记
-    iplc_suffix = "_IPLC" if is_iplc else ""
+    # 3. 后置后缀组合: 线路后缀 (IPLC / 家宽) -> 落地 (_USAI / _Lnd) -> 流媒体 (_NF / _D+) -> 来源 (_ChromeGo) -> 污染标记
+    # 规则：又是家宽又是专线的则只保留专线 (_IPLC)；低分家宽加上 _家宽 后缀
+    if is_iplc:
+        line_suffix = "_IPLC"
+    elif has_res_suffix:
+        line_suffix = "_家宽"
+    else:
+        line_suffix = ""
 
     lnd_suffix = ""
     if is_landing:
@@ -113,7 +119,7 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
 
     cg_suffix = "_ChromeGo" if is_chromego else ""
 
-    return f"{flag} {country_part}{iplc_suffix}{lnd_suffix}{media_suffix}{cg_suffix}{poison_tag or ''}"
+    return f"{flag} {country_part}{line_suffix}{lnd_suffix}{media_suffix}{cg_suffix}{poison_tag or ''}"
 
 
 def _orig_name(r):
@@ -179,20 +185,15 @@ def tag_and_rename_nodes(results, resort=False):
             groq_pass = bool(ai_sup)
 
         yt_pass = r.get("youtube_passed", False)
-        cf_pass = r.get("shield_passed", False)
+        if "shield_passed" in r and r["shield_passed"] is not None:
+            cf_pass = bool(r["shield_passed"])
+        elif r.get("shield_details") and isinstance(r["shield_details"], dict):
+            from .shield_probe import shield_passed
+            cf_pass = shield_passed(r["shield_details"])
+        else:
+            cf_pass = False
 
-        # 若观测详情中包含免盾目标，则二次严格核验: https://claude.ai 必须过盾 + 其他四站中至少一站过盾
-        if r.get("shield_details") and isinstance(r["shield_details"], dict):
-            sd = r["shield_details"]
-            def _sd_pass(val):
-                return val.get("status") in ("passed", "auto_passed") if isinstance(val, dict) else val in ("passed", "auto_passed")
-            if "claude" in sd and not _sd_pass(sd["claude"]):
-                cf_pass = False
-            other_keys = [k for k in sd.keys() if k not in ("claude", "claude_ai")]
-            if other_keys and not any(_sd_pass(sd[k]) for k in other_keys):
-                cf_pass = False
-
-        # 综合全通 ✨️: 必须同时满足 AI五大全通 + Groq解锁 + YouTube免登实播 + 免盾 (https://claude.ai 过盾 + 其他四站有一站过盾，只有解锁Groq才能给✨️)
+        # 综合全通 ✨️: 必须同时满足 AI五大全通 + Groq解锁 + YouTube免登实播 + 免盾达成
         if r.get("youtube_details") or r.get("shield_details"):
             sparkle = bool(ai_sup and groq_pass and yt_pass and cf_pass)
         elif "youtube_passed" in r and "shield_passed" in r and (yt_pass or cf_pass):
@@ -289,13 +290,18 @@ def tag_and_rename_nodes(results, resort=False):
             or re.search(r'(?i)家宽|双isp|住宅|residential', r.get("tag") or "")
         )
 
-        # 核心准则升级：只有符合 ♥️ 标准（is_hq=True）的家宽节点才能获得 🏠 徽章
-        # 若已有信誉实测数据或明确质量结论，必须满足 is_hq；若无实测数据(离线/单元测试兼容)且显式指定了 is_residential，且无污染，则沿用
+        # 核心准则升级：
+        # 1. 只有符合 ♥️ 标准（is_hq=True）的家宽节点才能获得 🏠 徽章
         if rep.get("status") == "observed" or "is_high_quality" in r or "ip_reputation" in r:
-            is_res = bool(is_res_cand and is_hq)
+            is_res_hq = bool(is_res_cand and is_hq)
         else:
-            is_res = bool(is_res_cand and (is_hq or r.get("is_residential") or p.get("is_residential") or "🏠" in orig or "🏠" in pname))
-        r["is_residential"] = is_res
+            is_res_hq = bool(is_res_cand and (is_hq or r.get("is_residential") or p.get("is_residential") or "🏠" in orig or "🏠" in pname))
+
+        # 2. 分数低于 80 但又是家宽节点的，加上家宽节点后缀 (_家宽)；又是家宽又是专线的则只保留专线 (_IPLC)
+        has_res_suf = bool(is_res_cand and not is_res_hq and not is_iplc)
+        r["is_residential"] = is_res_hq
+        r["has_res_suffix"] = has_res_suf
+        r["is_res_candidate"] = is_res_cand
 
         # 清除残留于城市/自定义段的原节点家宽名称（不再保留如 HiNet家宽, 双ISP家宽, Seller双ISP 等中缀）
         if city:
@@ -317,7 +323,8 @@ def tag_and_rename_nodes(results, resort=False):
             poison_tag=poison_tag,
             city=city,
             is_iplc=is_iplc,
-            is_residential=is_res
+            is_residential=is_res_hq,
+            has_res_suffix=has_res_suf
         )
 
         # 杜绝任何同名碰撞
@@ -338,29 +345,32 @@ def tag_and_rename_nodes(results, resort=False):
                 poison_tag=poison_tag,
                 city=city,
                 is_iplc=is_iplc,
-                is_residential=is_res
+                is_residential=is_res_hq,
+                has_res_suffix=has_res_suf
             )
             r["assigned_slot"] = extra_slot
 
-        seen_names.add(new_name)
         if "proxy" in r:
             p["name"] = new_name
             p["_is_key"] = is_key
             p["_is_fast"] = is_fast
             p["_is_iplc"] = is_iplc
-            p["_is_residential"] = is_res
+            p["_is_residential"] = is_res_hq
+            p["_has_res_suffix"] = has_res_suf
             p["_key_score"] = r.get("key_score", 0.0)
             p["_ip_reputation"] = r.get("ip_reputation")
         if "raw_node" in r and isinstance(r["raw_node"], dict):
             r["raw_node"]["_is_iplc"] = is_iplc
-            r["raw_node"]["_is_residential"] = is_res
+            r["raw_node"]["_is_residential"] = is_res_hq
+            r["raw_node"]["_has_res_suffix"] = has_res_suf
 
         r["final_name"] = new_name
         r["slot"] = r["assigned_slot"]
         r["is_key"] = is_key
         r["is_fast"] = is_fast
         r["is_iplc"] = is_iplc
-        r["is_residential"] = is_res
+        r["is_residential"] = is_res_hq
+        r["has_res_suffix"] = has_res_suf
         r["comprehensive_sparkle"] = sparkle
         r["is_high_quality"] = is_hq
         r["is_usai"] = is_usai

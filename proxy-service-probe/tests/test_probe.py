@@ -314,6 +314,37 @@ class TestProxyServiceProbe(unittest.TestCase):
         self.assertNotIn("♥️", res_map["4.4.4.4"])
         # 排序顺位: 优质家宽享有线路优先 (line_prio=0)，排在普通机房之前
         self.assertEqual(res_map["1.1.1.1"], "🇹🇼 🏠台湾_1")
+        # 低分家宽获得 _家宽 后缀，且享有线路优先 (line_prio=0)，排在优质机房 (line_prio=1) 之前
+        self.assertEqual(res_map["2.2.2.2"], "🇹🇼 台湾_2_家宽")
+        self.assertEqual(res_map["3.3.3.3"], "🇹🇼 ♥️台湾_3")
+        self.assertEqual(res_map["4.4.4.4"], "🇹🇼 台湾_4")
+
+    def test_low_score_residential_and_iplc_rules(self):
+        from core.renderer import build_proxy_groups, renumber_node_tag
+        # 1. 命名与冲突测试：又是家宽又是专线只保留专线
+        n_res_only = format_node_name(cc="US", slot=1, has_res_suffix=True)
+        self.assertEqual(n_res_only, "🇺🇸 美国_1_家宽")
+        n_conflict = format_node_name(cc="US", slot=2, is_iplc=True, has_res_suffix=True)
+        self.assertEqual(n_conflict, "🇺🇸 美国_2_IPLC")
+        self.assertNotIn("家宽", n_conflict)
+
+        # 2. renumber_node_tag 冲突与后缀测试
+        self.assertEqual(renumber_node_tag("🇺🇸 美国_1_家宽", 10, is_iplc=True), "🇺🇸 美国_10_IPLC")
+        self.assertEqual(renumber_node_tag("🇺🇸 美国_1_家宽", 10), "🇺🇸 美国_10_家宽")
+
+        # 3. 落地分组包含测试：🔒️ 落地节点 自动归集 🏠 和 _家宽
+        dummy_proxies = [
+            {"name": "🇺🇸 🏠美国_1", "type": "vless", "server": "1.1.1.1", "port": 443},
+            {"name": "🇺🇸 美国_2_家宽", "type": "vless", "server": "2.2.2.2", "port": 443},
+            {"name": "🇺🇸 美国_3_IPLC", "type": "vless", "server": "3.3.3.3", "port": 443},
+            {"name": "🇺🇸 美国_4_Lnd", "type": "vless", "server": "4.4.4.4", "port": 443},
+        ]
+        groups = build_proxy_groups(dummy_proxies)
+        landing_grp = next(g for g in groups if g["name"] == "🔒️ 落地节点")
+        self.assertIn("🇺🇸 🏠美国_1", landing_grp["proxies"])
+        self.assertIn("🇺🇸 美国_2_家宽", landing_grp["proxies"])
+        self.assertIn("🇺🇸 美国_4_Lnd", landing_grp["proxies"])
+        self.assertNotIn("🇺🇸 美国_3_IPLC", landing_grp["proxies"])
 
     def test_reputation_orders_same_country_same_capability(self):
         def row(name, score):
@@ -582,24 +613,22 @@ class TestProxyServiceProbe(unittest.TestCase):
         def rows(*statuses):
             return {n: {"status": s} for n, s in zip(names, statuses)}
 
-        # 1. claude (https://claude.ai/) 过盾 + 其他四站中任意一站过盾 -> True
-        self.assertTrue(shield_passed(rows("passed", "blocked", "blocked", "blocked", "passed")))       # cloudflare 过盾
-        self.assertTrue(shield_passed(rows("blocked", "auto_passed", "blocked", "blocked", "passed")))   # chatgpt 过盾
-        self.assertTrue(shield_passed(rows("blocked", "blocked", "passed", "blocked", "passed")))       # anthropic 过盾
-        self.assertTrue(shield_passed(rows("blocked", "blocked", "blocked", "auto_passed", "passed")))   # gemini 过盾
+        # 1. 核心目标 (cloudflare 或 claude/anthropic) 过盾 + 至少另一站过盾 -> True
+        self.assertTrue(shield_passed(rows("passed", "blocked", "blocked", "blocked", "passed")))       # cloudflare + claude 过盾
+        self.assertTrue(shield_passed(rows("passed", "auto_passed", "blocked", "blocked", "blocked")))  # cloudflare + chatgpt 过盾
+        self.assertTrue(shield_passed(rows("passed", "blocked", "passed", "blocked", "blocked")))       # cloudflare + anthropic 过盾
+        self.assertTrue(shield_passed(rows("blocked", "blocked", "passed", "auto_passed", "blocked")))  # anthropic + gemini 过盾
         self.assertTrue(shield_passed(rows("passed", "passed", "passed", "passed", "passed")))          # 全过盾
 
-        # 2. claude (https://claude.ai/) 过盾，但其他四站均未过盾 -> False
+        # 2. 仅有 1 站过盾 (哪怕是 claude 或 cloudflare) -> False (必须至少 2 站通过)
+        self.assertFalse(shield_passed(rows("passed", "blocked", "blocked", "blocked", "blocked")))
         self.assertFalse(shield_passed(rows("blocked", "blocked", "blocked", "blocked", "passed")))
         self.assertFalse(shield_passed(rows("unknown", "challenge", "blocked", "unknown", "passed")))
 
-        # 3. 其他四站全通，但 claude (https://claude.ai/) 未过盾 (blocked / challenge / unknown) -> False
-        self.assertFalse(shield_passed(rows("passed", "passed", "passed", "passed", "blocked")))
-        self.assertFalse(shield_passed(rows("passed", "passed", "passed", "passed", "challenge")))
-        self.assertFalse(shield_passed(rows("passed", "passed", "passed", "passed", "unknown")))
+        # 3. 核心盾标 (cloudflare, claude, anthropic) 均未过盾 -> False
+        self.assertFalse(shield_passed(rows("blocked", "passed", "blocked", "passed", "blocked")))      # 仅 chatgpt + gemini，无核心盾标通过
 
         # 4. 未观测或空字典 -> False
-        self.assertFalse(shield_passed(rows("passed", "challenge", "blocked", "unknown", "unknown")))
         self.assertFalse(shield_passed(rows("unknown", "unknown", "unknown", "unknown", "unknown")))
         self.assertFalse(shield_passed({}))
 
