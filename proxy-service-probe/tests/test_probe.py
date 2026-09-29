@@ -348,6 +348,57 @@ class TestProxyServiceProbe(unittest.TestCase):
         self.assertIn("🇺🇸 美国_4_Lnd", landing_grp["proxies"])
         self.assertNotIn("🇺🇸 美国_3_IPLC", landing_grp["proxies"])
 
+    def test_residential_non_sinking_and_prefix_sort_order(self):
+        from core.renderer import sort_nodes_by_region_and_landing, renumber_node_tag
+        from core.tagger import format_node_name
+
+        # 1. 前缀拼装顺序校验: ✨️ > 🏠 > ❇️ > Key > Fast
+        n_all = format_node_name(cc="US", slot=1, comprehensive_sparkle=True, is_residential=True,
+                                 ai_supported=True, is_fast=True)
+        self.assertEqual(n_all, "🇺🇸 ✨️🏠❇️Fast美国_1")
+
+        n_home_ai = format_node_name(cc="US", slot=2, is_residential=True, ai_supported=True, is_fast=True)
+        self.assertEqual(n_home_ai, "🇺🇸 🏠❇️Fast美国_2")
+
+        # renumber_node_tag 逆序修正与标准化
+        renamed = renumber_node_tag("🇺🇸 ✨️❇️🏠Fast美国_86_USAI_D+", 1)
+        self.assertEqual(renamed, "🇺🇸 ✨️🏠❇️Fast美国_1_USAI_D+")
+
+        renamed2 = renumber_node_tag("🇺🇸 ❇️🏠Fast美国_89_USAI_NF_D+", 2)
+        self.assertEqual(renamed2, "🇺🇸 🏠❇️Fast美国_2_USAI_NF_D+")
+
+        # 2. 带有 🏠 或 _ISP 的家宽节点不沉底测试
+        # 即使带有 _Lnd / _USAI / dialer-proxy，也不下沉到机房落地尾部
+        proxies = [
+            {"name": "🇺🇸 Fast美国_1_NF_D+", "type": "vless", "server": "dc_fast"},
+            {"name": "🇺🇸 美国_2_Lnd", "type": "vless", "server": "dc_landing"},
+            {"name": "🇺🇸 ✨️❇️🏠Fast美国_3_USAI_D+", "type": "vless", "server": "res_sparkle_home", "is_residential": True},
+            {"name": "🇺🇸 🏠Fast美国_4_Lnd_D+", "type": "vless", "server": "res_home", "is_residential": True},
+            {"name": "🇺🇸 ❇️Fast美国_5_ISP_USAI_D+", "type": "vless", "server": "res_isp_ai", "has_res_suffix": True},
+            {"name": "🇺🇸 Fast美国_6_ISP_Lnd_D+", "type": "vless", "server": "res_isp_fast_1", "has_res_suffix": True},
+            {"name": "🇺🇸 Fast美国_7_ISP_Lnd", "type": "vless", "server": "res_isp_fast_2", "has_res_suffix": True},
+        ]
+
+        rendered = sort_nodes_by_region_and_landing(proxies, resort=True)
+        names = [p["name"] for p in rendered]
+        servers = [p["server"] for p in rendered]
+
+        self.assertEqual(servers[0], "res_sparkle_home")
+        self.assertEqual(servers[1], "res_home")
+        self.assertEqual(servers[2], "res_isp_ai")
+        self.assertEqual(servers[3], "res_isp_fast_1")
+        self.assertEqual(servers[4], "res_isp_fast_2")
+        self.assertEqual(servers[5], "dc_fast")
+        self.assertEqual(servers[6], "dc_landing")
+
+        self.assertEqual(names[0], "🇺🇸 ✨️🏠❇️Fast美国_1_USAI_D+")
+        self.assertEqual(names[1], "🇺🇸 🏠Fast美国_2_Lnd_D+")
+        self.assertEqual(names[2], "🇺🇸 ❇️Fast美国_3_ISP_USAI_D+")
+        self.assertEqual(names[3], "🇺🇸 Fast美国_4_ISP_Lnd_D+")
+        self.assertEqual(names[4], "🇺🇸 Fast美国_5_ISP_Lnd")
+        self.assertEqual(names[5], "🇺🇸 Fast美国_6_NF_D+")
+        self.assertEqual(names[6], "🇺🇸 美国_7_Lnd")
+
     def test_reputation_orders_same_country_same_capability(self):
         def row(name, score):
             return {
