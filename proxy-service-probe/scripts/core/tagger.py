@@ -71,24 +71,25 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
                      is_residential=False, has_res_suffix=False):
     """
     构造符合规范的节点名称:
-    [国旗] [✨️] [❇️] [♥️ / 🏠] [Key/Fast] [国家][_城市]_[编号][IPLC/ISP后缀][落地后缀][流媒体后缀][来源后缀][污染标记]
+    [国旗] [✨️] [🏠 / ♥️] [❇️] [Key/Fast] [国家][_城市]_[编号][IPLC/ISP后缀][落地后缀][流媒体后缀][来源后缀][污染标记]
     """
     if poison_tag:
         ai_supported = comprehensive_sparkle = is_usai = is_high_quality = False
     flag = flag_emoji(cc)
     cname = country_name_zh(cc)
 
-    # 1. 前置标识组合 (严格顺序: ✨️ -> ❇️ -> ♥️ / 🏠 -> Key/Fast)
+    # 1. 前置标识组合 (严格顺序: ✨️ -> 🏠 / ♥️ -> ❇️ -> Key/Fast)
     prefix_tags = ""
     if comprehensive_sparkle:
         prefix_tags += "✨️"
-    if ai_supported:
-        prefix_tags += "❇️"
-    # 规则升级：符合 ♥️ 标准的家宽节点获得 🏠（🏠 与 ♥️ 互斥，家宽获得 🏠 即代表符合高纯净度，避免两者并存，更简洁）
+    # 规则升级：前置徽章顺序严格遵循: ✨️ > 🏠 > ❇️ > Key > Fast
+    # 符合 ♥️ 标准的家宽节点获得 🏠（🏠 与 ♥️ 互斥，家宽获得 🏠 即代表符合高纯净度，避免两者并存，更简洁）
     if is_residential:
         prefix_tags += "🏠"
     elif is_high_quality:
         prefix_tags += "♥️"
+    if ai_supported:
+        prefix_tags += "❇️"
     if is_key:
         prefix_tags += "Key"
     elif is_fast:

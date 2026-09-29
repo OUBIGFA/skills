@@ -199,12 +199,12 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
     prefix = ""
     if sparkle:
         prefix += "✨️"
-    if ai:
-        prefix += "❇️"
     if has_res:
         prefix += "🏠"
     elif hq:
         prefix += "♥️"
+    if ai:
+        prefix += "❇️"
     if key:
         prefix += "Key"
     elif fast:
@@ -362,6 +362,14 @@ def sort_nodes_by_region_and_landing(items, resort=False):
                 return True
         return bool(re.search(r'(?i)_(?:isp|res|家宽)(?=_|$)', name))
 
+    def _should_sink(item):
+        if not _is_lnd(item):
+            return False
+        name = _get_name(item)
+        if _is_res(item, name) or _has_res_suffix(item, name):
+            return False
+        return True
+
     def _reputation(item):
         if not isinstance(item, dict):
             return {}
@@ -395,26 +403,38 @@ def sort_nodes_by_region_and_landing(items, resort=False):
     def _node_internal_key(item):
         name = _get_name(item)
         sparkle = 0 if ('✨' in name) else 1
+        home = 0 if _is_res(item, name) else 1
         ai = 0 if ('❇️' in name or '❇' in name) else 1
         key = 0 if re.search(r'(?i)\bkey(?![a-z])', name) else 1
         fast = 0 if re.search(r'(?i)\bfast(?![a-z])', name) else 1
-        # 顺序权重跟专线节点一样: 专线 (_IPLC) 与 家宽 (🏠 及 _ISP) 共享线路优先权 (line_prio = 0)
-        line_prio = 0 if (_is_iplc(item, name) or _is_res(item, name) or _has_res_suffix(item, name)) else 1
-        is_polluted = 1 if ('_⚠️' in name) else 0
-        reputation = _reputation(item)
-        score = valid_reputation_score(reputation.get('score'))
-        hq = 0 if _is_hq(item, name) else 1
-        has_score = 0 if score is not None else 1
-        reputation_rank = -score if score is not None and reputation.get('status') == 'observed' else 0
-        nf = 0 if '_NF' in name else 1
-        dp = 0 if '_D+' in name else 1
+        is_residential = bool(_is_res(item, name) or _has_res_suffix(item, name))
+        iplc = 0 if _is_iplc(item, name) else 1
+        line_prio = 0 if (_is_iplc(item, name) or is_residential) else 1
+
         m = re.search(r'_(\d+)', name)
         slot = int(m.group(1)) if m else 9999
+        orig_idx = item.get("_orig_idx", slot) if isinstance(item, dict) else slot
+
         if not resort:
             return (slot, name)
-        # 先按 ✨️ > ❇️ > Key > Fast > 专线/家宽(line_prio) > _NF > _D+ 硬分层；干净节点优于污染节点；
-        # ♥️ 与信誉分只在上述标签完全相同的节点之间决定先后，不跨越标签层级
-        return (sparkle, ai, key, fast, line_prio, nf, dp, is_polluted, hq, has_score, reputation_rank, slot, name)
+
+        # 规则升级：
+        # 1. 前置标识排序位阶严格为: ✨️ > 🏠 > ❇️ > Key > Fast
+        # 2. 专线与家宽（🏠 及 _ISP）共享线路优先权 (line_prio = 0)，在同级前缀内优先；
+        # 3. 🏠 和 ISP 节点内部按照原顺序进行排列 (以 orig_idx 排位，不被延迟、测速或流媒体标签打乱)；
+        # 4. 普通机房节点继续遵循: _NF > _D+ > 纯净优于污染 > ♥️ > 信誉分。
+        if is_residential:
+            return (sparkle, home, ai, key, fast, line_prio, iplc, orig_idx, 0, 0, 0, 0, 0, 0, orig_idx, name)
+        else:
+            is_polluted = 1 if ('_⚠️' in name) else 0
+            reputation = _reputation(item)
+            score = valid_reputation_score(reputation.get('score'))
+            hq = 0 if _is_hq(item, name) else 1
+            has_score = 0 if score is not None else 1
+            reputation_rank = -score if score is not None and reputation.get('status') == 'observed' else 0
+            nf = 0 if '_NF' in name else 1
+            dp = 0 if '_D+' in name else 1
+            return (sparkle, home, ai, key, fast, line_prio, iplc, 0, nf, dp, is_polluted, hq, has_score, reputation_rank, orig_idx, name)
 
     country_buckets = {}
     country_order = []
@@ -439,8 +459,11 @@ def sort_nodes_by_region_and_landing(items, resort=False):
     sorted_items = []
     for c in country_order:
         c_nodes = country_buckets[c]
-        directs = [n for n in c_nodes if not _is_lnd(n)]
-        landings = [n for n in c_nodes if _is_lnd(n)]
+        for idx, n in enumerate(c_nodes):
+            if isinstance(n, dict):
+                n.setdefault("_orig_idx", idx)
+        directs = [n for n in c_nodes if not _should_sink(n)]
+        landings = [n for n in c_nodes if _should_sink(n)]
         directs.sort(key=_node_internal_key)
         landings.sort(key=_node_internal_key)
         combined = directs + landings
