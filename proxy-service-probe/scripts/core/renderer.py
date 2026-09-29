@@ -120,11 +120,14 @@ def check_template(template_path=None):
 
 
 def clean_proxy_dict(proxy):
-    """清理内部私有字段（以 _ 开头），仅保留合法字段。"""
+    """清理内部私有字段（以 _ 开头及内部状态字段），仅保留合法字段，并规范化 flow 为多客户端通用标准 xtls-rprx-vision。"""
     clean = {}
     for k, v in proxy.items():
-        if not k.startswith("_"):
+        if not k.startswith("_") and k not in ("is_residential", "is_iplc", "has_res_suffix"):
             clean[k] = v
+    flow = str(clean.get("flow") or "").strip()
+    if flow.startswith("xtls-rprx-vision"):
+        clean["flow"] = "xtls-rprx-vision"
     return clean
 
 

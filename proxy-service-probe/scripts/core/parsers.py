@@ -88,7 +88,8 @@ def parse_node_uri(uri):
                 if query.get('sni'):
                     p['servername'] = query['sni'][0]
                 if query.get('flow'):
-                    p['flow'] = query['flow'][0]
+                    raw_flow = str(query['flow'][0]).strip()
+                    p['flow'] = "xtls-rprx-vision" if raw_flow.startswith("xtls-rprx-vision") else raw_flow
                 if sec == 'reality':
                     p['reality-opts'] = {
                         'public-key': query.get('pbk', [''])[0],
@@ -349,7 +350,8 @@ def parse_singbox_outbound(outbound):
     if o_type == "vless":
         p["uuid"] = outbound.get("uuid")
         if outbound.get("flow"):
-            p["flow"] = outbound.get("flow")
+            raw_flow = str(outbound.get("flow")).strip()
+            p["flow"] = "xtls-rprx-vision" if raw_flow.startswith("xtls-rprx-vision") else raw_flow
         _copy_singbox_tls(outbound, p)
         _copy_singbox_transport(outbound, p)
         return p

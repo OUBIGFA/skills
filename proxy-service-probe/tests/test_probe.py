@@ -399,6 +399,28 @@ class TestProxyServiceProbe(unittest.TestCase):
         self.assertEqual(names[5], "🇺🇸 Fast美国_6_NF_D+")
         self.assertEqual(names[6], "🇺🇸 美国_7_Lnd")
 
+    def test_clean_proxy_dict_normalizes_flow_and_strips_internal_fields(self):
+        from core.renderer import clean_proxy_dict
+        p = {
+            "name": "🇺🇸 ✨️🏠❇️Fast美国_1_USAI_D+",
+            "type": "vless",
+            "server": "38.95.76.93",
+            "port": 443,
+            "flow": "xtls-rprx-vision-udp443",
+            "is_residential": True,
+            "is_iplc": False,
+            "has_res_suffix": False,
+            "_private_key": "secret",
+            "dialer-proxy": "🛡️ Front前置"
+        }
+        cleaned = clean_proxy_dict(p)
+        self.assertEqual(cleaned["flow"], "xtls-rprx-vision")
+        self.assertNotIn("is_residential", cleaned)
+        self.assertNotIn("is_iplc", cleaned)
+        self.assertNotIn("has_res_suffix", cleaned)
+        self.assertNotIn("_private_key", cleaned)
+        self.assertEqual(cleaned["dialer-proxy"], "🛡️ Front前置")
+
     def test_reputation_orders_same_country_same_capability(self):
         def row(name, score):
             return {
