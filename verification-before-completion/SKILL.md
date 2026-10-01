@@ -1,26 +1,120 @@
 ---
 name: verification-before-completion
-description: 代码准备提交(commit)、合入(PR)、发布交付或明确要求执行最终验收门禁时使用。
+description: Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence before assertions always
 ---
 
 # Verification Before Completion
 
-作为高风险变更、代码提交、PR 合入或版本发布前的最终核对门禁。日常编码与常规修改遵循 `code-rules` 的验证约定，不随意加载本技能。
+## Overview
 
-## 门禁核心原则
+**Core principle:** Evidence before claims, always.
 
-- **证据先于断言**：只有在当前会话中执行了确切的验证命令并确认了真实输出，才能宣称通过或完成。
-- **证据与契约对应**：
-  - 构建通过仅证明可编译/打包，不代表逻辑正确；
-  - 测试通过仅证明覆盖用例通过，不代表无回归或边界完备；
-  - 运行时/端到端验证证明可观察行为与需求一致；
-  - 版本控制差异（diff）证明改动范围干净，无多余格式改动或调试残留。
-- **检查真实状态**：确认退出码为 0，核对无静默降级、假成功、异常吞没或跳过（skipped）关键测试。
-- **界定未覆盖风险**：因外部依赖、环境限制或缺乏自动化测试而未验证的部分，如实说明，不作主观推断。
+**Violating the letter of this rule is violating the spirit of this rule.**
 
-## 门禁核对流程
+## The Iron Law
 
-1. **识别验证项**：针对本次改动的核心目标，确定需要证明的关键行为及对应验证命令。
-2. **执行并核对**：执行完整命令，检查退出状态码、错误日志与失败计数，确认结果与预期一致。
-3. **审查改动集**：检查版本控制 diff，确认仅修改了目标范围内的文件，未遗留临时文件、凭证或无关变动。
-4. **交付结论**：用确切的测试输出、运行指标或差异证据支持交付结论；存在局限时明确标注未验证范围。
+```
+NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
+```
+
+If you haven't run the verification command in this message, you cannot claim it passes.
+
+## The Gate Function
+
+```
+BEFORE claiming any status or expressing satisfaction:
+
+1. IDENTIFY: What command proves this claim?
+2. RUN: Execute the FULL command (fresh, complete)
+3. READ: Full output, check exit code, count failures
+4. VERIFY: Does output confirm the claim?
+   - If NO: State actual status with evidence
+   - If YES: State claim WITH evidence
+5. ONLY THEN: Make the claim
+
+Skip any step = lying, not verifying
+```
+
+## Common Failures
+
+| Claim | Requires | Not Sufficient |
+|-------|----------|----------------|
+| Tests pass | Test command output: 0 failures | Previous run, "should pass" |
+| Linter clean | Linter output: 0 errors | Partial check, extrapolation |
+| Build succeeds | Build command: exit 0 | Linter passing, logs look good |
+| Bug fixed | Test original symptom: passes | Code changed, assumed fixed |
+| Regression test works | Red-green cycle verified | Test passes once |
+| Agent completed | VCS diff shows changes | Agent reports "success" |
+| Requirements met | Line-by-line checklist | Tests passing |
+
+## Red Flags - STOP
+
+- Using "should", "probably", "seems to"
+- Expressing satisfaction before verification ("Great!", "Perfect!", "Done!", etc.)
+- About to commit/push/PR without verification
+- Trusting agent success reports
+- Relying on partial verification
+- Thinking "just this once"
+- Tired and wanting work over
+- **ANY wording implying success without having run verification**
+
+## Rationalization Prevention
+
+| Excuse | Reality |
+|--------|---------|
+| "Should work now" | RUN the verification |
+| "I'm confident" | Confidence ≠ evidence |
+| "Just this once" | No exceptions |
+| "Linter passed" | Linter ≠ compiler |
+| "Agent said success" | Verify independently |
+| "I'm tired" | Exhaustion ≠ excuse |
+| "Partial check is enough" | Partial proves nothing |
+| "Different words so rule doesn't apply" | Spirit over letter |
+
+## Key Patterns
+
+**Tests:**
+```
+✅ [Run test command] [See: 34/34 pass] "All tests pass"
+❌ "Should pass now" / "Looks correct"
+```
+
+**Regression tests (TDD Red-Green):**
+```
+✅ Write → Run (pass) → Revert fix → Run (MUST FAIL) → Restore → Run (pass)
+❌ "I've written a regression test" (without red-green verification)
+```
+
+**Build:**
+```
+✅ [Run build] [See: exit 0] "Build passes"
+❌ "Linter passed" (linter doesn't check compilation)
+```
+
+**Requirements:**
+```
+✅ Re-read plan → Create checklist → Verify each → Report gaps or completion
+❌ "Tests pass, phase complete"
+```
+
+**Agent delegation:**
+```
+✅ Agent reports success → Check VCS diff → Verify changes → Report actual state
+❌ Trust agent report
+```
+
+## When To Apply
+
+**ALWAYS before:**
+- ANY variation of success/completion claims
+- ANY expression of satisfaction
+- ANY positive statement about work state
+- Committing, PR creation, task completion
+- Moving to next task
+- Delegating to agents
+
+**Rule applies to:**
+- Exact phrases
+- Paraphrases and synonyms
+- Implications of success
+- ANY communication suggesting completion/correctness
