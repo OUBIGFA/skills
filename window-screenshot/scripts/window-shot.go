@@ -1,6 +1,6 @@
 // window-shot：给运行中的 Windows 程序窗口截图，保存为 PNG。
 //
-// 用法：window-shot <进程名或PID> <输出png路径>
+// 用法：window-shot <进程名或PID> <输出png路径> [-click <按钮文字>] [-wait <毫秒>]
 //
 // 设计取舍：
 //   - 纯 stdlib + syscall，不依赖 golang.org/x/sys，也不依赖任何 CGO，离线即可构建。
@@ -10,6 +10,10 @@
 //     缩放过的逻辑坐标，与物理像素不一致会导致截图被裁切。
 //   - 输出前裁掉 Win10/11 的“不可见调整边框”：GetWindowRect 比肉眼可见的窗口每边大
 //     7~8px，PrintWindow 把那一圈画成纯黑，不裁就是截图四边的黑边。
+//   - 切页/展开面板用给按钮发 BM_CLICK，而不是模拟鼠标：不要求窗口在前台、不受遮挡
+//     影响，也不用先算按钮坐标。
+//   - 截图前把界面“静止化”：清掉焦点、把鼠标移到窗口外。否则会拍到焦点虚线框、
+//     按钮悬停高亮、输入框光标这类与界面本身无关的瞬时装饰。
 package main
 
 import (
@@ -46,6 +50,15 @@ var (
 	procGetDC              = user32.NewProc("GetDC")
 	procReleaseDC          = user32.NewProc("ReleaseDC")
 	procPrintWindow        = user32.NewProc("PrintWindow")
+	procEnumChildWindows   = user32.NewProc("EnumChildWindows")
+	procSendMessageW       = user32.NewProc("SendMessageW")
+	procIsChild            = user32.NewProc("IsChild")
+	procSetFocus           = user32.NewProc("SetFocus")
+	procAttachThreadInput  = user32.NewProc("AttachThreadInput")
+	procGetGUIThreadInfo   = user32.NewProc("GetGUIThreadInfo")
+	procGetCursorPos       = user32.NewProc("GetCursorPos")
+	procSetCursorPos       = user32.NewProc("SetCursorPos")
+	procGetSystemMetrics   = user32.NewProc("GetSystemMetrics")
 
 	procCreateCompatibleDC = gdi32.NewProc("CreateCompatibleDC")
 	procCreateDIBSection   = gdi32.NewProc("CreateDIBSection")
@@ -61,6 +74,7 @@ var (
 	procProcess32FirstW          = kernel32.NewProc("Process32FirstW")
 	procProcess32NextW           = kernel32.NewProc("Process32NextW")
 	procCloseHandle              = kernel32.NewProc("CloseHandle")
+	procGetCurrentThreadID       = kernel32.NewProc("GetCurrentThreadId")
 )
 
 const (
@@ -79,8 +93,15 @@ const (
 	// PW_RENDERFULLCONTENT：让 DWM 合成窗口也能被 PrintWindow 正确渲染。
 	pwRenderFullContent = 0x00000002
 
+	// BM_CLICK：让按钮自己走一遍按下-弹起并通知父窗口，等价于用户点击。
+	bmClick = 0x00F5
+
 	th32csSnapProcess = 0x00000002
 	maxPath           = 260
+
+	// 屏幕尺寸，用于把鼠标挪到窗口外（物理像素，本进程已 DPI 感知）。
+	smCXScreen = 0
+	smCYScreen = 1
 )
 
 type rect struct{ L, T, R, B int32 }
@@ -127,24 +148,40 @@ type candidate struct {
 	area  int32
 }
 
+type point struct{ X, Y int32 }
+
+// guiThreadInfo 对应 Win32 的 GUITHREADINFO，用 HwndFocus 查“哪个控件正持有焦点”。
+// cbSize 必须填结构体实际大小，否则调用直接失败。
+type guiThreadInfo struct {
+	CbSize        uint32
+	Flags         uint32
+	HwndActive    uintptr
+	HwndFocus     uintptr
+	HwndCapture   uintptr
+	HwndMenuOwner uintptr
+	HwndMoveSize  uintptr
+	HwndCaret     uintptr
+	RcCaret       rect
+}
+
 func main() {
-	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "用法: window-shot <进程名或PID> <输出png路径>")
+	opts, err := parseArgs(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "用法: window-shot <进程名或PID> <输出png路径> [-click <按钮文字>] [-wait <毫秒>]")
 		os.Exit(2)
 	}
-	target := os.Args[1]
-	outPath := os.Args[2]
 
 	// 让本进程按物理像素工作，否则 Rect/屏幕坐标会被 DPI 虚拟化。
 	procSetProcessDPIAware.Call()
 
-	pids, err := resolvePIDs(target)
+	pids, err := resolvePIDs(opts.target)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
 	if len(pids) == 0 {
-		fmt.Fprintf(os.Stderr, "没有找到进程 %q（检查进程名拼写，或用 tasklist 看实际名字）\n", target)
+		fmt.Fprintf(os.Stderr, "没有找到进程 %q（检查进程名拼写，或用 tasklist 看实际名字）\n", opts.target)
 		os.Exit(3)
 	}
 
@@ -161,7 +198,7 @@ func main() {
 		}
 	}
 	if best.hwnd == 0 {
-		fmt.Fprintf(os.Stderr, "进程 %s (PID %v) 没有可见的主窗口。\n", target, pids)
+		fmt.Fprintf(os.Stderr, "进程 %s (PID %v) 没有可见的主窗口。\n", opts.target, pids)
 		fmt.Fprintln(os.Stderr, "常见原因：窗口被最小化到托盘、或程序以“后台启动/收进托盘”方式启动。")
 		fmt.Fprintln(os.Stderr, "处理：再启动一次该程序（多数程序会把已有窗口显示出来），或手动点托盘图标，然后重跑本工具。")
 		os.Exit(3)
@@ -179,9 +216,20 @@ func main() {
 	}
 	procBringWindowToTop.Call(best.hwnd)
 	procSetForegroundWin.Call(best.hwnd)
+
+	// 需要切页时先点按钮，等界面重绘完再截图。
+	if opts.click != "" {
+		time.Sleep(200 * time.Millisecond)
+		if err := clickButton(best.hwnd, opts.click); err != nil {
+			fmt.Fprintf(os.Stderr, "点击失败: %v\n", err)
+			os.Exit(6)
+		}
+		fmt.Printf("已点击按钮 %q，等待 %dms 后截图\n", opts.click, opts.waitMS)
+		time.Sleep(time.Duration(opts.waitMS) * time.Millisecond)
+	}
 	time.Sleep(200 * time.Millisecond)
 
-	// 还原/置前后窗口位置可能变化，重新取一次。
+	// 还原/置前/切页后窗口位置可能变化，重新取一次。
 	var r rect
 	if ok, _, _ := procGetWindowRect.Call(best.hwnd, uintptr(unsafe.Pointer(&r))); ok == 0 {
 		fmt.Fprintln(os.Stderr, "GetWindowRect 失败")
@@ -192,6 +240,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "窗口尺寸异常: %dx%d\n", w, h)
 		os.Exit(4)
 	}
+
+	// 静止化：清掉控件焦点并让鼠标离开窗口，否则会把焦点虚线框、按钮悬停高亮、
+	// 输入框光标这些瞬时装饰拍进图里。鼠标位置在截图后恢复。
+	clearFocus(best.hwnd)
+	restoreCursor := parkCursor(r)
+	defer restoreCursor()
+	time.Sleep(300 * time.Millisecond)
 
 	img, err := captureWindow(best.hwnd, w, h, r.L, r.T)
 	if err != nil {
@@ -210,7 +265,7 @@ func main() {
 	img = trimBlackEdges(img, trimMax)
 
 	b := img.Bounds()
-	f, err := os.Create(outPath)
+	f, err := os.Create(opts.out)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "创建输出文件失败: %v\n", err)
 		os.Exit(5)
@@ -220,7 +275,92 @@ func main() {
 		fmt.Fprintf(os.Stderr, "写 PNG 失败: %v\n", err)
 		os.Exit(5)
 	}
-	fmt.Printf("已保存: %s (%dx%d)\n", outPath, b.Dx(), b.Dy())
+	fmt.Printf("已保存: %s (%dx%d)\n", opts.out, b.Dx(), b.Dy())
+}
+
+type options struct {
+	target string
+	out    string
+	click  string
+	waitMS int
+}
+
+// parseArgs 手写解析：只有两个位置参数和两个可选开关，不值得引入 flag 包
+// （flag 会在遇到位置参数后停止解析，反而更别扭）。
+func parseArgs(argv []string) (options, error) {
+	opts := options{waitMS: 800} // 切页动画/布局重排需要一点时间，默认等 800ms
+	var positional []string
+	for i := 0; i < len(argv); i++ {
+		switch argv[i] {
+		case "-click", "--click":
+			if i+1 >= len(argv) {
+				return opts, fmt.Errorf("-click 缺少按钮文字")
+			}
+			i++
+			opts.click = argv[i]
+		case "-wait", "--wait":
+			if i+1 >= len(argv) {
+				return opts, fmt.Errorf("-wait 缺少毫秒数")
+			}
+			i++
+			ms, err := strconv.Atoi(argv[i])
+			if err != nil || ms < 0 {
+				return opts, fmt.Errorf("-wait 需要非负整数毫秒，收到 %q", argv[i])
+			}
+			opts.waitMS = ms
+		default:
+			positional = append(positional, argv[i])
+		}
+	}
+	if len(positional) < 2 {
+		return opts, fmt.Errorf("缺少参数：需要 <进程名或PID> 和 <输出png路径>")
+	}
+	opts.target, opts.out = positional[0], positional[1]
+	return opts, nil
+}
+
+// clickButton 在窗口的所有后代控件里找按钮文字匹配的按钮并发 BM_CLICK。
+// 用 BM_CLICK 而不是模拟鼠标：不要求窗口在前台，也不受遮挡影响。
+//
+// 匹配策略：先精确匹配；没命中时，若只有一个按钮包含该文字就点它。
+// 界面按钮常带装饰（"← 返回"、"删除…"、助记符），只允许精确匹配会让调用方难写。
+func clickButton(hwnd uintptr, text string) error {
+	type buttonInfo struct {
+		hwnd  uintptr
+		label string
+	}
+	var buttons []buttonInfo
+	cb := syscall.NewCallback(func(child, _ uintptr) uintptr {
+		// 只认按钮类控件，避免误点同名的标签/文本框。
+		if !strings.EqualFold(utf16Field(child, procGetClassNameW), "Button") {
+			return 1
+		}
+		buttons = append(buttons, buttonInfo{child, utf16Field(child, procGetWindowTextW)})
+		return 1
+	})
+	procEnumChildWindows.Call(hwnd, cb, 0)
+
+	var partial []uintptr
+	var labels []string
+	for _, b := range buttons {
+		if b.label == text {
+			procSendMessageW.Call(b.hwnd, bmClick, 0, 0)
+			return nil
+		}
+		if strings.Contains(b.label, text) {
+			partial = append(partial, b.hwnd)
+			labels = append(labels, b.label)
+		}
+	}
+	switch len(partial) {
+	case 0:
+		return fmt.Errorf("窗口里没有文字为 %q 的按钮", text)
+	case 1:
+		procSendMessageW.Call(partial[0], bmClick, 0, 0)
+		return nil
+	default:
+		return fmt.Errorf("有多个按钮包含 %q，无法确定点哪个：%s", text, strings.Join(labels, " / "))
+	}
 }
 
 // resolvePIDs 把命令行参数解析成 PID 列表：纯数字当 PID，否则当进程名查快照。
@@ -359,6 +499,87 @@ func trimBlackEdges(img *image.RGBA, max int) *image.RGBA {
 	}
 	fmt.Printf("黑边收尾裁剪: 左=%d 上=%d 右=%d 下=%d\n", l, t, rt, bt)
 	return crop(img, rect{0, 0, int32(w), int32(h)}, rect{int32(l), int32(t), int32(w - rt), int32(h - bt)})
+}
+
+// clearFocus 把焦点从控件移回窗口本身，消除按钮焦点虚线框与输入框光标。
+//
+// 程序自己会设焦点（例如切页后 focus 首个按钮），所以不点按钮也可能带焦点框。
+// SetFocus 只对同一输入队列的窗口生效，因此先把本线程挂到目标线程的输入队列上，
+// 设完再摘下来 —— 跨进程设焦点的标准做法，且不要求目标窗口在前台。
+func clearFocus(hwnd uintptr) {
+	tid, _, _ := procGetWindowThreadPID.Call(hwnd, 0)
+	if tid == 0 {
+		return
+	}
+	var gti guiThreadInfo
+	gti.CbSize = uint32(unsafe.Sizeof(gti))
+	if ok, _, _ := procGetGUIThreadInfo.Call(tid, uintptr(unsafe.Pointer(&gti))); ok == 0 {
+		return
+	}
+	focus := gti.HwndFocus
+	if focus == 0 || focus == hwnd {
+		return // 本来就是干净的
+	}
+	// 只处理本窗口的控件；焦点在别的窗口上，说明目标程序不是当前活动窗口，不该动它。
+	if child, _, _ := procIsChild.Call(hwnd, focus); child == 0 {
+		return
+	}
+
+	ourTid, _, _ := procGetCurrentThreadID.Call()
+	attached := false
+	if ourTid != tid {
+		if ok, _, _ := procAttachThreadInput.Call(ourTid, tid, 1); ok == 0 {
+			fmt.Fprintln(os.Stderr, "提示：AttachThreadInput 失败，焦点可能没清干净")
+			return
+		}
+		attached = true
+	}
+	procSetFocus.Call(hwnd)
+	if attached {
+		procAttachThreadInput.Call(ourTid, tid, 0)
+	}
+
+	// 复查而不是假定成功：清不掉就如实说，避免用户拿到带焦点框的图却以为没问题。
+	gti.CbSize = uint32(unsafe.Sizeof(gti))
+	if ok, _, _ := procGetGUIThreadInfo.Call(tid, uintptr(unsafe.Pointer(&gti))); ok != 0 &&
+		gti.HwndFocus != 0 && gti.HwndFocus != hwnd {
+		fmt.Fprintln(os.Stderr, "警告：焦点仍停留在控件上，截图可能带焦点框")
+		return
+	}
+	fmt.Println("已清除控件焦点")
+}
+
+// parkCursor 把鼠标挪到窗口外（屏幕上没有别处可去就放弃），返回恢复原位置的函数。
+// 鼠标停在控件上会触发悬停高亮，让截图看起来像“刚被点过”。
+func parkCursor(win rect) func() {
+	var p point
+	if ok, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&p))); ok == 0 {
+		return func() {}
+	}
+	if p.X < win.L || p.X >= win.R || p.Y < win.T || p.Y >= win.B {
+		return func() {} // 鼠标本来就不在窗口上，不会产生悬停状态
+	}
+	sw, _, _ := procGetSystemMetrics.Call(smCXScreen)
+	sh, _, _ := procGetSystemMetrics.Call(smCYScreen)
+	midX := (win.L + win.R) / 2
+	for _, c := range []point{
+		{midX, win.B + 20},             // 窗口正下方
+		{midX, win.T - 20},             // 窗口正上方
+		{0, 0},                         // 屏幕左上角
+		{int32(sw) - 1, int32(sh) - 1}, // 屏幕右下角
+	} {
+		if c.X < 0 || c.Y < 0 || c.X >= int32(sw) || c.Y >= int32(sh) {
+			continue // 出屏
+		}
+		if c.X >= win.L && c.X < win.R && c.Y >= win.T && c.Y < win.B {
+			continue // 仍在窗口内
+		}
+		procSetCursorPos.Call(uintptr(c.X), uintptr(c.Y))
+		fmt.Printf("已把鼠标移出窗口: (%d,%d)，截图后还原\n", c.X, c.Y)
+		return func() { procSetCursorPos.Call(uintptr(p.X), uintptr(p.Y)) }
+	}
+	fmt.Fprintln(os.Stderr, "提示：窗口铺满屏幕，鼠标无处可挪，若指针压在控件上可能拍到悬停高亮")
+	return func() {}
 }
 
 // findMainWindow 枚举目标进程的顶层窗口，挑面积最大的“带标题栏且可见”的那个。
