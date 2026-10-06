@@ -15,15 +15,17 @@ report — no Health Score, no Iron Law findings. Focus on explanation and orien
 
 ### Step 2: Draw the Dependency Map
 
-Draw the same Mermaid dependency graph as architecture audit Step 1, but color nodes by
-**recommended reading order** using a DISTINCT palette from the severity palette
-(which uses red/yellow/green). This avoids confusing "red = danger" with "red = read last":
+Use architecture audit Step 1 for relationship direction, evidence, and graph checks;
+do not run the risk scan for a tour. Use a compact table for a simple structure. When a
+graph helps, color nodes by **recommended reading order**, not severity:
 
 - 🔵 Blue (`#339af0`): start here — entry points, core domain
 - 🟣 Purple (`#9775fa`): read next — supporting modules
 - ⚪ Gray (`#ced4da`): read last — infrastructure, generated code, utilities
 
 Add numbered labels: `CoreModule["1. CoreModule"]`
+Keep the numbers and labels readable without color. Use the same module names in the
+map and guide, and give key source locations beside the map.
 
 ```
 classDef start fill:#339af0,color:#fff
@@ -50,8 +52,9 @@ Do NOT use Iron Law format — use plain warnings. This is orientation, not diag
 
 ### Step 5: Build a Domain Glossary
 
-Extract 10-15 key domain terms from code (class names, method names, constants) and map
-them to plain-language definitions. This applies Evans's Ubiquitous Language as documentation.
+Define the domain terms needed to follow the tour. Use the same term for the same concept
+throughout. Keep code identifiers unchanged and explain them in plain language; do not
+add terms just to meet a count.
 
 ### Step 6: Suggest First Tasks
 
@@ -69,7 +72,7 @@ their first contribution: modules with good test coverage, clear boundaries, low
 [2-3 sentence summary of what the project does and its tech stack]
 
 ## Module Map
-[Mermaid graph with reading-order colors]
+[Graph with reading-order labels, or a compact table; scope and key source locations]
 
 ## Module Guide
 [One paragraph per top-level module: what it does, what it depends on, key files to read]

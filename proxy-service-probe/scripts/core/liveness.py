@@ -25,10 +25,14 @@ LIVENESS_TARGETS = (
     "https://cp.cloudflare.com/generate_204",
     "https://captive.apple.com/hotspot-detect.html",
 )
-DIRECT_TIMEOUT = 8.0
-CHAIN_TIMEOUT = 10.0
-DEFAULT_ATTEMPTS = 3
-RETRY_PAUSE = 0.5
+DIRECT_TIMEOUT = 3.5
+CHAIN_TIMEOUT = 5.0
+DEFAULT_LOSS_SAMPLES = 10
+DEFAULT_ATTEMPTS = DEFAULT_LOSS_SAMPLES  # 向后兼容别名
+DEFAULT_MAX_LOSS_RATE = 50.0  # 硬淘汰阈值: >= 50% 丢包判定为不可用直接淘汰
+DEFAULT_KEY_MAX_LOSS_RATE = 20.0  # Key跳板门槛: >= 20% 丢包剥离前置资格
+RETRY_PAUSE = 0.05
+FAST_FAIL_CONSECUTIVE = 5
 MAX_CHAIN_FRONTS = 3
 # 这些协议承载在 UDP 上，经前置链式时前置必须能转发 UDP
 UDP_TRANSPORT_TYPES = frozenset({"hysteria", "hysteria2", "tuic", "wireguard"})
@@ -36,45 +40,89 @@ UDP_TRANSPORT_TYPES = frozenset({"hysteria", "hysteria2", "tuic", "wireguard"})
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
 
-def check_alive(proxy_url, targets=LIVENESS_TARGETS, attempts=DEFAULT_ATTEMPTS, timeout=DIRECT_TIMEOUT,
-                pause=RETRY_PAUSE):
+def check_alive(proxy_url, targets=LIVENESS_TARGETS, samples=DEFAULT_LOSS_SAMPLES,
+                timeout=DIRECT_TIMEOUT, pause=RETRY_PAUSE,
+                max_loss_rate=DEFAULT_MAX_LOSS_RATE,
+                fast_fail_consecutive=FAST_FAIL_CONSECUTIVE,
+                attempts=None):
     """
-    经本地监听对连通性端点最多发起 attempts 次请求 (轮换 targets)，任一次 2xx 即判活，全部失败才判死。
-    判活后沿用同一目标补测一次：复用已建立的隧道，测得不含握手的往返延迟 (与 mihomo unified-delay 同理)，取较低值。
-    返回 {"alive", "latency_ms", "attempts": [{target, ok, ms | error}]}。
+    经本地监听对连通性端点发起 samples 次轻量请求 (轮换 targets)，测定最小延迟、平均延迟、抖动与丢包率。
+    - 快速熔断 (Fast-Fail): 从起始连续失败达到 fast_fail_consecutive 次 (如连续 5 次且 0 次成功)，
+      立即提前熔断退出，避免死节点空耗等待时间。
+    - 丢包淘汰: 丢包率 >= max_loss_rate (默认 50%) 判定为 alive=False，直接在测活阶段淘汰。
+    - 指标返回: {"alive", "latency_ms", "avg_latency_ms", "jitter_ms", "loss_rate",
+                 "loss_count", "total_samples", "attempts", "reason"}。
+    兼容性: 若传入旧参数 attempts，当 samples 未改变时以 attempts 为准。
     """
+    if attempts is not None and (samples == DEFAULT_LOSS_SAMPLES or samples is None):
+        samples = attempts
+    total_target_count = max(1, samples)
+    fast_fail_limit = min(fast_fail_consecutive, total_target_count)
+
     proxies = {"http": proxy_url, "https": proxy_url}
     records, latencies = [], []
     session = requests.Session()
     session.trust_env = False
 
-    def request(target):
-        started = time.monotonic()
-        try:
-            resp = session.get(target, proxies=proxies, timeout=(timeout, timeout), allow_redirects=False,
-                               headers={"User-Agent": UA})
-            _ = resp.content  # 读完响应体，连接才会回到连接池供补测复用
-            elapsed = round((time.monotonic() - started) * 1000, 1)
-            if 200 <= resp.status_code < 300:
-                records.append({"target": target, "ok": True, "ms": elapsed})
-                latencies.append(elapsed)
-                return True
-            records.append({"target": target, "ok": False, "error": f"http_{resp.status_code}"})
-        except requests.RequestException as exc:
-            records.append({"target": target, "ok": False, "error": type(exc).__name__})
-        return False
-
+    consecutive_fails = 0
     try:
-        for index in range(max(1, attempts)):
+        for index in range(total_target_count):
             target = targets[index % len(targets)]
-            if request(target):
-                request(target)
+            started = time.monotonic()
+            try:
+                resp = session.get(target, proxies=proxies, timeout=(timeout, timeout),
+                                   allow_redirects=False, headers={"User-Agent": UA})
+                _ = resp.content  # 读完响应体，连接放回池中
+                elapsed = round((time.monotonic() - started) * 1000, 1)
+                if 200 <= resp.status_code < 300:
+                    records.append({"target": target, "ok": True, "ms": elapsed})
+                    latencies.append(elapsed)
+                    consecutive_fails = 0
+                else:
+                    records.append({"target": target, "ok": False, "error": f"http_{resp.status_code}"})
+                    consecutive_fails += 1
+            except requests.RequestException as exc:
+                records.append({"target": target, "ok": False, "error": type(exc).__name__})
+                consecutive_fails += 1
+
+            # 快速熔断: 起始连续失败达到阈值且尚未有任何成功，判定为死节点/无法穿透，提前退出
+            if len(latencies) == 0 and consecutive_fails >= fast_fail_limit:
                 break
-            if index + 1 < attempts:
+
+            if index + 1 < total_target_count and pause > 0:
                 time.sleep(pause)
     finally:
         session.close()
-    return {"alive": bool(latencies), "latency_ms": min(latencies) if latencies else None, "attempts": records}
+
+    total_probes = len(records)
+    loss_count = total_probes - len(latencies)
+    loss_rate = round((loss_count / total_probes) * 100.0, 1) if total_probes > 0 else 100.0
+
+    min_latency = min(latencies) if latencies else None
+    avg_latency = round(sum(latencies) / len(latencies), 1) if latencies else None
+    jitter = round(max(latencies) - min(latencies), 1) if len(latencies) > 1 else (0.0 if latencies else None)
+
+    if not latencies:
+        alive = False
+        reason = "连通性检测全部失败(100%丢包)"
+    elif loss_rate >= max_loss_rate:
+        alive = False
+        reason = f"丢包率过高({loss_rate:.0f}% >= {max_loss_rate:.0f}%)"
+    else:
+        alive = True
+        reason = "ok"
+
+    return {
+        "alive": alive,
+        "latency_ms": min_latency,
+        "avg_latency_ms": avg_latency,
+        "jitter_ms": jitter,
+        "loss_rate": loss_rate,
+        "loss_count": loss_count,
+        "total_samples": total_probes,
+        "attempts": records,
+        "reason": reason
+    }
 
 
 def uses_udp_transport(proxy):
@@ -102,9 +150,13 @@ def pick_chain_fronts(ranked_rows, landing_proxy, limit=MAX_CHAIN_FRONTS):
 
 
 def rank_chain_fronts(alive_rows, landing_proxy, limit=MAX_CHAIN_FRONTS):
-    """为直连不通的节点挑选测活用前置: 已直连判活的节点按测活延迟升序，其余规则见 pick_chain_fronts。"""
-    by_latency = sorted(alive_rows, key=lambda r: r["liveness"]["latency_ms"] or 1e9)
-    return pick_chain_fronts(by_latency, landing_proxy, limit)
+    """为直连不通的节点挑选测活用前置: 已直连判活的节点按丢包率升序、测活延迟升序，其余规则见 pick_chain_fronts。"""
+    by_quality = sorted(alive_rows,
+                        key=lambda r: (
+                            (r.get("liveness") or {}).get("loss_rate", 0.0),
+                            (r.get("liveness") or {}).get("latency_ms") or 1e9
+                        ))
+    return pick_chain_fronts(by_quality, landing_proxy, limit)
 
 
 def check_alive_via_fronts(port_by_front, **options):

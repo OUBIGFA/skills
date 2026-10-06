@@ -139,6 +139,13 @@ book titles, principle and smell names (e.g. "Shotgun Surgery", "Divergent Chang
 and fixed structural headers from the template below (`Findings`, `Summary`,
 `Module Dependency Graph`, `Critical`, `Warning`, `Suggestion`).
 
+**Readability and evidence:** Lead with the conclusion. Use short sentences, concrete
+actions, and consistent module names. Define unfamiliar terms once. Each finding must
+identify the observed behavior and its code location or reproducible check. Distinguish
+observations from inferred consequences; a book citation does not verify a code claim.
+Show relationships in a graph only when it helps explain the finding, and link key edges
+to evidence. Keep the summary for the next action and unresolved limits; do not repeat findings.
+
 ````
 # Brooks-Lint Review
 
@@ -153,6 +160,7 @@ and fixed structural headers from the template below (`Findings`, `Summary`,
 ## Module Dependency Graph
 
 <!-- Mode 2 (Architecture Audit) ONLY — omit this section for other modes -->
+<!-- Use a compact dependency table for a simple structure; state scope and evidence locations -->
 <!-- classDef colors: see ../brooks-audit/architecture-guide.md Step 1 Rule 6 -->
 
 ```mermaid
@@ -170,10 +178,10 @@ graph TD
 ### 🔴 Critical
 
 **[Risk Name] — [Short descriptive title]**
-Symptom: [exactly what was observed in the code]
+Symptom: [observed behavior; file:line or reproducible check and result]
 Source: [Book title — Principle or Smell name]
 Consequence: [what breaks or gets worse if this is not fixed]
-Remedy: [concrete, specific action]
+Remedy: [concrete action and how to check its result]
 
 ### 🟡 Warning
 
@@ -195,7 +203,7 @@ Remedy: ...
 
 ## Summary
 
-[2–3 sentences: what is the most important action, and what is the overall trend]
+[Next action and unresolved limits; omit any repetition of the verdict or findings]
 ````
 
 ## Remedy Mode

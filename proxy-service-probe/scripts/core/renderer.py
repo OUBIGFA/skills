@@ -138,7 +138,16 @@ def _is_landing(p):
         return p["_is_landing"]
     if isinstance(p.get("is_landing"), bool):
         return p["is_landing"]
-    if "_Lnd" in name or "_USAI" in name:
+    if p.get("path") == "direct":
+        return False
+    if p.get("path") == "front":
+        return True
+    if "_Lnd" in name:
+        return True
+    # 规则升级：有 USAI 后缀但不是落地节点而是直连节点的不作为落地，不注入 dialer-proxy，也不沉底
+    if "_USAI" in name:
+        if p.get("path") == "direct" or p.get("is_landing") is False or p.get("_is_landing") is False:
+            return False
         return True
     # 旧 detour 可能残留在 Key 直连节点上，不能借此将前置节点链回自身。
     if p.get("_is_key") is True or re.search(r'(?i)\bkey(?![a-z])', name):
@@ -279,13 +288,37 @@ def sort_nodes_by_region_and_landing(items, resort=False):
                 return item['is_landing']
             if isinstance(item.get('_is_landing'), bool):
                 return item['_is_landing']
-            if item.get('dialer-proxy') or item.get('detour'):
+            if item.get('path') == 'direct':
+                return False
+            if item.get('path') == 'front':
                 return True
             proxy = item.get('proxy')
+            if isinstance(proxy, dict):
+                if isinstance(proxy.get('is_landing'), bool):
+                    return proxy['is_landing']
+                if isinstance(proxy.get('_is_landing'), bool):
+                    return proxy['_is_landing']
+                if proxy.get('path') == 'direct':
+                    return False
+                if proxy.get('path') == 'front':
+                    return True
+            name = _get_name(item)
+            if '_Lnd' in name:
+                return True
+            if '_USAI' in name:
+                if item.get('path') == 'direct' or item.get('is_landing') is False or item.get('_is_landing') is False:
+                    return False
+                if isinstance(proxy, dict) and (proxy.get('path') == 'direct' or proxy.get('is_landing') is False or proxy.get('_is_landing') is False):
+                    return False
+                return bool(item.get('is_landing') or item.get('_is_landing') or item.get('path') == 'front')
+            if item.get('dialer-proxy') or item.get('detour'):
+                return True
             if isinstance(proxy, dict) and (proxy.get('dialer-proxy') or proxy.get('detour')):
                 return True
         name = _get_name(item)
-        return ('_Lnd' in name) or ('_USAI' in name)
+        if '_Lnd' in name:
+            return True
+        return False
 
     def _is_iplc(item, name):
         if isinstance(item, dict):
@@ -371,6 +404,14 @@ def sort_nodes_by_region_and_landing(items, resort=False):
         name = _get_name(item)
         if _is_res(item, name) or _has_res_suffix(item, name):
             return False
+        # 规则升级：有 USAI 后缀但不是落地节点而是直连节点的不进行沉底，在地区主排序池中正常排位
+        if '_USAI' in name and not ('_Lnd' in name):
+            if isinstance(item, dict):
+                if item.get('path') == 'direct' or item.get('is_landing') is False or item.get('_is_landing') is False:
+                    return False
+                proxy = item.get('proxy')
+                if isinstance(proxy, dict) and (proxy.get('path') == 'direct' or proxy.get('is_landing') is False or proxy.get('_is_landing') is False):
+                    return False
         return True
 
     def _reputation(item):
@@ -539,7 +580,7 @@ def sort_nodes_by_region_and_landing(items, resort=False):
 def build_proxy_groups(proxies, front_fallback=None):
     """
     根据节点的能力和属性构造标准策略组结构 (严格同步 freenode 分组规则)。
-    1. 🛡️ Front前置：仅允许 Key 优质前置节点进组，严禁落地节点充当前置跳板！
+    1. 🛡️ Front前置：仅允许 Key 优质前置节点进组，严禁落地节点充当前置跳板！默认选项为 DIRECT (默认不使用链式代理)。
        无 Key 时优先使用 front_fallback (测速达到备用档、实际用于验证落地节点的前置)，再退守可用直连节点。
     2. ⚡ Fast自动选择：仅在 Key 优质前置跳板节点中执行 url-test 延迟选优。
     3. 落地节点：所有落地节点默认绑定 dialer-proxy: 🛡️ Front前置。
@@ -586,7 +627,7 @@ def build_proxy_groups(proxies, front_fallback=None):
     # 构造前置跳板池选项: 优先 Key 节点池；无 Key 时用备用前置 (排除落地)，再退守可用直连节点
     fallback = [name for name in (front_fallback or []) if name in directs]
     front_members = keys or fallback or directs
-    front_proxies = [fast_group_name, "DIRECT"]
+    front_proxies = ["DIRECT", fast_group_name]
     if front_members:
         front_proxies.extend(front_members)
 

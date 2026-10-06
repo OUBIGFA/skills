@@ -36,10 +36,10 @@ flowchart TD
     Streaming --> DPUnlock["✨ 解锁Disney+ (url-test)"]
     Streaming --> ManualSelect
 
-    LandingNodes["落地节点群 (_Lnd / _USAI)"] -.->|dialer-proxy 链式前置| FrontGroup["🛡️ Front前置"]
+    LandingNodes["落地节点群 (需前置的 _Lnd / 需前置的 _USAI)"] -.->|dialer-proxy 链式前置| FrontGroup["🛡️ Front前置"]
+    FrontGroup --> Direct["DIRECT (默认首选项)"]
     FrontGroup --> FastSelect["⚡ Fast自动选择 (仅优选 Key 节点)"]
     FrontGroup --> KeyNodes["Key 优质前置跳板列表"]
-    FrontGroup --> Direct
 ```
 
 ---
@@ -48,9 +48,9 @@ flowchart TD
 
 1. **`🛡️ Front前置` 与 `⚡ Fast自动选择`**：
    - 专为落地节点提供第一跳（Jump Host）中转能力。
-   - **`🛡️ Front前置`**：成员固定为 `["⚡ Fast自动选择", "DIRECT"] + [所有 Key 节点]`。
+   - **`🛡️ Front前置`**：成员固定为 `["DIRECT", "⚡ Fast自动选择"] + [所有 Key 节点]`（首项为 `DIRECT` 作为默认选项，默认不启用链式前置代理）。
    - **`⚡ Fast自动选择`**：`url-test` 自动测优，优先通过测速与协议准入的 Key；无 Key 时使用下述备用池。
-   - **绝不允许落地节点充当跳板**：任何标记为 `_Lnd`、`_USAI` 或带有 `dialer-proxy` 的节点严禁进入前置组。
+   - **绝不允许落地节点充当跳板**：任何标记为 `_Lnd`、需前置的 `_USAI` 或带有 `dialer-proxy` 的真实落地节点严禁进入前置组（直连 USAI 节点不属于此类）。
    - 未评出 Key 但 `probe_services.py` 选出了备用前置（测速未被淘汰的可前置节点，即实际用于验证落地节点的前置）时，`⚡ Fast自动选择` 与 `🛡️ Front前置` 使用备用前置；再无则退守为可用直连节点或 `DIRECT`。
 2. **`✅ 解锁 AI` 与 `✅ 解锁USAI`**：
    - `✅ 解锁 AI`：由所有带 `❇️`（AI三大全通）的节点组成，执行低延迟自动选优。

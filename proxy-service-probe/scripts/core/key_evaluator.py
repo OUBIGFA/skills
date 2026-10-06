@@ -17,6 +17,7 @@ from .speed_probe import DEFAULT_MIN_FLOOR_MBPS, DEFAULT_MIN_STABLE_MBPS, speed_
 KEY_DISALLOWED_PROTOCOLS = frozenset({"http", "https", "socks", "socks5"})
 
 ASIA_CORE = frozenset({"HK", "TW", "JP", "SG", "KR"})
+DEFAULT_KEY_MAX_LOSS_RATE = 20.0  # Key 优质跳板丢包率硬门槛: >= 20% 严禁充当前置
 
 PROTOCOL_CLASS_SCORE = {
     "tls-tcp": 10,     # vless/vmess/trojan + TLS/Reality/gRPC, anytls
@@ -55,27 +56,32 @@ def protocol_class(proxy):
 
 
 def is_landing_role(proxy):
-    """判断节点是否为落地角色"""
+    """判断节点是否为落地角色 (需通过前置中转出网，不可作为直连或前置跳板)。"""
     if not isinstance(proxy, dict):
         return False
+    if proxy.get("_is_landing") is False or proxy.get("is_landing") is False or proxy.get("path") == "direct":
+        return False
+    if proxy.get("_is_landing") is True or proxy.get("is_landing") is True or proxy.get("path") == "front":
+        return True
     name = proxy.get("name", "")
+    # 注意: 有 USAI 后缀但为直连节点的不是落地角色，只有 _Lnd、明确配置 dialer-proxy/detour 或显式标记才作为落地
     return bool(
-        proxy.get("_is_landing") or
         "_Lnd" in name or
-        "_USAI" in name or
-        "🏠" in name or
-        proxy.get("dialer-proxy")
+        proxy.get("dialer-proxy") or
+        proxy.get("detour")
     )
 
 
 def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None,
-                      min_stable_mbps=DEFAULT_MIN_STABLE_MBPS, min_floor_mbps=DEFAULT_MIN_FLOOR_MBPS, is_landing=False):
+                      min_stable_mbps=DEFAULT_MIN_STABLE_MBPS, min_floor_mbps=DEFAULT_MIN_FLOOR_MBPS,
+                      is_landing=False, loss_rate=None, max_loss_rate=DEFAULT_KEY_MAX_LOSS_RATE):
     """
     对单个节点进行 Key 前置跳板资格判定与综合打分。
     is_landing: 流水线实测的落地角色 (直连不通、经前置才连通)；这类节点名称与配置里未必带落地标记，同样不能作前置。
+    loss_rate: 测活阶段测得的丢包率 (%)，>= max_loss_rate (默认 20%) 严禁充当前置跳板。
     返回: (eligible: bool, score: float, reason: str)
     """
-    if is_landing or is_landing_role(proxy):
+    if is_landing or is_landing_role(proxy) or "🏠" in proxy.get("name", "") or proxy.get("is_residential"):
         return False, 0.0, "落地节点不能作为前置跳板"
 
     proto = (proxy.get("type") or "").strip().lower()
@@ -89,6 +95,10 @@ def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None,
         if not egress_result.get("exit_ip") and not egress_result.get("observed_ips"):
             return False, 0.0, "代理出网未确认"
 
+    # 丢包率硬门槛: Key 节点作为前置跳板要求极高稳定性，丢包率 >= max_loss_rate (默认 20%) 严禁充当 Key
+    if loss_rate is not None and loss_rate >= max_loss_rate:
+        return False, 0.0, f"丢包率过高({loss_rate:.0f}% >= {max_loss_rate:.0f}%)"
+
     # 测速硬门槛
     speed_mbps = 0.0
     if speed_result is not None:
@@ -99,7 +109,7 @@ def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None,
         # 未开启测速时不支持评选为 Key (必须有实测带宽证据)
         return False, 0.0, "缺少下载测速达标证据"
 
-    # 综合质量评分 (满分约 50)
+    # 综合质量评分 (满分约 55)
     score = 0.0
 
     # 1. 协议类别分 (3 ~ 10 分)
@@ -121,12 +131,16 @@ def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None,
         # 延迟低于 100ms 满分，350ms 以上 0 分
         score += 10.0 * max(0.0, min(1.0, 1.0 - (delay - 50.0) / 300.0))
 
+    # 5. 丢包与稳定性加分 (0 ~ 5 分)
+    if loss_rate is not None and max_loss_rate > 0:
+        score += 5.0 * max(0.0, min(1.0, 1.0 - (loss_rate / max_loss_rate)))
+
     score = round(score, 1)
     return True, score, "ok"
 
 
 def select_key_nodes(results, max_keys=10, per_country_cap=3, min_stable_mbps=DEFAULT_MIN_STABLE_MBPS,
-                     min_floor_mbps=DEFAULT_MIN_FLOOR_MBPS):
+                     min_floor_mbps=DEFAULT_MIN_FLOOR_MBPS, max_loss_rate=DEFAULT_KEY_MAX_LOSS_RATE):
     """
     从一组检测结果中优选 Key 节点，并根据国家配额进行分配。
     results 列表中每个 dict 应包含:
@@ -134,10 +148,12 @@ def select_key_nodes(results, max_keys=10, per_country_cap=3, min_stable_mbps=DE
       - speed_result: 持续测速结果
       - egress_result: 出口检测结果
       - delay: 握手延迟
+      - loss_rate / liveness: 丢包率 (可选)
     """
     candidates = []
     for r in results:
         p = r["proxy"]
+        loss_val = r.get("loss_rate") if r.get("loss_rate") is not None else (r.get("liveness") or {}).get("loss_rate")
         eligible, score, reason = evaluate_key_node(
             proxy=p,
             speed_result=r.get("speed_result"),
@@ -145,7 +161,9 @@ def select_key_nodes(results, max_keys=10, per_country_cap=3, min_stable_mbps=DE
             delay=r.get("delay"),
             min_stable_mbps=min_stable_mbps,
             min_floor_mbps=min_floor_mbps,
-            is_landing=bool(r.get("is_landing"))
+            is_landing=bool(r.get("is_landing")),
+            loss_rate=loss_val,
+            max_loss_rate=max_loss_rate
         )
         r["is_key"] = False
         p["_is_key"] = False
@@ -189,14 +207,15 @@ def is_front_capable(proxy):
     return not is_landing_role(proxy) and is_key_protocol_allowed(proxy)
 
 
-def rank_front_candidates(results, min_stable_mbps, min_floor_mbps):
+def rank_front_candidates(results, min_stable_mbps, min_floor_mbps, max_loss_rate=DEFAULT_KEY_MAX_LOSS_RATE):
     """按 Key 评分规则给达到指定测速档的可前置节点排序 (只读，不改动 results)；返回 [(评分, 稳态速度, row)] 降序。"""
     ranked = []
     for r in results:
+        loss_val = r.get("loss_rate") if r.get("loss_rate") is not None else (r.get("liveness") or {}).get("loss_rate")
         eligible, score, _ = evaluate_key_node(
             proxy=r["proxy"], speed_result=r.get("speed_result"), egress_result=r.get("egress_result") or r,
             delay=r.get("delay"), min_stable_mbps=min_stable_mbps, min_floor_mbps=min_floor_mbps,
-            is_landing=bool(r.get("is_landing")))
+            is_landing=bool(r.get("is_landing")), loss_rate=loss_val, max_loss_rate=max_loss_rate)
         if eligible:
             ranked.append((score, float((r.get("speed_result") or {}).get("stable_mbps") or 0.0), r))
     ranked.sort(key=lambda item: (-item[0], -item[1]))

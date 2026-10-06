@@ -871,6 +871,41 @@ class TestProxyServiceProbe(unittest.TestCase):
             if os.path.exists(tmp_json):
                 os.remove(tmp_json)
 
+    def test_usai_direct_and_landing_sorting(self):
+        """验证带有 USAI 后缀但实测直连的节点正常排序不沉底，仅真正需前置的落地节点才沉底并注入 dialer-proxy。"""
+        from core.renderer import sort_nodes_by_region_and_landing, render_clash_config
+
+        nodes = [
+            {"name": "🇺🇸 ❇️Fast美国_1_NF_D+", "type": "vmess", "server": "1.1.1.1", "port": 443, "path": "direct", "is_landing": False},
+            {"name": "🇺🇸 ❇️Fast美国_2_USAI_NF_D+", "type": "vmess", "server": "2.2.2.2", "port": 443, "path": "direct", "is_landing": False},
+            {"name": "🇺🇸 ❇️Fast美国_3_USAI_NF_D+", "type": "vmess", "server": "3.3.3.3", "port": 443, "path": "front", "is_landing": True},
+            {"name": "🇺🇸 美国_4_Lnd", "type": "vmess", "server": "4.4.4.4", "port": 443, "path": "front", "is_landing": True},
+        ]
+
+        sorted_nodes = sort_nodes_by_region_and_landing(nodes, resort=True)
+        sorted_names = [n["name"] for n in sorted_nodes]
+
+        # 1. 验证直连 USAI 节点在主排序池中正常排位，排在普通落地节点之前
+        self.assertEqual(sorted_names[0], "🇺🇸 ❇️Fast美国_1_NF_D+")
+        self.assertEqual(sorted_names[1], "🇺🇸 ❇️Fast美国_2_USAI_NF_D+")
+        self.assertEqual(sorted_names[2], "🇺🇸 ❇️Fast美国_3_USAI_NF_D+")
+        self.assertEqual(sorted_names[3], "🇺🇸 美国_4_Lnd")
+
+        # 2. 验证渲染配置时，直连 USAI 节点不注入 dialer-proxy，仅真正落地节点注入
+        cfg = render_clash_config(sorted_nodes)
+        p_by_name = {p["name"]: p for p in cfg["proxies"]}
+
+        self.assertNotIn("dialer-proxy", p_by_name["🇺🇸 ❇️Fast美国_1_NF_D+"])
+        self.assertNotIn("dialer-proxy", p_by_name["🇺🇸 ❇️Fast美国_2_USAI_NF_D+"])
+        self.assertEqual(p_by_name["🇺🇸 ❇️Fast美国_3_USAI_NF_D+"].get("dialer-proxy"), "🛡️ Front前置")
+        self.assertEqual(p_by_name["🇺🇸 美国_4_Lnd"].get("dialer-proxy"), "🛡️ Front前置")
+
+        # 3. 验证 USAI 策略组包含所有 USAI 节点 (直连与落地均可进 USAI 组)
+        groups = {g["name"]: g for g in cfg["proxy-groups"]}
+        usai_group = groups["✅ 解锁USAI"]["proxies"]
+        self.assertIn("🇺🇸 ❇️Fast美国_2_USAI_NF_D+", usai_group)
+        self.assertIn("🇺🇸 ❇️Fast美国_3_USAI_NF_D+", usai_group)
+
 
 if __name__ == "__main__":
     unittest.main()

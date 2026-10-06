@@ -175,6 +175,22 @@ class TestKeyEvaluator(unittest.TestCase):
         self.assertFalse(row["is_key"])
         self.assertFalse(row["proxy"]["_is_key"])
 
+    def test_key_selection_rejects_high_loss_rate(self):
+        speed = {"status": "complete", "verdict": "qualified", "stable_mbps": 20.0, "floor_mbps": 15.0}
+        bad_loss_row = {
+            "proxy": {"name": "lossy_node", "type": "trojan"},
+            "exit_ip": "1.1.1.1", "speed_result": speed, "loss_rate": 20.0
+        }
+        good_loss_row = {
+            "proxy": {"name": "healthy_node", "type": "trojan"},
+            "exit_ip": "2.2.2.2", "speed_result": speed, "loss_rate": 5.0
+        }
+        self.assertEqual(select_key_nodes([bad_loss_row]), [])
+        self.assertIn("丢包率过高", bad_loss_row["key_reason"])
+        chosen = select_key_nodes([good_loss_row])
+        self.assertEqual(len(chosen), 1)
+        self.assertTrue(good_loss_row["is_key"])
+
     def test_asia_bonus_uses_pipeline_country_code(self):
         # 流水线结果行只有 cc（无 _country_code / country），亚太加分仍需生效
         speed = {"status": "complete", "verdict": "qualified", "stable_mbps": 40.0, "floor_mbps": 35.0}
@@ -247,8 +263,9 @@ class TestRendererGroupingSync(unittest.TestCase):
         self.assertIn("⚡ Fast自动选择", groups)
         self.assertIn("🔒️ 落地节点", groups)
 
-        # 1. 验证 🛡️ Front前置 包含 Key 节点，且绝不包含落地节点
+        # 1. 验证 🛡️ Front前置 包含 Key 节点，且绝不包含落地节点，默认首选项为 DIRECT
         front_members = groups["🛡️ Front前置"]["proxies"]
+        self.assertEqual(front_members[0], "DIRECT")
         self.assertIn("⚡ Fast自动选择", front_members)
         self.assertIn("DIRECT", front_members)
         self.assertIn("🇯🇵 ✨️❇️Key日本_1", front_members)

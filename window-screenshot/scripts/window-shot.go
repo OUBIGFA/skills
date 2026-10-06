@@ -1,6 +1,6 @@
 // window-shot：给运行中的 Windows 程序窗口截图，保存为 PNG。
 //
-// 用法：window-shot <进程名或PID> <输出png路径> [-click <按钮文字>] [-wait <毫秒>]
+// 用法：window-shot <进程名或PID> <输出png路径> [-click <按钮文字>] [-select <列表项文字>] [-mouse X,Y] [-wait <毫秒>]
 //
 // 设计取舍：
 //   - 纯 stdlib + syscall，不依赖 golang.org/x/sys，也不依赖任何 CGO，离线即可构建。
@@ -10,8 +10,12 @@
 //     缩放过的逻辑坐标，与物理像素不一致会导致截图被裁切。
 //   - 输出前裁掉 Win10/11 的“不可见调整边框”：GetWindowRect 比肉眼可见的窗口每边大
 //     7~8px，PrintWindow 把那一圈画成纯黑，不裁就是截图四边的黑边。
-//   - 切页/展开面板用给按钮发 BM_CLICK，而不是模拟鼠标：不要求窗口在前台、不受遮挡
-//     影响，也不用先算按钮坐标。
+//   - 切页/展开面板优先用给按钮发 BM_CLICK，而不是模拟鼠标：不要求窗口在前台、不受
+//     遮挡影响，也不用先算按钮坐标。只有自绘界面（窗口内没有原生控件，全是画出来的）
+//     才退而用 -mouse 按坐标点，因为那种界面拿不到按钮句柄。
+//   - 选中列表项用键盘（HOME + N×DOWN）而不是鼠标点击：列表是原生控件，键盘导航走的是
+//     程序自己的选中逻辑，界面不会留下按下/悬停/焦点痕迹。要知道点第几行，先跨进程读
+//     出列表项文字（LVM_GETITEMTEXTW 需要目标进程里的缓冲区，见 readListViewItems）。
 //   - 截图前把界面“静止化”：清掉焦点、把鼠标移到窗口外。否则会拍到焦点虚线框、
 //     按钮悬停高亮、输入框光标这类与界面本身无关的瞬时装饰。
 package main
@@ -59,6 +63,8 @@ var (
 	procGetCursorPos       = user32.NewProc("GetCursorPos")
 	procSetCursorPos       = user32.NewProc("SetCursorPos")
 	procGetSystemMetrics   = user32.NewProc("GetSystemMetrics")
+	procMouseEvent         = user32.NewProc("mouse_event")
+	procGetForegroundWin   = user32.NewProc("GetForegroundWindow")
 
 	procCreateCompatibleDC = gdi32.NewProc("CreateCompatibleDC")
 	procCreateDIBSection   = gdi32.NewProc("CreateDIBSection")
@@ -75,6 +81,13 @@ var (
 	procProcess32NextW           = kernel32.NewProc("Process32NextW")
 	procCloseHandle              = kernel32.NewProc("CloseHandle")
 	procGetCurrentThreadID       = kernel32.NewProc("GetCurrentThreadId")
+
+	// 跨进程读列表项文字用（消息只能写入目标进程的地址空间，所以要先在对面分配内存）。
+	procOpenProcess        = kernel32.NewProc("OpenProcess")
+	procVirtualAllocEx     = kernel32.NewProc("VirtualAllocEx")
+	procVirtualFreeEx      = kernel32.NewProc("VirtualFreeEx")
+	procWriteProcessMemory = kernel32.NewProc("WriteProcessMemory")
+	procReadProcessMemory  = kernel32.NewProc("ReadProcessMemory")
 )
 
 const (
@@ -96,12 +109,38 @@ const (
 	// BM_CLICK：让按钮自己走一遍按下-弹起并通知父窗口，等价于用户点击。
 	bmClick = 0x00F5
 
+	// mouse_event 的标志位，只有自绘界面才需要真鼠标点击。
+	mouseEventLeftDown = 0x0002
+	mouseEventLeftUp   = 0x0004
+
 	th32csSnapProcess = 0x00000002
 	maxPath           = 260
 
 	// 屏幕尺寸，用于把鼠标挪到窗口外（物理像素，本进程已 DPI 感知）。
 	smCXScreen = 0
 	smCYScreen = 1
+
+	// ListView 消息（LVM_FIRST = 0x1000）。
+	lvmGetItemCount = 0x1000 + 4
+	lvmGetNextItem  = 0x1000 + 12
+	lvmGetItemTextW = 0x1000 + 115
+	lvifText        = 0x0001
+	lvniSelected    = 0x0002
+
+	// 键盘导航用：列表控件不靠 WM_LBUTTON 也能被键盘消息驱动。
+	wmKeyDown  = 0x0100
+	wmKeyUp    = 0x0101
+	vkHome     = 0x24
+	vkDown     = 0x28
+	maxItemTxt = 260
+
+	// OpenProcess / VirtualAllocEx 参数。
+	processVMOperation = 0x0008
+	processVMRead      = 0x0010
+	processVMWrite     = 0x0020
+	memCommitReserve   = 0x3000
+	memRelease         = 0x8000
+	pageReadWrite      = 0x04
 )
 
 type rect struct{ L, T, R, B int32 }
@@ -150,6 +189,27 @@ type candidate struct {
 
 type point struct{ X, Y int32 }
 
+// lvItem 对应 Win32 的 LVITEMW。字段顺序/宽度按 C ABI 排列，Go 的自然对齐规则与之一致：
+// StateMask 之后 PszText 会对齐到 8 字节边界（偏移 24），LParam 同理（偏移 40）。
+// 只有 mask/iItem/pszText/cchTextMax 参与 LVM_GETITEMTEXTW，其余留空即可。
+type lvItem struct {
+	Mask       uint32
+	IItem      int32
+	ISubItem   int32
+	State      uint32
+	StateMask  uint32
+	PszText    uintptr // 目标进程里的文本缓冲区地址
+	CchTextMax int32
+	IImage     int32
+	LParam     uintptr
+	IIndent    int32
+	IGroupID   int32
+	CColumns   uint32
+	PuColumns  uintptr
+	PiColFmt   uintptr
+	IGroup     int32
+}
+
 // guiThreadInfo 对应 Win32 的 GUITHREADINFO，用 HwndFocus 查“哪个控件正持有焦点”。
 // cbSize 必须填结构体实际大小，否则调用直接失败。
 type guiThreadInfo struct {
@@ -168,7 +228,7 @@ func main() {
 	opts, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, "用法: window-shot <进程名或PID> <输出png路径> [-click <按钮文字>] [-wait <毫秒>]")
+		fmt.Fprintln(os.Stderr, "用法: window-shot <进程名或PID> <输出png路径> [-click <按钮文字>] [-select <列表项文字>] [-mouse X,Y] [-wait <毫秒>]")
 		os.Exit(2)
 	}
 
@@ -215,16 +275,34 @@ func main() {
 		time.Sleep(400 * time.Millisecond)
 	}
 	procBringWindowToTop.Call(best.hwnd)
-	procSetForegroundWin.Call(best.hwnd)
+	if !forceForeground(best.hwnd) {
+		// 只影响 -mouse：真鼠标点击会落到别的前台窗口上。抓窗口本身不受影响。
+		fmt.Fprintln(os.Stderr, "提示：无法把窗口切到前台，-mouse 点击可能落在其它窗口")
+	}
 
-	// 需要切页时先点按钮，等界面重绘完再截图。
-	if opts.click != "" {
+	// 需要切页时先操作，等界面重绘完再截图。
+	// -mouse 走真鼠标（自绘界面唯一可行），因此必须先把窗口放到前台，否则点到别处。
+	if opts.mouse != "" {
+		x, y, _ := parseScreenPoint(opts.mouse)
+		time.Sleep(250 * time.Millisecond)
+		clickPoint(x, y)
+		fmt.Printf("等待 %dms 让界面重绘\n", opts.waitMS)
+		time.Sleep(time.Duration(opts.waitMS) * time.Millisecond)
+	} else if opts.click != "" {
 		time.Sleep(200 * time.Millisecond)
 		if err := clickButton(best.hwnd, opts.click); err != nil {
 			fmt.Fprintf(os.Stderr, "点击失败: %v\n", err)
 			os.Exit(6)
 		}
 		fmt.Printf("已点击按钮 %q，等待 %dms 后截图\n", opts.click, opts.waitMS)
+		time.Sleep(time.Duration(opts.waitMS) * time.Millisecond)
+	}
+	// 选中列表项放在切页之后：先切到有列表的页面，再选。
+	if opts.selectItem != "" {
+		if err := selectByText(bestPID, best.hwnd, opts.selectItem); err != nil {
+			fmt.Fprintf(os.Stderr, "选中列表项失败: %v\n", err)
+			os.Exit(7)
+		}
 		time.Sleep(time.Duration(opts.waitMS) * time.Millisecond)
 	}
 	time.Sleep(200 * time.Millisecond)
@@ -243,7 +321,7 @@ func main() {
 
 	// 静止化：清掉控件焦点并让鼠标离开窗口，否则会把焦点虚线框、按钮悬停高亮、
 	// 输入框光标这些瞬时装饰拍进图里。鼠标位置在截图后恢复。
-	clearFocus(best.hwnd)
+	clearFocus(best.hwnd, r)
 	restoreCursor := parkCursor(r)
 	defer restoreCursor()
 	time.Sleep(300 * time.Millisecond)
@@ -256,13 +334,21 @@ func main() {
 
 	// 按 DWM 可见边界裁掉不可见边框（PrintWindow 在这圈里画的是纯黑）。
 	trimMax := 16 // DWM 拿不到时只能靠黑边探测，允许裁得深一些
+	origin := r
 	if vis, ok := visibleFrame(best.hwnd); ok {
 		fmt.Printf("窗口矩形=(%d,%d)-(%d,%d)  可见框=(%d,%d)-(%d,%d)\n",
 			r.L, r.T, r.R, r.B, vis.L, vis.T, vis.R, vis.B)
 		img = crop(img, r, vis)
+		origin = vis
 		trimMax = 4 // DWM 边界实测仍可能差 1~2 px，留一点余量收尾
 	}
-	img = trimBlackEdges(img, trimMax)
+	var trimL, trimT int
+	img, trimL, trimT = trimBlackEdges(img, trimMax)
+
+	// 报出映射关系：自绘界面只能按坐标点，量出的图内坐标必须能准确换算成屏幕坐标。
+	originX, originY := int(origin.L)+trimL, int(origin.T)+trimT
+	fmt.Printf("图像左上角 = 屏幕 (%d,%d)：图内 (x,y) → 屏幕 (%d+x,%d+y)\n",
+		originX, originY, originX, originY)
 
 	b := img.Bounds()
 	f, err := os.Create(opts.out)
@@ -279,13 +365,15 @@ func main() {
 }
 
 type options struct {
-	target string
-	out    string
-	click  string
-	waitMS int
+	target     string
+	out        string
+	click      string
+	selectItem string // 列表里要选中的项（第 1 列文字）
+	mouse      string // 屏幕坐标 "X,Y"，用于自绘界面
+	waitMS     int
 }
 
-// parseArgs 手写解析：只有两个位置参数和两个可选开关，不值得引入 flag 包
+// parseArgs 手写解析：只有两个位置参数和几个可选开关，不值得引入 flag 包
 // （flag 会在遇到位置参数后停止解析，反而更别扭）。
 func parseArgs(argv []string) (options, error) {
 	opts := options{waitMS: 800} // 切页动画/布局重排需要一点时间，默认等 800ms
@@ -298,6 +386,21 @@ func parseArgs(argv []string) (options, error) {
 			}
 			i++
 			opts.click = argv[i]
+		case "-select", "--select":
+			if i+1 >= len(argv) {
+				return opts, fmt.Errorf("-select 缺少列表项文字")
+			}
+			i++
+			opts.selectItem = argv[i]
+		case "-mouse", "--mouse":
+			if i+1 >= len(argv) {
+				return opts, fmt.Errorf("-mouse 缺少坐标")
+			}
+			i++
+			if _, _, err := parseScreenPoint(argv[i]); err != nil {
+				return opts, err
+			}
+			opts.mouse = argv[i]
 		case "-wait", "--wait":
 			if i+1 >= len(argv) {
 				return opts, fmt.Errorf("-wait 缺少毫秒数")
@@ -317,6 +420,68 @@ func parseArgs(argv []string) (options, error) {
 	}
 	opts.target, opts.out = positional[0], positional[1]
 	return opts, nil
+}
+
+// parseScreenPoint 解析 "X,Y" 形式的屏幕绝对坐标。
+func parseScreenPoint(s string) (int32, int32, error) {
+	parts := strings.Split(s, ",")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("-mouse 需要 X,Y 形式（屏幕绝对坐标），收到 %q", s)
+	}
+	x, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	y, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err1 != nil || err2 != nil {
+		return 0, 0, fmt.Errorf("-mouse 的坐标必须是整数，收到 %q", s)
+	}
+	return int32(x), int32(y), nil
+}
+
+// forceForeground 把目标窗口切到前台，返回是否成功。
+//
+// 直接调 SetForegroundWindow 在自动化场景常被 Windows 的前台锁拒绝（调用方不是当前
+// 前台进程）。标准绕法：把本线程的输入队列与「当前前台窗口线程」和「目标窗口线程」
+// 挂在一起再设前台，设完摘除。
+func forceForeground(hwnd uintptr) bool {
+	if fg, _, _ := procGetForegroundWin.Call(); fg == hwnd {
+		return true
+	}
+	procSetForegroundWin.Call(hwnd)
+	if fg, _, _ := procGetForegroundWin.Call(); fg == hwnd {
+		return true
+	}
+
+	ourTid, _, _ := procGetCurrentThreadID.Call()
+	fg, _, _ := procGetForegroundWin.Call()
+	fgTid, _, _ := procGetWindowThreadPID.Call(fg, 0)
+	targetTid, _, _ := procGetWindowThreadPID.Call(hwnd, 0)
+
+	var attached []uintptr
+	for _, t := range []uintptr{fgTid, targetTid} {
+		if t == 0 || t == ourTid {
+			continue
+		}
+		if ok, _, _ := procAttachThreadInput.Call(ourTid, t, 1); ok != 0 {
+			attached = append(attached, t)
+		}
+	}
+	procBringWindowToTop.Call(hwnd)
+	procSetForegroundWin.Call(hwnd)
+	for _, t := range attached {
+		procAttachThreadInput.Call(ourTid, t, 0)
+	}
+	fg, _, _ = procGetForegroundWin.Call()
+	return fg == hwnd
+}
+
+// clickPoint 把鼠标移到屏幕绝对坐标点一下左键。
+// 自绘界面（窗口里只有一块画布）没有控件句柄，只能这样点。
+func clickPoint(x, y int32) {
+	procSetCursorPos.Call(uintptr(x), uintptr(y))
+	// 给界面一点时间处理鼠标移动、完成命中判定，否则按下时可能还按在原位置。
+	time.Sleep(150 * time.Millisecond)
+	procMouseEvent.Call(mouseEventLeftDown, 0, 0, 0, 0)
+	procMouseEvent.Call(mouseEventLeftUp, 0, 0, 0, 0)
+	fmt.Printf("已在屏幕坐标 (%d,%d) 点击左键\n", x, y)
 }
 
 // clickButton 在窗口的所有后代控件里找按钮文字匹配的按钮并发 BM_CLICK。
@@ -361,6 +526,169 @@ func clickButton(hwnd uintptr, text string) error {
 	default:
 		return fmt.Errorf("有多个按钮包含 %q，无法确定点哪个：%s", text, strings.Join(labels, " / "))
 	}
+}
+
+// selectByText 在窗口的原生列表控件里按第 1 列文字选中一项，并回读确认。
+func selectByText(pid uint32, hwnd uintptr, text string) error {
+	lv := findListView(hwnd)
+	if lv == 0 {
+		return fmt.Errorf("窗口里没有原生列表控件（SysListView32）；自绘列表只能用 -mouse 点坐标")
+	}
+	items, err := readListViewItems(pid, lv)
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		return fmt.Errorf("列表里没有任何项")
+	}
+	fmt.Printf("列表共 %d 项：\n", len(items))
+	for i, s := range items {
+		fmt.Printf("  %2d  %s\n", i+1, s)
+	}
+
+	// 匹配策略同按钮：先精确，再唯一包含。多候选时报错，不猜。
+	idx := -1
+	var partial []int
+	for i, s := range items {
+		if s == text {
+			idx = i
+			break
+		}
+		if strings.Contains(s, text) {
+			partial = append(partial, i)
+		}
+	}
+	if idx < 0 {
+		switch len(partial) {
+		case 0:
+			return fmt.Errorf("列表里没有 %q", text)
+		case 1:
+			idx = partial[0]
+		default:
+			names := make([]string, 0, len(partial))
+			for _, i := range partial {
+				names = append(names, items[i])
+			}
+			return fmt.Errorf("%d 项都包含 %q，无法确定选哪个：%s", len(partial), text, strings.Join(names, " / "))
+		}
+	}
+
+	selectListItem(lv, idx)
+
+	// 用 LVM_GETNEXTITEM 回读当前选中项：键盘消息没有被当导航处理时能立刻发现，
+	// 否则会拍出一张“看起来正常但没有选中”的图。
+	sel, _, _ := procSendMessageW.Call(lv, lvmGetNextItem, ^uintptr(0), lvniSelected)
+	if int32(sel) != int32(idx) {
+		return fmt.Errorf("回读到的选中项是 %d，期望 %d：选中没有生效", int32(sel), idx)
+	}
+	fmt.Printf("已选中第 %d 项：%s\n", idx+1, items[idx])
+	return nil
+}
+
+// findListView 取窗口里项数最多的原生列表控件；都没有则返回 0。
+// 一个窗口里可能有多个 list（如带筛选的组合框），取项数最多的更可能是主列表。
+func findListView(hwnd uintptr) uintptr {
+	var lists []uintptr
+	cb := syscall.NewCallback(func(child, _ uintptr) uintptr {
+		if strings.EqualFold(utf16Field(child, procGetClassNameW), "SysListView32") {
+			lists = append(lists, child)
+		}
+		return 1
+	})
+	procEnumChildWindows.Call(hwnd, cb, 0)
+
+	best, bestCount := uintptr(0), uintptr(1)
+	for _, lv := range lists {
+		if n, _, _ := procSendMessageW.Call(lv, lvmGetItemCount, 0, 0); n >= bestCount {
+			best, bestCount = lv, n
+		}
+	}
+	return best
+}
+
+// selectListItem 让列表拿到焦点后按键盘选中第 idx 项（从 0 计）。
+//
+// 走键盘而不是 LVM_SETITEMSTATE：后者是直接改控件状态，不一定触发程序自己的选中回调
+// （右侧详情就不会刷新），键盘导航必然触发，效果与用户手点一致。
+func selectListItem(lv uintptr, idx int) {
+	setFocusCrossProcess(lv)
+	keyPress(lv, vkHome)
+	for i := 0; i < idx; i++ {
+		keyPress(lv, vkDown)
+	}
+}
+
+func keyPress(hwnd, vk uintptr) {
+	procSendMessageW.Call(hwnd, wmKeyDown, vk, 0)
+	procSendMessageW.Call(hwnd, wmKeyUp, vk, 0)
+}
+
+// readListViewItems 跨进程读出列表第 1 列的全部文字。
+//
+// LVM_GETITEMTEXTW 在目标进程里执行，把文字写进 LVITEM.pszText 指向的缓冲区，
+// 所以缓冲区必须分配在目标进程的地址空间（VirtualAllocEx + 跨进程读写内存）。
+// 每读一项都要重写 LVITEM：iItem 变了，其余字段保持不变。
+func readListViewItems(pid uint32, lv uintptr) ([]string, error) {
+	h, _, errno := procOpenProcess.Call(
+		processVMOperation|processVMRead|processVMWrite, 0, uintptr(pid))
+	if h == 0 {
+		return nil, fmt.Errorf("OpenProcess 失败: %v", errno)
+	}
+	defer procCloseHandle.Call(h)
+
+	itemSize := unsafe.Sizeof(lvItem{})
+	remote, _, _ := procVirtualAllocEx.Call(h, 0, itemSize+maxItemTxt*2,
+		memCommitReserve, pageReadWrite)
+	if remote == 0 {
+		return nil, fmt.Errorf("VirtualAllocEx 失败")
+	}
+	defer procVirtualFreeEx.Call(h, remote, 0, memRelease)
+	textRemote := remote + itemSize // 紧跟结构体，天然 2 字节对齐
+
+	count, _, _ := procSendMessageW.Call(lv, lvmGetItemCount, 0, 0)
+	items := make([]string, 0, count)
+	var buf [maxItemTxt]uint16
+	for i := 0; i < int(count); i++ {
+		it := lvItem{Mask: lvifText, IItem: int32(i), PszText: textRemote, CchTextMax: maxItemTxt}
+		if ok, _, _ := procWriteProcessMemory.Call(h, remote,
+			uintptr(unsafe.Pointer(&it)), itemSize, 0); ok == 0 {
+			return nil, fmt.Errorf("WriteProcessMemory 失败（第 %d 项）", i+1)
+		}
+		n, _, _ := procSendMessageW.Call(lv, lvmGetItemTextW, uintptr(i), remote)
+		if n == 0 {
+			items = append(items, "")
+			continue
+		}
+		if n > maxItemTxt {
+			n = maxItemTxt
+		}
+		if ok, _, _ := procReadProcessMemory.Call(h, textRemote,
+			uintptr(unsafe.Pointer(&buf[0])), n*2, 0); ok == 0 {
+			return nil, fmt.Errorf("ReadProcessMemory 失败（第 %d 项）", i+1)
+		}
+		items = append(items, syscall.UTF16ToString(buf[:n]))
+	}
+	return items, nil
+}
+
+// setFocusCrossProcess 把焦点设到目标窗口上，返回是否成功。
+// SetFocus 只对同一输入队列的窗口生效，所以先把本线程挂到目标线程的输入队列，设完摘除。
+func setFocusCrossProcess(target uintptr) bool {
+	tid, _, _ := procGetWindowThreadPID.Call(target, 0)
+	if tid == 0 {
+		return false
+	}
+	ourTid, _, _ := procGetCurrentThreadID.Call()
+	if ourTid == tid {
+		procSetFocus.Call(target)
+		return true
+	}
+	if ok, _, _ := procAttachThreadInput.Call(ourTid, tid, 1); ok == 0 {
+		return false
+	}
+	procSetFocus.Call(target)
+	procAttachThreadInput.Call(ourTid, tid, 0)
+	return true
 }
 
 // resolvePIDs 把命令行参数解析成 PID 列表：纯数字当 PID，否则当进程名查快照。
@@ -439,17 +767,18 @@ func crop(img *image.RGBA, win, vis rect) *image.RGBA {
 	return out
 }
 
-// trimBlackEdges 逐边裁掉“纯黑”的边缘，单边最多裁 max 像素。
+// trimBlackEdges 逐边裁掉“纯黑”的边缘，单边最多裁 max 像素，并返回左/上各裁了多少
+// （调用方要用它算图像左上角对应的屏幕坐标）。
 // 与 DWM 可见框配合使用：DWM 的边界实测仍会差 1~2 px，这里收尾抹平。
 //
 // 判定用“采样”而非“整行/整列全黑”：标题栏是浅色且铺满窗口全宽，会破坏整列判定，
 // 所以左右边只取高度的 25%~95% 采样，上下边取宽度的 5%~95% 采样；
 // 只要有一个采样点不是纯黑就立刻停手，避免把深色内容误裁掉。
-func trimBlackEdges(img *image.RGBA, max int) *image.RGBA {
+func trimBlackEdges(img *image.RGBA, max int) (*image.RGBA, int, int) {
 	b := img.Bounds()
 	w, h := b.Dx(), b.Dy()
 	if w == 0 || h == 0 {
-		return img
+		return img, 0, 0
 	}
 	black := func(x, y int) bool {
 		i := y*img.Stride + x*4
@@ -495,10 +824,11 @@ func trimBlackEdges(img *image.RGBA, max int) *image.RGBA {
 		bt++
 	}
 	if l == 0 && t == 0 && rt == 0 && bt == 0 {
-		return img
+		return img, 0, 0
 	}
 	fmt.Printf("黑边收尾裁剪: 左=%d 上=%d 右=%d 下=%d\n", l, t, rt, bt)
-	return crop(img, rect{0, 0, int32(w), int32(h)}, rect{int32(l), int32(t), int32(w - rt), int32(h - bt)})
+	out := crop(img, rect{0, 0, int32(w), int32(h)}, rect{int32(l), int32(t), int32(w - rt), int32(h - bt)})
+	return out, l, t
 }
 
 // clearFocus 把焦点从控件移回窗口本身，消除按钮焦点虚线框与输入框光标。
@@ -506,7 +836,8 @@ func trimBlackEdges(img *image.RGBA, max int) *image.RGBA {
 // 程序自己会设焦点（例如切页后 focus 首个按钮），所以不点按钮也可能带焦点框。
 // SetFocus 只对同一输入队列的窗口生效，因此先把本线程挂到目标线程的输入队列上，
 // 设完再摘下来 —— 跨进程设焦点的标准做法，且不要求目标窗口在前台。
-func clearFocus(hwnd uintptr) {
+// win 是主窗口矩形，用于识别“铺满窗口的画布子窗口”这种不需要清的情况。
+func clearFocus(hwnd uintptr, win rect) {
 	tid, _, _ := procGetWindowThreadPID.Call(hwnd, 0)
 	if tid == 0 {
 		return
@@ -525,28 +856,55 @@ func clearFocus(hwnd uintptr) {
 		return
 	}
 
-	ourTid, _, _ := procGetCurrentThreadID.Call()
-	attached := false
-	if ourTid != tid {
-		if ok, _, _ := procAttachThreadInput.Call(ourTid, tid, 1); ok == 0 {
-			fmt.Fprintln(os.Stderr, "提示：AttachThreadInput 失败，焦点可能没清干净")
-			return
-		}
-		attached = true
-	}
-	procSetFocus.Call(hwnd)
-	if attached {
-		procAttachThreadInput.Call(ourTid, tid, 0)
+	if !setFocusCrossProcess(hwnd) {
+		fmt.Fprintln(os.Stderr, "提示：附加输入队列失败，焦点可能没清干净")
+		return
 	}
 
 	// 复查而不是假定成功：清不掉就如实说，避免用户拿到带焦点框的图却以为没问题。
 	gti.CbSize = uint32(unsafe.Sizeof(gti))
 	if ok, _, _ := procGetGUIThreadInfo.Call(tid, uintptr(unsafe.Pointer(&gti))); ok != 0 &&
 		gti.HwndFocus != 0 && gti.HwndFocus != hwnd {
-		fmt.Fprintln(os.Stderr, "警告：焦点仍停留在控件上，截图可能带焦点框")
+		if reason := harmlessFocus(gti.HwndFocus, win); reason != "" {
+			fmt.Printf("焦点仍在子窗口上（%s），不影响截图\n", reason)
+			return
+		}
+		fmt.Fprintf(os.Stderr, "警告：焦点仍停留在 %s 上，截图可能带焦点框\n", describeWindow(gti.HwndFocus))
 		return
 	}
 	fmt.Println("已清除控件焦点")
+}
+
+// harmlessFocus 判断“焦点还留在这个子窗口上”是否无害，无害时返回原因，否则返回空串。
+// 自绘界面（如 mygo）拿一个铺满窗口、不可见的容器窗口收键盘输入，它不画焦点框，
+// 报成警告只会让人白紧张。
+func harmlessFocus(child uintptr, win rect) string {
+	var fr rect
+	ok, _, _ := procGetWindowRect.Call(child, uintptr(unsafe.Pointer(&fr)))
+	if ok == 0 {
+		return "拿不到它的位置"
+	}
+	cw, ch := fr.R-fr.L, fr.B-fr.T
+	if cw <= 0 || ch <= 0 {
+		return "它没有尺寸"
+	}
+	if vis, _, _ := procIsWindowVisible.Call(child); vis == 0 {
+		return "它不可见"
+	}
+	// 覆盖窗口 90% 以上面积的是画布，不是可获焦点的控件。
+	if cw*10 >= (win.R-win.L)*9 && ch*10 >= (win.B-win.T)*9 {
+		return "它是铺满窗口的画布"
+	}
+	return ""
+}
+
+// describeWindow 拼出窗口的类名/标题/尺寸，用于告警文案。
+func describeWindow(hwnd uintptr) string {
+	var r rect
+	procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&r)))
+	return fmt.Sprintf("class=%q title=%q %dx%d",
+		utf16Field(hwnd, procGetClassNameW), utf16Field(hwnd, procGetWindowTextW),
+		r.R-r.L, r.B-r.T)
 }
 
 // parkCursor 把鼠标挪到窗口外（屏幕上没有别处可去就放弃），返回恢复原位置的函数。

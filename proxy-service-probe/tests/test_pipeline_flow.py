@@ -190,22 +190,48 @@ class TestLiveness(unittest.TestCase):
             return FakeResponse(outcome)
         return get
 
-    def test_dead_only_after_all_attempts_fail_on_rotating_targets(self):
+    def test_fast_fail_after_consecutive_failures(self):
         calls = []
-        outcomes = [requests.ConnectionError(), requests.Timeout(), requests.ConnectionError()]
+        outcomes = [requests.ConnectionError(), requests.Timeout(), requests.ConnectionError(),
+                    requests.ConnectionError(), requests.Timeout()]
         with patch.object(requests.Session, "get", self.fake_get(outcomes, calls)):
             result = liveness.check_alive("http://p", pause=0)
         self.assertFalse(result["alive"])
-        self.assertEqual(calls, list(liveness.LIVENESS_TARGETS))
+        self.assertEqual(len(calls), 5)
+        self.assertEqual(result["loss_rate"], 100.0)
+        self.assertIn("100%丢包", result["reason"])
 
-    def test_single_success_after_failures_is_alive_and_warm_request_reuses_target(self):
+    def test_samples_with_acceptable_loss_is_alive(self):
         calls = []
-        outcomes = [requests.ConnectionError(), 503, 204, 204]
+        # 10 次请求: 2 次失败, 8 次成功 (丢包 20%)
+        outcomes = [requests.ConnectionError(), 204, 204, 503, 204, 204, 204, 204, 204, 204]
         with patch.object(requests.Session, "get", self.fake_get(outcomes, calls)):
             result = liveness.check_alive("http://p", pause=0)
         self.assertTrue(result["alive"])
-        self.assertEqual(calls[2], calls[3])
-        self.assertEqual(len(calls), 4)
+        self.assertEqual(len(calls), 10)
+        self.assertEqual(result["loss_rate"], 20.0)
+        self.assertIsNotNone(result["latency_ms"])
+        self.assertIsNotNone(result["avg_latency_ms"])
+        self.assertIsNotNone(result["jitter_ms"])
+
+    def test_high_loss_rate_is_eliminated(self):
+        calls = []
+        # 10 次请求: 6 次失败, 4 次成功 (丢包 60% >= 50%)
+        outcomes = [requests.ConnectionError(), 204, 500, 204, 502, 503, 204, 504, 204, requests.Timeout()]
+        with patch.object(requests.Session, "get", self.fake_get(outcomes, calls)):
+            result = liveness.check_alive("http://p", pause=0)
+        self.assertFalse(result["alive"])
+        self.assertEqual(result["loss_rate"], 60.0)
+        self.assertIn("丢包率过高", result["reason"])
+
+    def test_attempts_backward_compatibility(self):
+        calls = []
+        outcomes = [requests.ConnectionError(), requests.Timeout(), requests.ConnectionError()]
+        with patch.object(requests.Session, "get", self.fake_get(outcomes, calls)):
+            result = liveness.check_alive("http://p", pause=0, attempts=3)
+        self.assertFalse(result["alive"])
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(calls, list(liveness.LIVENESS_TARGETS))
 
     def test_first_passing_front_wins_without_waiting_for_failing_fronts(self):
         def fake_check(url, **kwargs):

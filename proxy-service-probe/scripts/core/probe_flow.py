@@ -70,21 +70,29 @@ def add_flow_arguments(parser):
                         help="合流目标配置路径 (Clash YAML / sing-box JSON): 测试完成后直接并入目标订阅底库")
     parser.add_argument("--insert", dest="insert_mode", action="store_true",
                         help="合流时的中间插入模式: 打破原有编号完全重排序并从 1 重新编号 (默认优先保留目标底库原节点及原有编号)")
+    parser.add_argument("--loss-samples", type=int, default=10,
+                        help="测活与丢包率测试的采样包数 (默认: 10)")
+    parser.add_argument("--max-loss-rate", type=float, default=50.0,
+                        help="测活硬淘汰丢包率上限百分比 (默认: 50.0，>=该阈值判定为不可用直接淘汰)")
+    parser.add_argument("--key-max-loss-rate", type=float, default=20.0,
+                        help="Key优质前置跳板评选丢包率门槛百分比 (默认: 20.0，>=该阈值取消Key资格)")
     # 持续下载测速与 Key 遴选选项 (非主动技能: 默认不开启，仅在用户显式指定时触发)
     add_speed_arguments(parser)
 
 
 def print_summary_table(results, speed_tested=False):
-    print("\n" + "=" * 123)
+    print("\n" + "=" * 130)
     speed_col_name = "稳态带宽" if speed_tested else "带宽"
-    print(f"{'序号':<4} | {'最终命名':<32} | {'出口IP':<15} | {'延迟':<6} | {'信誉':<5} | {'AI':<4} | {'免盾':<4} | {'YT':<4} | {'流媒体':<6} | {speed_col_name:<12} | {'角色'}")
-    print("-" * 123)
+    print(f"{'序号':<4} | {'最终命名':<32} | {'出口IP':<15} | {'延迟':<6} | {'丢包':<5} | {'信誉':<5} | {'AI':<4} | {'免盾':<4} | {'YT':<4} | {'流媒体':<6} | {speed_col_name:<12} | {'角色'}")
+    print("-" * 130)
     for idx, r in enumerate(results, 1):
         name = r.get("final_name", r["proxy"].get("name", "unk"))
         if len(name) > 30:
             name = name[:28] + ".."
         ip = r.get("exit_ip") or "未知"
         delay = f"{r['delay']:.0f}ms" if r.get("delay") else "-"
+        loss_val = r.get("loss_rate") if r.get("loss_rate") is not None else (r.get("liveness") or {}).get("loss_rate")
+        loss_text = f"{loss_val:.0f}%" if loss_val is not None else "-"
         reputation = r.get("ip_reputation") or (r.get("ip_info") or {}).get("reputation") or {}
         score = str(reputation.get("score")) if reputation.get("score") is not None else "-"
         ai = "✓" if r.get("ai_supported") else "✗"
@@ -108,8 +116,8 @@ def print_summary_table(results, speed_tested=False):
 
         role = ("Key跳板" if r.get("is_key") else "备用前置" if r.get("is_front_fallback") else
                 "Fast" if r.get("is_fast") else "落地" if r.get("is_landing") else "直连")
-        print(f"{idx:<4} | {name:<32} | {ip:<15} | {delay:<6} | {score:<5} | {ai:<4} | {shield:<4} | {yt:<4} | {media:<6} | {speed_text:<12} | {role}")
-    print("=" * 123 + "\n")
+        print(f"{idx:<4} | {name:<32} | {ip:<15} | {delay:<6} | {loss_text:<5} | {score:<5} | {ai:<4} | {shield:<4} | {yt:<4} | {media:<6} | {speed_text:<12} | {role}")
+    print("=" * 130 + "\n")
 
 
 def probe_runner_baseline(args, mihomo_bin):
@@ -301,6 +309,9 @@ class ProbeRun:
         self.checkpoint = Checkpoint(args.checkpoint, proxies, kernel.label)
         # 链式前置只用于本地：云端 Runner 在海外，直连不通即视为不可用
         self.chain_enabled = profile_name == "local" and not args.no_landing_probe
+        self.loss_samples = getattr(args, "loss_samples", 10)
+        self.max_loss_rate = getattr(args, "max_loss_rate", 50.0)
+        self.key_max_loss_rate = getattr(args, "key_max_loss_rate", 20.0)
         self.rows = [{"idx": i, "proxy": p, "orig_name": p.get("name")} for i, p in enumerate(proxies)]
         self.ports = {}         # 直连监听: 节点序号 -> 端口
         self.chain_ports = {}   # 经前置监听: (节点序号, 前置序号) -> 端口，测活、服务检测与测速共用
@@ -501,10 +512,14 @@ class ProbeRun:
             self.log(f"[测活✗] {self.node_label(row)}: {reason}")
             self.finished(row)
         testable = [row for row in pending if row["idx"] in ports]
-        self.log(f"首轮测活: {len(testable)} 个节点 (并发 {self.args.alive_workers}，每节点最多 3 次、轮换 3 个端点，全部失败才判不通)...")
+        liveness_opts = {
+            "samples": self.loss_samples,
+            "max_loss_rate": self.max_loss_rate,
+        }
+        self.log(f"首轮测活与丢包检测: {len(testable)} 个节点 (并发 {self.args.alive_workers}，每节点采样 {self.loss_samples} 次轻量探针，丢包≥{self.max_loss_rate:.0f}%淘汰)...")
         dead = []
         with ThreadPoolExecutor(max_workers=max(1, self.args.alive_workers)) as pool:
-            futures = {pool.submit(self.probe_direct, ports[row["idx"]]): row for row in testable}
+            futures = {pool.submit(self.probe_direct, ports[row["idx"]], **liveness_opts): row for row in testable}
             for future in as_completed(futures):
                 row = futures[future]
                 row["liveness"] = future.result()
@@ -516,16 +531,28 @@ class ProbeRun:
         return dead
 
     @staticmethod
-    def probe_direct(port):
+    def probe_direct(port, **options):
         try:
-            return check_alive(f"http://127.0.0.1:{port}")
+            return check_alive(f"http://127.0.0.1:{port}", **options)
         except Exception as e:
-            return {"alive": False, "latency_ms": None, "attempts": [], "error": f"{type(e).__name__}: {e}"}
+            return {"alive": False, "latency_ms": None, "loss_rate": 100.0, "attempts": [],
+                    "error": f"{type(e).__name__}: {e}", "reason": f"探针异常: {e}"}
 
     def conclude_direct(self, row, note=""):
-        row.update(alive=True, liveness_done=True, path="direct", delay=row["liveness"]["latency_ms"],
-                   is_landing=is_landing_role(row["proxy"]))
-        self.log(f"[测活✓] {self.node_label(row)}: 直连 {row['delay']:.0f}ms{note}")
+        live = row["liveness"]
+        loss = live.get("loss_rate", 0.0)
+        # 实测直连通过的节点判定为直连 (is_landing=False)；有 _USAI 后缀但直连的绝不判定为落地
+        is_lnd = bool("_Lnd" in row["proxy"].get("name", ""))
+        row.update(alive=True, liveness_done=True, path="direct", delay=live.get("latency_ms"),
+                   loss_rate=loss, is_landing=is_lnd)
+        if "proxy" in row and isinstance(row["proxy"], dict):
+            row["proxy"]["_is_landing"] = is_lnd
+            row["proxy"]["path"] = "direct"
+        loss_text = f" (丢包: {loss:.0f}%"
+        if live.get("jitter_ms") is not None:
+            loss_text += f", 抖动: {live['jitter_ms']:.0f}ms"
+        loss_text += ")"
+        self.log(f"[测活✓] {self.node_label(row)}: 直连 {row['delay']:.0f}ms{loss_text}{note}")
         self.enqueue(row)
 
     def run_second_round(self, stack, dead):
@@ -553,15 +580,20 @@ class ProbeRun:
                     " (云端 Runner 不做前置链式测活)..." if self.profile_name != "local" else
                     " (已用 --no-landing-probe 关闭前置链式测活)..."))
 
+        liveness_opts = {
+            "samples": self.loss_samples,
+            "max_loss_rate": self.max_loss_rate,
+        }
+
         def via_fronts(row):
             port_by_front = {f: self.chain_ports[(row["idx"], f)] for f in plans[row["idx"]]
                              if (row["idx"], f) in self.chain_ports}
-            return check_alive_via_fronts(port_by_front)
+            return check_alive_via_fronts(port_by_front, **liveness_opts)
 
         state = {row["idx"]: {} for row in dead}
         with ThreadPoolExecutor(max_workers=RECHECK_WORKERS) as recheck_pool, \
                 ThreadPoolExecutor(max_workers=max(1, self.args.alive_workers)) as chain_pool:
-            futures = {recheck_pool.submit(self.probe_direct, self.ports[row["idx"]]): (row, "direct") for row in dead}
+            futures = {recheck_pool.submit(self.probe_direct, self.ports[row["idx"]], **liveness_opts): (row, "direct") for row in dead}
             if self.chain_enabled:
                 futures.update({chain_pool.submit(via_fronts, row): (row, "chain") for row in dead})
             for future in as_completed(futures):
@@ -591,10 +623,15 @@ class ProbeRun:
         if chain is not None:
             row["chain_liveness"] = {self.front_label(f): res for f, res in chain[1].items()}
         tried = "、".join(self.front_label(f) for f in plan)
-        reason = (f"两轮直连与经前置({tried})均不可达" if tried else
-                  "两轮直连均不可达" + ("，且无可用前置" if self.chain_enabled else
-                                     " (云端 Runner 不做前置链式测活)" if self.profile_name != "local" else
-                                     " (已关闭前置链式测活)"))
+        first_reason = (row.get("liveness") or {}).get("reason")
+        recheck_reason = (recheck or {}).get("reason") if recheck else None
+        spec_reason = recheck_reason or first_reason or "两轮直连均不可达"
+        if tried:
+            reason = f"两轮直连与经前置({tried})均未达标 ({spec_reason})"
+        else:
+            reason = f"{spec_reason}" + ("，且无可用前置" if self.chain_enabled else
+                                         " (云端 Runner 不做前置链式测活)" if self.profile_name != "local" else
+                                         " (已关闭前置链式测活)")
         row.update(alive=False, liveness_done=True, eliminated_reason=reason)
         self.log(f"[测活✗] {self.node_label(row)}: {reason}")
         self.finished(row)
@@ -603,9 +640,13 @@ class ProbeRun:
         row["chain_liveness"] = {self.front_label(f): res for f, res in per_front.items()}
         # 测通的前置先用；其余未判不通的前置 (含测活尚未出结论的) 依序备用
         row["front_backups"] = [f for f in plan if f != best and (per_front.get(f) or {}).get("alive") is not False]
+        best_live = per_front[best]
+        loss = best_live.get("loss_rate", 0.0)
         row.update(alive=True, liveness_done=True, path="front", is_landing=True, front_idx=best,
-                   front_node=self.front_label(best), delay=per_front[best]["latency_ms"])
-        self.log(f"[测活✓] {self.node_label(row)}: 直连不通，经前置 {row['front_node']} 测通 {row['delay']:.0f}ms (落地)")
+                   front_node=self.front_label(best), delay=best_live.get("latency_ms"),
+                   loss_rate=loss)
+        loss_text = f" (丢包: {loss:.0f}%)" if loss is not None else ""
+        self.log(f"[测活✓] {self.node_label(row)}: 直连不通，经前置 {row['front_node']} 测通 {row['delay']:.0f}ms{loss_text} (落地)")
         self.sched.add(SERVICE, self.service_job(row))
 
     # ---- 落地节点测速 ----
@@ -739,7 +780,8 @@ class ProbeRun:
                 print(f"      [提示] 无节点达到 {args.min_speed_mbps}Mbps 门槛 (最高稳态 {best}Mbps)。"
                       f"若本机宽带下行低于 {args.rate_limit_mbps}Mbps，结果受本地线路限制。")
             chosen_keys = select_key_nodes(results, max_keys=10, per_country_cap=3,
-                                           min_stable_mbps=args.min_speed_mbps, min_floor_mbps=args.min_floor_mbps)
+                                           min_stable_mbps=args.min_speed_mbps, min_floor_mbps=args.min_floor_mbps,
+                                           max_loss_rate=self.key_max_loss_rate)
             print(f"      成功评选出 {len(chosen_keys)} 个 Key 优质前置跳板节点")
             # 落地节点的速度受前置限制：只有经最终入选 Key 的前置测得的结论才据以淘汰；
             # 所有备选前置都取不到样本时，按其中入选 Key 的前置判定 (经这些 Key 都连不上，配置中的前置组也带不动它)
@@ -797,6 +839,8 @@ def report_row(r):
         "liveness": r.get("liveness"),
         "chain_liveness": r.get("chain_liveness"),
         "delay": r.get("delay"),
+        "loss_rate": r.get("loss_rate") if r.get("loss_rate") is not None else (r.get("liveness") or {}).get("loss_rate"),
+        "jitter_ms": (r.get("liveness") or {}).get("jitter_ms"),
         "is_front_fallback": r.get("is_front_fallback", False),
         "alive": r.get("alive", False),
         "service_done": r.get("service_done", False),

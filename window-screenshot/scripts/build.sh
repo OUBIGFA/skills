@@ -29,4 +29,5 @@ build() {
 
 build window-shot.go window-shot.exe
 build check-edges.go check-edges.exe
+build zoom-grid.go zoom-grid.exe
 echo "完成：$here"

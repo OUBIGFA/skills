@@ -110,6 +110,8 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
     lnd_suffix = ""
     if is_landing:
         lnd_suffix = "_USAI" if is_usai else "_Lnd"
+    elif is_usai:
+        lnd_suffix = "_USAI"
 
     md = media_details or {}
     media_suffix = ""
@@ -195,12 +197,17 @@ def tag_and_rename_nodes(results, resort=False):
             cf_pass = False
 
         # 综合全通 ✨️: 必须同时满足 AI五大全通 + Groq解锁 + YouTube免登实播 + 免盾达成
+        # 且丢包率必须健康 (< 20%)，严重丢包/高抖动节点不授予 ✨️ 徽章
+        liveness_info = r.get("liveness") or {}
+        loss_val = r.get("loss_rate") if r.get("loss_rate") is not None else liveness_info.get("loss_rate")
+        loss_ok = bool(loss_val is None or loss_val < 20.0)
+
         if r.get("youtube_details") or r.get("shield_details"):
-            sparkle = bool(ai_sup and groq_pass and yt_pass and cf_pass)
+            sparkle = bool(ai_sup and groq_pass and yt_pass and cf_pass and loss_ok)
         elif "youtube_passed" in r and "shield_passed" in r and (yt_pass or cf_pass):
-            sparkle = bool(ai_sup and groq_pass and yt_pass and cf_pass)
+            sparkle = bool(ai_sup and groq_pass and yt_pass and cf_pass and loss_ok)
         else:
-            sparkle = bool(ai_sup and groq_pass and orig_has_sparkle and not poison_tag)
+            sparkle = bool(ai_sup and groq_pass and orig_has_sparkle and not poison_tag and loss_ok)
 
         # 测速相关：实测以实测为准，未测速继承原 Key / Fast
         if r.get("speed_result") is not None or r.get("is_key") is True or r.get("is_fast") is True:
@@ -211,11 +218,16 @@ def tag_and_rename_nodes(results, resort=False):
             is_fast = bool(orig_has_fast and not is_key)
 
         # 流水线已实测判定直连/落地时以实测为准，不让原名里的 _Lnd/_USAI 覆盖本轮结果
+        orig_has_usai = bool("_USAI" in orig or "_USAI" in pname or r.get("is_usai"))
         if isinstance(r.get("is_landing"), bool):
             is_landing = r["is_landing"]
+        elif r.get("path") == "direct":
+            is_landing = False
+        elif r.get("path") == "front":
+            is_landing = True
         else:
-            is_landing = "_Lnd" in pname or "_USAI" in pname
-        is_usai = bool(is_landing and cc == "US" and ai_sup)
+            is_landing = bool("_Lnd" in pname or (orig_has_usai and p.get("dialer-proxy")))
+        is_usai = bool(cc == "US" and ai_sup and (is_landing or orig_has_usai))
 
         is_cg = "_ChromeGo" in orig or "_ChromeGo" in pname
 
@@ -360,10 +372,17 @@ def tag_and_rename_nodes(results, resort=False):
             p["_has_res_suffix"] = has_res_suf
             p["_key_score"] = r.get("key_score", 0.0)
             p["_ip_reputation"] = r.get("ip_reputation")
+            p["_is_landing"] = is_landing
+            p["is_landing"] = is_landing
+            if not is_landing:
+                p.pop("dialer-proxy", None)
         if "raw_node" in r and isinstance(r["raw_node"], dict):
             r["raw_node"]["_is_iplc"] = is_iplc
             r["raw_node"]["_is_residential"] = is_res_hq
             r["raw_node"]["_has_res_suffix"] = has_res_suf
+            r["raw_node"]["_is_landing"] = is_landing
+            if not is_landing:
+                r["raw_node"].pop("dialer-proxy", None)
 
         r["final_name"] = new_name
         r["slot"] = r["assigned_slot"]
@@ -375,6 +394,7 @@ def tag_and_rename_nodes(results, resort=False):
         r["comprehensive_sparkle"] = sparkle
         r["is_high_quality"] = is_hq
         r["is_usai"] = is_usai
+        r["is_landing"] = is_landing
 
     # 4. 与导出共用同一排序规则：默认按编号排位；resort 时先定位置再从 1 重新编号
     results[:] = sort_nodes_by_region_and_landing(results, resort=resort)

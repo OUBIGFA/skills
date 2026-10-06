@@ -18,8 +18,9 @@ Work through these six steps in order.
 
 Before drawing anything, establish what you can see.
 
-**If the user provided a full directory tree or pasted relevant file contents:** skip the
-proactive reading below and proceed to Step 1.
+**If the user provided relevant file contents:** reuse them where they establish module
+boundaries and dependencies. A directory tree alone does not prove dependency edges; read
+the relevant imports, declarations, or call sites before drawing those edges.
 
 **Otherwise, proactively read the project using these tools:**
 
@@ -46,69 +47,37 @@ proactive reading below and proceed to Step 1.
 If the project has > 100 top-level files or > 4 levels of nesting, note which areas were
 sampled vs. inferred, and flag this in the report scope line.
 
-### Step 1: Draw the Module Dependency Graph (Mermaid)
+### Step 1: Map Module Dependencies
 
-Before evaluating any risk, map the dependencies as a Mermaid diagram. Use this format:
+Use a Mermaid graph when branches, shared dependencies, or cycles are hard to explain in
+short prose. A compact dependency table is enough for a simple structure. Show the current
+system first; put any proposed design in a separate, clearly labeled view.
 
-````mermaid
+This example shows syntax only. Replace its nodes and edges with verified project facts:
+
+```mermaid
 graph TD
-  subgraph UI
-    WebApp
-    MobileApp
-  end
-
-  subgraph Domain
-    AuthService
-    OrderService
-    PaymentService
-  end
-
-  subgraph Infrastructure
-    Database
-    MessageQueue
-  end
-
-  WebApp --> AuthService
-  WebApp --> OrderService
-  MobileApp --> AuthService
-  MobileApp --> OrderService
-  OrderService --> PaymentService
-  OrderService --> Database
-  OrderService --> MessageQueue
-  PaymentService --> Database
-  AuthService -.->|circular| OrderService
-
-  classDef critical fill:#ff6b6b,stroke:#c92a2a,color:#fff
-  classDef warning fill:#ffd43b,stroke:#e67700
-  classDef clean fill:#51cf66,stroke:#2b8a3e,color:#fff
-
-  class PaymentService critical
-  class OrderService warning
-  class Database,MessageQueue,AuthService,WebApp,MobileApp clean
-````
-
-Draw the graph structure first — nodes, subgraphs, and edges — without any `classDef` or
-`class` lines. You cannot assign colors until you have completed the risk scan in Steps 2–4.
-
-**After completing Step 4**, return to this graph and add the `classDef` and `class` lines
-based on findings. The example above shows the final colored output.
+  App["Application"] -->|imports| Domain["Domain"]
+  App -->|imports| Storage["Storage"]
+  Storage -->|imports| Domain
+```
 
 Rules:
-1. **Nodes** — Use top-level directories or services as nodes, not individual files
-2. **Grouping** — One `subgraph` per architectural layer or top-level directory (e.g., UI, Domain, Infrastructure)
-3. **Edges** — Solid arrows (`-->`) point FROM the depending module TO the dependency; use dotted arrows with label (`-.->|circular|`) for circular dependencies. If no circular dependencies exist, use only solid arrows
-4. **Node limit** — Keep the graph to ~50 nodes maximum; collapse low-risk leaf modules into their parent if needed
-5. **Fan-out** — For any node with fan-out > 5, use a descriptive label: `HighFanOutModule["ModuleName (fan-out: 7)"]`
-6. **Colors** — Apply `classDef` colors AFTER completing Steps 2-4: `critical` (red `#ff6b6b`) for nodes with Critical findings, `warning` (yellow `#ffd43b`) for Warning findings, `clean` (green `#51cf66`) for nodes with no findings or only Suggestions. If no findings at all, classify all nodes as `clean`
-7. **Direction** — Default to `graph TD` (top-down); use `graph LR` only if the architecture is clearly a left-to-right pipeline
+1. **Nodes** — Use real modules or services. Group them by confirmed boundaries. State the scope and any omitted areas.
+2. **Edges** — Arrows point from the depending module to its dependency. Label the relationship type. Imports do not prove runtime call order or data flow; use a separate view when those relationships matter.
+3. **Evidence** — Give file locations, symbols, or declarations for key edges beside the graph. Mark uncertain relationships as unverified; do not invent missing edges.
+4. **Cycles** — Show the complete verified cycle and label it in text. A single arrow or an uncertain relationship does not establish a cycle.
+5. **Density** — If labels overlap or paths are hard to follow, split the graph into an overview and focused views. Keep modules involved in a finding visible. Report fan-out counts only for the dependencies actually inspected.
+6. **Colors** — Add severity colors only after Steps 2–6: red `#ff6b6b` for Critical, yellow `#ffd43b` for Warning, and green `#51cf66` for no findings or Suggestions. State that green means no higher-severity finding in the inspected scope, not proven correctness. Keep uninspected nodes neutral. Use text labels as well as color.
+7. **Check** — Verify node names, arrow direction, evidence, and consistency with findings. Check rendering when a renderer is available; otherwise state that rendering is unverified.
 
 ### Step 2: Scan for Dependency Disorder
 
 *The most architecturally consequential risk — scan this first.*
 
 Look for:
-- Circular dependencies (any `-.->|circular|` edge in the map above)
-- Arrows flowing upward (high-level domain depending on low-level infrastructure)
+- Circular dependencies (a verified directed cycle in the map above)
+- Dependencies that violate the project's stated layer boundaries; arrow position on the page alone does not establish a violation
 - Stable, widely-depended-on modules that import from frequently-changing modules
 - Modules with fan-out > 5
 - Absence of a clear layering rule (no consistent answer to "what depends on what?")
@@ -190,6 +159,7 @@ After the six-risk scan, assess the relationship between architecture and team s
 
 Use the standard Report Template from `../_shared/common.md`. Mode: Architecture Audit.
 
-Place the Mermaid dependency graph FIRST under "Module Dependency Graph". Reference
-relevant node names in findings. Add `classDef` color assignments LAST, after all
-findings are identified.
+Under "Module Dependency Graph", include the graph or compact table from Step 1, its
+scope, arrow meaning, and key evidence locations. State its main conclusion in one sentence.
+Reference the same module names in findings. Add severity colors only after all findings
+are identified. Do not repeat every edge in prose.

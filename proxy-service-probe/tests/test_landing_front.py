@@ -61,6 +61,7 @@ class TestFallbackFrontRendering(unittest.TestCase):
         cfg = render_clash_config(proxies)
         groups = {g["name"]: g for g in cfg["proxy-groups"]}
         self.assertEqual(groups["⚡ Fast自动选择"]["proxies"], ["🇯🇵 日本_1"])
+        self.assertEqual(groups["🛡️ Front前置"]["proxies"][0], "DIRECT")
         self.assertIn("🇯🇵 日本_1", groups["🛡️ Front前置"]["proxies"])
         self.assertNotIn("🇯🇵 日本_2", groups["🛡️ Front前置"]["proxies"])
         landing = next(p for p in cfg["proxies"] if p["name"].endswith("_Lnd"))
