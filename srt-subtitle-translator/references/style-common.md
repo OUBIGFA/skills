@@ -8,6 +8,12 @@ practice (English keeps normal sentence punctuation, for example).
 
 ## Fidelity first, then economy
 
+For technical and instructional subtitles, apply the ASD-STE100-inspired reference
+`references/asd-ste100-subtitles.md`. It adds a controlled-expression check to this
+section: record the information payload first, then delete only words that add no
+meaning. It does not license summaries, invented subjects, or formal wording that
+changes the speaker's register.
+
 Two operations look similar and are opposites. Getting them straight is most of what
 separates a professional subtitle from a plausible one.
 

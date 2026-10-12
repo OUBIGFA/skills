@@ -8,6 +8,10 @@ is usually too long until condensed.
 
 ## Lean Chinese: the padding checklist
 
+Use the same two-pass order for Chinese technical subtitles:先保留信息载荷，再删去无意义
+填充词。ASD-STE100 的目标是可读和无歧义，不是把口语改成公文。删除前逐项确认条件、
+否定、数值、因果、程度和不确定性仍在；删除后再检查每个字幕块是否只保留一个完整意群。
+
 Chinese lets you write a grammatical, pleasant-sounding line that says noticeably more
 than the speaker did, and the extra words are hard to notice because each one is idiomatic
 on its own. This list is what to hunt for when re-reading a finished batch. Every item is

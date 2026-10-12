@@ -1,6 +1,6 @@
 ---
 name: srt-subtitle-translator
-description: 翻译 SRT、VTT、ASS/SSA 字幕，或在翻译中修复分句时使用。
+description: Use when translating SRT, VTT, ASS, or SSA subtitles, repairing subtitle segmentation during translation, or cleaning ASR captions while preserving timing and meaning.
 metadata:
   short-description: Translate and repair timed subtitle files
 ---
@@ -15,6 +15,11 @@ user; Simplified Chinese is the default only when no target is given.
 
 - Fidelity comes first: preserve every claim, operation, value, name, warning, causal
   link, negation, and uncertainty marker. Remove filler, not payload.
+- Apply the ASD-STE100-inspired controlled-expression pass: first preserve the
+  information payload (保留信息载荷), then remove zero-information filler (删去无意义填充词).
+  Use short, direct clauses and one term per concept, but do not
+  force English wording rules onto another target language or change the speaker's
+  register.
 - Keep the speaker's register. Do not add subjects, connectives, explanations,
   politeness, necessity, or conclusions that were not spoken.
 - Work in this order: repair clear ASR segmentation defects, translate the complete
@@ -83,6 +88,9 @@ Read [style-common.md](references/style-common.md) for all targets. Read
 [style-zh.md](references/style-zh.md) in addition for Chinese. For 3D, motion graphics,
 or VFX into Chinese, read [glossary-3d-zh.md](references/glossary-3d-zh.md); it is a
 context-sensitive default table, not a find-and-replace list.
+Read [asd-ste100-subtitles.md](references/asd-ste100-subtitles.md) for every translation
+of technical or instructional speech, or whenever the user asks for concise, controlled,
+accurate, or filler-free subtitles. Run its information pass before its economy pass.
 
 ## Language configuration
 
@@ -129,14 +137,17 @@ if cleanup fails, report the exact remaining paths rather than claiming success.
    handled. Do not load unrelated references.
 3. Audit source boundaries and pause proxies, then repair only nameable defects.
 4. Translate sentence by sentence, without adding words to bridge repaired seams.
-5. Re-divide long translations at natural target-language thought boundaries. Never use
+5. Apply the controlled-expression review: preserve the information payload (保留信息
+   载荷), remove only zero-information filler, and check every condition, negation,
+   number, hedge, and UI string.
+6. Re-divide long translations at natural target-language thought boundaries. Never use
    a character count as the cutting rule.
-6. Write UTF-8 output next to the source. For files over about 60 blocks, use
+7. Write UTF-8 output next to the source. For files over about 60 blocks, use
    `scripts/assemble_subtitle.py` to join numbered parts rather than pasting the result in
    the reply. It concatenates the parts verbatim and does **not** renumber, so each part
    must already carry its final sequential indices — or, equivalently, write the parts as
    plain `<start>|<end>|<text>` rows and let a small build step add the numbering.
-7. Validate before replying:
+8. Validate before replying:
 
    ```text
    python scripts/check_subtitle.py <output> --source <input> --lang <target>
@@ -146,9 +157,9 @@ if cleanup fails, report the exact remaining paths rather than claiming success.
    untouched timeline, add `--strict`. Use `--lang-config` only when a project supplies
    a different profile file.
 
-8. Fix every error. Review warnings for reading load, padding, dropped payload, markup,
+9. Fix every error. Review warnings for reading load, padding, dropped payload, markup,
    structure, and terminology; explain any deliberately retained warning.
-9. After processing finishes, recycle the task workspace and every intermediate
+10. After processing finishes, recycle the task workspace and every intermediate
    artifact created in this task, whether validation succeeds or fails. Follow the
    platform-safe procedure in [edge-cases.md](references/edge-cases.md), and report
    any remaining artifacts.
@@ -167,8 +178,9 @@ crossed source gap; it may not create a new gap.
 ## Delivery
 
 Keep the final reply short: output path, mode and block count before/after, repair
-categories, every merge across a source gap with its one-line reason, unresolved
-timing/ASR/terminology issues, checker result, and one clause
+categories (including removed or deliberately retained filler), every merge across a
+source gap with its one-line reason, unresolved timing/ASR/terminology issues, checker
+result, and one clause
 confirming that self-created intermediate files were recycled. Do not put explanations,
 citations, or translator notes inside subtitle text.
 
@@ -183,6 +195,7 @@ targets. Use `-bi` in place of the language code for bilingual output.
 | `references/segmentation.md` | Every translation or boundary repair |
 | `references/style-common.md` | Every translation |
 | `references/style-zh.md` | Chinese target |
+| `references/asd-ste100-subtitles.md` | Technical or instructional translation, or a request for concise, controlled, accurate, filler-free output |
 | `references/names-zh.md` | Chinese target containing personal, historical, literary, fictional, stage, or uncertain names |
 | `references/language-profiles.md` | Need human-readable profile explanations or custom calibration |
 | `references/reading-load.md` | A duration, reading-speed, or scan-width warning needs judgement |
