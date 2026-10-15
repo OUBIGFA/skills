@@ -22,12 +22,26 @@ user; Simplified Chinese is the default only when no target is given.
   register.
 - Keep the speaker's register. Do not add subjects, connectives, explanations,
   politeness, necessity, or conclusions that were not spoken.
+- Follow simultaneous-interpreting unfolding order (同声传译式展开语序): viewers read
+  subtitles in real time while hearing the speech. Where multiple natural renderings exist,
+  choose the one whose clausal sequence matches the spoken flow. Never invert or move a
+  trailing reason, condition, or afterthought to the front merely to sound like written
+  prose, which causes viewers to read the second half before hearing it.
+- Deliver exactly one final rendering per sentence: subtitles are broadcast-ready lines,
+  not drafts. Never emit slash-separated alternatives (e.g. `微调/蒸馏` or `选项A / 选项B`)
+  or bracketed variant notes. A slash is allowed only when the source identifier literally
+  contains one (e.g. `/compact`, URLs, or fraction values).
+- Respect the division of ASR repair: repair acoustic mishearings (homophones, mangled
+  domain terms, broken word boundaries) and restore punctuation boundaries. Do not rewrite
+  spoken grammar, reorder clauses, delete words on the timeline, or cut on dangling
+  prepositions/connectors (`because.`, `of.`, `当。`, `和。`).
 - Work in this order: repair clear ASR segmentation defects, translate the complete
   sentence, then divide the translation at target-language thought boundaries.
 - Do not cross a real pause without a nameable reason. A gap in a subtitle file is
-  only a pause proxy; without audio, do not claim that it proves an audible pause.
-  Merging across one is the translator's judgement call: keep the merge only when
-  it fixes a specific defect, and report every crossed gap in the delivery reply.
+  only a pause proxy (often just a breath pause); without audio, do not claim that it proves
+  an audible pause or the end of a syntactic thought. Merging across one is the translator's
+  judgement call: keep the merge only when it fixes a specific defect, and report every
+  crossed gap in the delivery reply.
 - Keep the source format. Convert only when explicitly requested, and state what the
   conversion loses.
 - Never use translation APIs, browser translation, online translators, MT plugins, or
@@ -52,15 +66,20 @@ paragraph shape; no timeline work is possible.
 
 Use `repair → translate → divide`, never translate each ASR block in isolation.
 
+- Audit source ASR seams carefully: acoustic pauses often reflect physiological breaths,
+  not syntactic closures. Never sever a unit after a dangling connector, preposition, or
+  governing verb.
 - Merge only a specific defect: an orphan tail, stranded connector, split term,
   dependent opening, trailing modifier, or filler-only flash block. A defect that
   straddles a source gap may still be merged across it — the checker will flag
   the crossing as a warning; give it a nameable reason in the delivery reply.
 - Keep a source boundary when both sides are complete and the target translation also
   has a natural seam. Topic continuity alone is not a merge reason.
-- Within a continuous speech span, a translated sentence may stay in one block or be
-  split at a target-language phrase boundary. Keep the span's first and last times;
-  distribute new interior times across the spoken material.
+- Evaluate width with line-level Display Units (DU): full-width CJK characters cost
+  1.0 DU, Latin letters and digits cost 0.5 DU. Respect the soft scan-comfort zone
+  (18–25 DU for Chinese) and hard display budget (~30–32 DU). When a translated sentence
+  exceeds the hard budget, plan balanced pieces (`k ≥ 2`) at natural target-language
+  thought seams (`¦`), distributing interior times across the spoken span.
 - Do not create a new gap. A small source gap may be preserved, but output gaps must
   correspond to an existing source gap or the checker will reject them.
 - Every output piece must be a self-contained target-language phrase. Never strand a
@@ -76,6 +95,18 @@ finished batch once for padding and once for naturalness. Build a glossary from 
 whole file before translating, then keep one rendering per concept unless context
 clearly changes the sense.
 
+- Keep clause unfolding sequence synchronized with the spoken audio (simultaneous
+  interpreting rule): unfolding order outranks written prose conventions.
+- Manage terminology with strict tiering:
+  - **LOCKED (刚性锁定)**: User-specified renderings, explicit glossary entries, CLI
+    commands/flags, product/model names, and code identifiers. These are mandatory
+    requirements: reproduce character-for-character with zero alteration of spelling,
+    case, or spacing.
+  - **preferred (柔性偏好)**: Domain consistency defaults. Follow throughout the file
+    for conceptual consistency, but allow context-sensitive flexibility when the
+    syntax or physical UI context genuinely demands it.
+- Emit exactly one screen-ready rendering per sentence. Strictly avoid slash alternatives
+  (`A / B`) or parenthetical variants.
 - Keep UI labels, menu paths, software names, acronyms, file names, object names, and
   text visibly typed on screen searchable and faithful to the source.
 - Repair an obvious ASR mishearing from context; if the meaning cannot be recovered,
@@ -99,6 +130,10 @@ Reading speed, character counting, sentence-final punctuation, and scan width co
 `ko`, `en`, `es`, `fr`, `de`, `it`, `pt`, `ru`, `ar`, `he`, `th`, `vi`, `id`, and `tr`.
 Regional codes such as `en-US` use their base-language profile. An unknown code uses the
 explicit `default` profile and must be mentioned in the report.
+
+Line-level display budgets use Display Units (DU): full-width CJK characters count as
+1.0 DU, Latin letters and digits count as 0.5 DU. The `max_width` profile parameter defines
+the soft scan-comfort zone.
 
 The default Chinese house style uses one half-width space between Chinese and Latin
 text, no final full stop, and no exclamation marks. These are style settings, not a

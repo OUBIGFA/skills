@@ -19,10 +19,9 @@ SKILL_SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if SKILL_SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SKILL_SCRIPTS_DIR)
 from geodata import CITY_ZH, COLO, COUNTRY_ZH, region_rank
-
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 GEMINI_REGION_PATTERN = re.compile(r',\s*2,\s*1,\s*200,\s*\\*"([A-Z]{3})\\*"')
-GEMINI_AVAILABILITY_PATTERN = re.compile(r'\[45631641\s*,\s*null\s*,\s*(true|false|null)')
+GEMINI_AVAILABILITY_PATTERN = re.compile(r'(?:\[45631641\s*,\s*null\s*,\s*|\\*["\']45631641\\*["\']\s*:\s*)(true|false|null)')
 YOUTUBE_GL_PATTERN = re.compile(r'"INNERTUBE_CONTEXT_GL"\s*:\s*"([A-Za-z]{2})"')
 YOUTUBE_COUNTRY_PATTERN = re.compile(r'"countryCode"\s*:\s*"([A-Za-z]{2})"')
 RESTRICTED_POISON_COUNTRIES = frozenset({"CN", "RU", "IR", "KP", "CU", "SY", "BY"})
@@ -182,6 +181,16 @@ def parse_gemini_region(text):
     codes = sorted({cc for raw in GEMINI_REGION_PATTERN.findall(text) if (cc := alpha3_to_alpha2(raw))})
     values = set(GEMINI_AVAILABILITY_PATTERN.findall(text))
     available = {'true': True, 'false': False, 'null': None}.get(next(iter(values))) if len(values) == 1 else None
+    if available is None and values:
+        if 'true' in values and 'false' not in values:
+            available = True
+        elif 'false' in values and 'true' not in values:
+            available = False
+    if available is None and len(codes) == 1:
+        if codes[0] in RESTRICTED_POISON_COUNTRIES:
+            available = False
+        else:
+            available = True
     return {"country_code": codes[0] if len(codes) == 1 else None, "candidates": codes,
             "gemini_available": available, "status": 'observed' if len(codes) == 1 else 'ambiguous' if codes else 'missing_marker'}
 
@@ -371,9 +380,29 @@ def google_fallback_region(google):
     observations = [google.get('confirmation'), google, google.get('initial_observation')]
     for source in ('gemini', 'youtube'):
         for obs in observations:
+            if not obs:
+                continue
             cc = normalize_country_code(((obs or {}).get('details') or {}).get(source))
             if cc:
                 return cc, source
+    # 进一步从 signals 观测信号兜底 (Gemini candidates / YouTube INNERTUBE_CONTEXT_GL)
+    for source in ('gemini', 'youtube'):
+        for obs in observations:
+            if not obs:
+                continue
+            signals = obs.get('signals') or {}
+            if source == 'gemini':
+                gem = signals.get('gemini') or {}
+                cands = [normalize_country_code(c) for c in gem.get('candidates') or [] if normalize_country_code(c)]
+                valid_cands = [c for c in cands if c not in RESTRICTED_POISON_COUNTRIES]
+                if len(set(valid_cands)) == 1:
+                    return valid_cands[0], 'gemini'
+            elif source == 'youtube':
+                yt = signals.get('youtube') or {}
+                gls = [normalize_country_code(c) for c in yt.get('gl') or [] if normalize_country_code(c)]
+                valid_gls = [c for c in gls if c not in RESTRICTED_POISON_COUNTRIES]
+                if len(set(valid_gls)) == 1:
+                    return valid_gls[0], 'youtube'
     return None, None
 
 

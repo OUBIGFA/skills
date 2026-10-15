@@ -35,8 +35,8 @@ if sys.platform == "win32":
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="代理节点服务能力测试与配置渲染工具 (proxy-service-probe)")
-    parser.add_argument("--input", "-i", required=True,
-                        help="输入节点源: 本地文件路径(.yaml/.json/.txt)、远程订阅URL或FoFa在线订阅检索(如 fofa:recommended, fofa:vless, fofa:hy2)")
+    parser.add_argument("--input", "-i", nargs="+", required=True,
+                        help="输入节点源: 本地文件路径(.yaml/.json/.txt)、远程订阅URL或FoFa在线订阅检索(如 fofa:recommended, fofa:vless, fofa:hy2)，支持多个输入文件")
     parser.add_argument("--output", "-o", help="输出渲染后的 Clash/Mihomo YAML 配置文件路径")
     add_flow_arguments(parser)
     return parser.parse_args(argv)
@@ -48,11 +48,27 @@ def main(argv=None):
     profile_name, profile = prepare_run(args, check_output=bool(args.output))
 
     print("[1/4] 加载并解析输入节点...")
-    proxies = load_proxies(args.input)
+    input_source = args.input[0] if (isinstance(args.input, list) and len(args.input) == 1) else args.input
+    proxies = load_proxies(input_source)
     if not proxies:
         print("错误: 未从输入源解析到有效代理节点。")
         sys.exit(1)
-    print(f"      成功解析到 {len(proxies)} 个候选节点")
+
+    from core.merger import clash_proxy_sig
+    seen_sigs = set()
+    unique_proxies = []
+    for p in proxies:
+        s = clash_proxy_sig(p)
+        if s:
+            if s in seen_sigs:
+                continue
+            seen_sigs.add(s)
+        unique_proxies.append(p)
+    if len(unique_proxies) < len(proxies):
+        print(f"      过滤 {len(proxies) - len(unique_proxies)} 个重复连接节点，保留 {len(unique_proxies)} 个唯一候选节点")
+        proxies = unique_proxies
+    else:
+        print(f"      成功解析到 {len(proxies)} 个候选节点")
 
     def export(results):
         # 导出 Clash 配置 (自动处理 Key 前置策略组与落地链式绑定)

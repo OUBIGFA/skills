@@ -219,6 +219,17 @@ class GeoEvidenceTests(unittest.TestCase):
     @patch.object(geo, 'query_ip_info', return_value=geo.empty_ip_info())
     @patch.object(geo, 'probe_google_region')
     @patch.object(geo, 'probe_egress', return_value=egress())
+    def test_youtube_gl_signal_is_fallback_when_details_missing(self, probe, google, lookup):
+        google.return_value = {
+            'country_code': None, 'details': {'gemini': None, 'youtube': None}, 'source': None,
+            'signals': {'youtube': {'gl': ['US'], 'country_codes': []}}
+        }
+        decision = geo.probe_geolocation({})['geo_decision']
+        self.assertEqual((decision['cc'], decision['basis']), ('US', 'google_fallback_youtube'))
+
+    @patch.object(geo, 'query_ip_info', return_value=geo.empty_ip_info())
+    @patch.object(geo, 'probe_google_region')
+    @patch.object(geo, 'probe_egress', return_value=egress())
     def test_without_any_google_region_stays_unknown(self, probe, google, lookup):
         google.return_value = self.google_obs()
         result = geo.probe_geolocation({})

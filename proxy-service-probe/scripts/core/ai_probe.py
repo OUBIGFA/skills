@@ -90,6 +90,10 @@ def probe_gemini(proxies, google_region_info=None, timeout=(3.0, 7.0)):
         return {"status": "passed", "reason": "region_supported"}
     if avail is False:
         return {"status": "blocked", "reason": "unsupported_region"}
+    cc = google_region_info.get("country_code")
+    from .egress_geo import RESTRICTED_POISON_COUNTRIES
+    if cc and cc not in RESTRICTED_POISON_COUNTRIES:
+        return {"status": "passed", "reason": f"region_supported_{cc}"}
     return {"status": "unknown", "reason": "availability_marker_missing"}
 
 

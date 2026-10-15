@@ -42,6 +42,21 @@ Cutting stops at the payload line: operations, values, names, numbers, negation,
 links and hedges stay, even when the block is dense. Compress the wording, never the
 content.
 
+## Simultaneous clausal unfolding in Chinese (中文同声传译式展开语序)
+
+Written Chinese prose strongly prefers fronting subordinate clauses: placing causal,
+conditional, and concessive clauses before the main verb (`因为……所以……`, `虽然……但是……`).
+However, subtitles represent spoken speech and are read concurrently with the audio.
+
+- **Follow spoken unfolding over written grammar inversion**: when the speaker puts an
+  afterthought, causal explanation, condition, or concession after the main action
+  (`We rolled back because memory spiked`), use natural spoken Chinese with trailing
+  connectives (`我们回滚了这次发布，因为内存激增了` or `我们回滚了发布，当时内存激增`).
+- **Never invert clauses solely for literary elegance**: inverting a 2-clause sentence
+  causes the viewer to read the reason on screen while hearing the action spoken,
+  destroying visual-auditory alignment.
+- Keep the clausal sequence matching the spoken timeline whenever spoken Chinese permits.
+
 ## Chinese-English typography
 
 House style, not a platform requirement — Netflix's Simplified Chinese guide is silent on
@@ -170,6 +185,9 @@ are full-width `“”`, and work titles take `《》`. Switch only on request, 
   only works spoken: 大型 for *blockout* is not a word to general viewers — 基础形体
   (with Blocking bracketed at first appearance) is. See the plain-language rule in
   `references/style-common.md`
+
+- **LOCKED vs. preferred 术语分级执行**：用户明确点名的术语、代码标识符、命令行参数与模型名称（如 `--speculative-model`、`KV 缓存`）属于刚性锁定（LOCKED），必须逐字硬性执行、大小写与字符完全一致，严禁擅自意译、省略或增减空格；篇章提炼的行业概念属于柔性偏好（preferred），全文保持统一。
+- **严禁输出斜杠备选译法**：每句字幕只提供一种最终定案译文。严禁在译文中使用斜杠提供备选词（如 `微调/蒸馏`、`提示词/指令`）或括号备选项。唯一允许出现斜杠的情况是原文标识符或命令本身自带斜杠（如 `/compact` 命令、URL 或分数值）。
 
 ### Domain glossaries
 

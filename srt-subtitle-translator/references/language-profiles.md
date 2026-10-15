@@ -13,7 +13,7 @@ to choose and override them; it is not a second configuration source.
   marks (`？`/`?`) are explicitly exempted and preserved. `standard` follows the target
   language's normal subtitle practice.
 - `max_cps`: reading-speed review threshold in display-cost units per second.
-- `max_width`: one-glance scan-width review threshold in display-cost units.
+- `max_width`: one-glance scan-width review threshold in Display Units (DU: full-width CJK = 1.0, Latin/digit = 0.5; defines the soft comfort budget, while ~1.25–1.3x serves as the screen hard cap).
 - `spacing`: whether the checker reports missing CJK/Latin or CJK/digit spacing.
 - `ban_exclamation`: whether exclamation marks are reported as a style violation.
 

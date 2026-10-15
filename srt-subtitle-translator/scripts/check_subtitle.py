@@ -23,6 +23,7 @@ Checks performed on the output file:
   - forbidden exclamation marks in subtitle text ('！' and '!')
   - internal full stops and semicolons that may indicate two thought units were
     placed in one Chinese subtitle block
+  - forbidden slash-separated alternative words (e.g. '微调/蒸馏'; subtitles require a single rendering)
   - missing space between CJK and Latin/digits (zh target only; reported, not fatal)
 
 Extra checks when --source is given:
@@ -209,6 +210,11 @@ DANGLING_HEAD_PARTICLES_ZH = (
     "的", "地", "得", "之类", "等等", "一样", "一般", "似的", "左右", "上下", "前后"
 )
 PUNCT_CATEGORIES = {"P", "S", "Z", "C"}
+
+# 严禁斜杠备选词正则（如 微调/蒸馏、选项A / 选项B、大模型/LLM；排除URL、分数值与CLI命令如 /compact）
+SLASH_ALTERNATIVE_RE = re.compile(
+    r"(?<![:/])(?:[\u4e00-\u9fa5]+[a-zA-Z0-9]*\s*/\s*[a-zA-Z0-9]*[\u4e00-\u9fa5]+|[\u4e00-\u9fa5]+/[a-zA-Z0-9]+|[a-zA-Z0-9]+/[\u4e00-\u9fa5]+)(?![/])"
+)
 
 EXT_FORMATS = {".srt": "srt", ".vtt": "vtt", ".ass": "ass", ".ssa": "ass"}
 
@@ -677,6 +683,12 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
                                 % (pos, mark)
                             )
                         start = at + 1
+                slash_match = SLASH_ALTERNATIVE_RE.search(plain)
+                if slash_match:
+                    warnings.append(
+                        "%s: contains slash-separated alternative ('%s') — deliver only one final screen-ready rendering; slash alternatives are forbidden in subtitles"
+                        % (pos, slash_match.group(0).strip())
+                    )
         if cfg["spacing"]:
             for m in re.finditer(r"(?:%s)(?:%s)|(?:%s)(?:%s)"
                                  % (CJK_RE.pattern, LATIN_RE.pattern,

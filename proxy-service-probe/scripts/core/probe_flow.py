@@ -211,14 +211,16 @@ def run_services(row, proxy_url, dims, runner_ips):
             row["ai_observations"] = ai_res["observations"]
             row["ai_summary"] = ai_res.get("summary", {})
         else:
-            row["ai_supported"], row["ai_details"] = False, {}
-            row["ai_summary"] = {}
+            row.setdefault("ai_supported", None)
+            row.setdefault("ai_details", {})
+            row.setdefault("ai_summary", {})
         if dims["media"]:
             media_res = probe_all_media(node_proxies)
             row["media_supported"] = media_res["media_supported"]
             row["media_details"] = media_res["details"]
         else:
-            row["media_supported"], row["media_details"] = False, {}
+            row.setdefault("media_supported", None)
+            row.setdefault("media_details", {})
         if dims["shield"]:
             http_shield = probe_sites_http(node_proxies)
             browser_res = probe_sites_browser(proxy_url) if dims["browser_shield"] else {}
@@ -226,13 +228,18 @@ def run_services(row, proxy_url, dims, runner_ips):
             row["shield_passed"] = shield_passed(combined_shield)
             row["shield_details"] = combined_shield
         else:
-            row["shield_passed"], row["shield_details"] = False, {}
+            row.setdefault("shield_passed", None)
+            row.setdefault("shield_details", {})
     finally:
         if player is not None:
             player.join()
-    yt_res = browser.get("youtube") or ({"status": "unknown", "reason": "player_thread_failed"} if dims["youtube"] else {})
-    row["youtube_passed"] = yt_res.get("status") == "passed"
-    row["youtube_details"] = yt_res
+    if dims["youtube"]:
+        yt_res = browser.get("youtube") or {"status": "unknown", "reason": "player_thread_failed"}
+        row["youtube_passed"] = yt_res.get("status") == "passed"
+        row["youtube_details"] = yt_res
+    else:
+        row.setdefault("youtube_passed", None)
+        row.setdefault("youtube_details", {})
 
 
 class Checkpoint:

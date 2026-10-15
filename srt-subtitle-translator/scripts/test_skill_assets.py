@@ -50,6 +50,45 @@ class SkillAssetTests(unittest.TestCase):
         self.assertIn("default", profiles)
         self.assertGreaterEqual(len(profiles), 10)
 
+    def test_skill_routes_simultaneous_interpreting_order(self):
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        style_common = (ROOT / "references" / "style-common.md").read_text(encoding="utf-8")
+        style_zh = (ROOT / "references" / "style-zh.md").read_text(encoding="utf-8")
+        self.assertIn("同声传译式展开语序", skill)
+        self.assertIn("Simultaneous interpreting clause order", style_common)
+        self.assertIn("中文同声传译式展开语序", style_zh)
+
+    def test_skill_routes_terminology_locking_and_slash_ban(self):
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        style_common = (ROOT / "references" / "style-common.md").read_text(encoding="utf-8")
+        style_zh = (ROOT / "references" / "style-zh.md").read_text(encoding="utf-8")
+        self.assertIn("LOCKED", skill)
+        self.assertIn("preferred", skill)
+        self.assertIn("slash-separated alternatives", skill)
+        self.assertIn("LOCKED (刚性锁定)", style_common)
+        self.assertIn("preferred (柔性偏好)", style_common)
+        self.assertIn("Single final rendering mandate", style_common)
+        self.assertIn("严禁输出斜杠备选译法", style_zh)
+
+    def test_skill_routes_asr_repair_boundaries(self):
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        seg = (ROOT / "references" / "segmentation.md").read_text(encoding="utf-8")
+        style_common = (ROOT / "references" / "style-common.md").read_text(encoding="utf-8")
+        self.assertIn("division of ASR repair", skill)
+        self.assertIn("ASR repair boundaries", seg)
+        self.assertIn("physiological breaths", seg)
+        self.assertIn("Boundaries of ASR repair", style_common)
+
+    def test_skill_routes_display_units_budget(self):
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        reading_load = (ROOT / "references" / "reading-load.md").read_text(encoding="utf-8")
+        seg = (ROOT / "references" / "segmentation.md").read_text(encoding="utf-8")
+        self.assertIn("Display Units", skill)
+        self.assertIn("行级显示单元预算", reading_load)
+        self.assertIn("Soft Budget", reading_load)
+        self.assertIn("Hard Budget", reading_load)
+        self.assertIn("Line-level Display Unit Budget", seg)
+
 
 if __name__ == "__main__":
     unittest.main()

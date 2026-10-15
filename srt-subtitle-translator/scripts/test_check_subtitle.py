@@ -170,6 +170,19 @@ class MinimalChinesePunctuationTests(unittest.TestCase):
             for w in warnings
         ))
 
+    def test_warns_for_slash_separated_alternatives(self):
+        warnings = self.check_warnings("可以使用 微调/蒸馏 两种方法")
+        self.assertTrue(any("slash-separated alternative" in w for w in warnings))
+
+    def test_allows_valid_slash_usages(self):
+        # CLI command, fraction, and URL should not trigger slash-alternative warning
+        warnings1 = self.check_warnings("输入 /compact 命令")
+        self.assertFalse(any("slash-separated alternative" in w for w in warnings1))
+        warnings2 = self.check_warnings("比例设为 1/2 大小")
+        self.assertFalse(any("slash-separated alternative" in w for w in warnings2))
+        warnings3 = self.check_warnings("访问 https://example.com 官网")
+        self.assertFalse(any("slash-separated alternative" in w for w in warnings3))
+
 
 class LengthFidelityTests(unittest.TestCase):
     """Padding and dropped payload leave the timeline intact, so they need their own check."""

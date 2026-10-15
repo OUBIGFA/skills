@@ -68,6 +68,32 @@ and menu names, numbers and units, visual judgements, warnings, causal links (`b
 after honest de-padding, split it or accept the density. Never buy reading comfort with
 meaning.
 
+## Simultaneous interpreting clause order (同声传译式展开语序)
+
+Viewers read subtitles in real time while hearing the speaker talk: each line is narrow,
+stays on screen for only two to three seconds, and disappears as the next line appears.
+Subtitles are timed broadcast captions, not written essays.
+
+The most common way to ruin a subtitle is translating it "like good written prose":
+inverting clauses, pulling trailing conditions or reasons to the front, or rearranging
+thoughts to make an elegant written sentence. Such translations read well in isolation
+as text, but on screen they completely desynchronize eye and ear — the viewer hears
+clause A, but reads the translation of clause B.
+
+**The simultaneous interpreting rule:** Among equally natural renderings in the target
+language, **always choose the one whose clausal unfolding sequence follows the source
+audio.** Only invert clauses when target-language grammar strictly and genuinely requires
+it.
+
+| Source | Inverted prose (wrong) | Simultaneous order (right) | Why |
+|---|---|---|---|
+| `So what we ended up doing, and this took us a while to figure out, was to let the model review first.` | `我们花了好一阵子才想明白，最后决定让模型先审一遍。` | `我们最后的做法，花了好一阵子才想明白，就是让模型先审一遍。` | The wrong line moves the second half to the front: when hearing "what we ended up doing", the viewer sees "花了好一阵子", breaking temporal synchrony. |
+| `We rolled back the deployment because the memory usage was spiking.` | `因为内存占用激增，我们回滚了部署。` | `我们回滚了部署，因为内存占用激增了。` | Spoken conversation naturally uses trailing causal clauses; inverting it forces the viewer to wait for the action. |
+| `I decided to join the team, although it took five months to convince me.` | `虽然花了五个月才说服我，但我还是决定加入团队。` | `我决定加入团队，虽然这花了好五个月才说服我。` | Follows the speaker's emotional and narrative progression. |
+
+When a sentence is later divided across multiple subtitle lines, simultaneous unfolding
+ensures each sliced piece lines up with the exact words spoken at that moment.
+
 ## Noise filtering
 
 Spoken audio is full of tokens that carry no information. Removing them is not
@@ -186,6 +212,31 @@ Two traps when deriving a term yourself:
   common technical vocabulary, and the Traditional form reads as foreign or simply
   unparseable to a Simplified Chinese audience.
 
+### Terminology tiers: LOCKED vs. preferred (术语两级锁定机制)
+
+Divide terms into two distinct discipline levels:
+
+- **LOCKED (刚性锁定)**: User-specified translations, explicit glossary entries, CLI
+  commands and flags, product and model names, code identifiers, and URLs.
+  - *Hard requirement*: reproduce character-for-character with zero alteration.
+  - Never modify spelling, casing, or surrounding whitespace conventions.
+  - Never translate, omit, or replace a LOCKED term with a synonym.
+- **preferred (柔性偏好)**: Global consistency defaults discovered across the file.
+  - *Soft guide*: maintain uniformity throughout the file, but allow context-sensitive
+    flexibility when the physical UI or grammatical syntax genuinely demands it
+    (e.g. an on-screen menu label vs. conversational narration).
+
+### Single final rendering mandate (no slash alternatives)
+
+Subtitles are finished broadcast captions, never drafts or translators' working notes:
+
+- **Every sentence must give exactly ONE definitive, screen-ready rendering.**
+- **Never emit slash-separated alternatives** (such as `微调/蒸馏` or `选项A / 选项B`).
+  Pick the single most faithful, natural term and commit to it.
+- **Never emit bracketed variant explanations** (such as `提示词（或称指令）`).
+- **The only permitted slash**: when the source identifier literally contains one, such as
+  a CLI command (`/compact`), a URL, or an explicit fractional setting (`1/2`).
+
 ## ASR error repair
 
 Auto-captions mishear words that the context makes obvious. Repair the meaning rather
@@ -207,3 +258,25 @@ blank and never refuse the file because parts of it are noisy.
 
 Repairs stay inside the block they belong to; do not move content across boundaries to
 "fix" the transcript (when blocks are merged, repairs go into the merged block).
+
+### Boundaries of ASR repair (ASR修复的分工边界)
+
+Keep the boundary between correcting mishearings and unauthorized timeline rewriting crystal clear:
+
+- **What ASR repair does**:
+  - Correct acoustic mishearings, garbled proper nouns, and phonetically butchered domain terms.
+  - Fix split words that the recognizer falsely separated into fragments.
+  - Restore punctuation boundaries (sentence-ending full stops, commas) so long streams
+    of speech do not run on endlessly with commas.
+- **What ASR repair never does**:
+  - **Never rewrite spoken grammar**: do not formalize conversational speech into bookish
+    prose, and do not adjust subject-verb syntax to make the speaker look more eloquent.
+  - **Never delete spoken payload**: pauses, stumbles, and hesitations are cleaned up as
+    filler only when they carry zero information; never delete words that express operations,
+    conditions, or hedges on the timeline.
+  - **Never cut on dangling connectors**: never place a subtitle cut after a dangling clausal
+    connector or preposition (`because.`, `of.`, `since.`, `以及。`, `当。`). Attach it to the
+    continuation clause.
+  - **Never treat physiological pauses as syntactic boundaries**: speakers pause to breathe,
+    think, or drink water. An acoustic gap is evidence of silence, not evidence that a thought
+    has closed.

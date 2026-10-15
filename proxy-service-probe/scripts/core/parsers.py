@@ -463,10 +463,28 @@ def load_proxies(source):
     """
     text = ""
     if isinstance(source, list):
-        return [deepcopy(p) for p in source if isinstance(p, dict) and "server" in p]
+        if source and isinstance(source[0], dict) and "server" in source[0]:
+            return [deepcopy(p) for p in source if isinstance(p, dict) and "server" in p]
+        all_proxies = []
+        for item in source:
+            all_proxies.extend(load_proxies(item))
+        seen_names = {}
+        for p in all_proxies:
+            raw_name = p.get('name') or f"{p.get('type')}_{p.get('server')}:{p.get('port')}"
+            if raw_name in seen_names:
+                seen_names[raw_name] += 1
+                p['name'] = f"{raw_name}_{seen_names[raw_name]}"
+            else:
+                seen_names[raw_name] = 1
+                p['name'] = raw_name
+        return all_proxies
 
     if isinstance(source, str):
         source = source.strip()
+        if "," in source and not os.path.isfile(source):
+            sources = [s.strip() for s in source.split(",") if s.strip()]
+            if len(sources) > 1:
+                return load_proxies(sources)
         s_lower = source.lower()
         if s_lower == "gist" or s_lower.startswith("gist:"):
             from core.gist import search_and_fetch_gist_proxies

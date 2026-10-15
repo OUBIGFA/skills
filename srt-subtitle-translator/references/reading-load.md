@@ -42,14 +42,48 @@ The reverse case is legitimate and common: a long duration carrying a short, com
 line, because the speech simply lasts that long. Explain the checker's duration warning
 rather than inventing a split with no natural seam.
 
-## Why there is no characters-per-line limit
+## Display Units (DU) and Line-Level Budget (行级显示单元预算)
 
-A character budget cannot tell a natural phrase from an awkward one, and enforcing one
-produces exactly the two failures this skill exists to prevent: text cut mid-phrase, and
-meaning deleted to hit a count. The comfort zone is a review trigger, not a quota.
+Visual line width cannot be measured by a raw character count alone, because scripts
+vary greatly in optical width. The framework evaluates horizontal load in **Display Units (DU)**:
+
+- **CJK counting mode**:
+  - 1 full-width CJK character (Han, Kana, Hangul, full-width punctuation) = **1.0 DU**
+  - 1 half-width Latin letter, numeral, or ASCII symbol = **0.5 DU**
+  - Ordinary punctuation in CJK subtitles has reading cost = **0**
+- **Raw counting mode** (Latin/Cyrillic scripts):
+  - Every character, space included = **1.0 DU**
+
+### Soft Budget vs. Hard Budget
+
+Two distinct thresholds govern visual comfort:
+
+1. **Soft Budget (Scan Comfort Zone / 舒适视读区)**:
+   - Chinese / Japanese / Korean: **18–25 DU** (`max_width: 25`)
+   - Latin / English / European languages: **35–42 DU** (`max_width: 42`)
+   - Lines inside the soft budget are scanned in a single, effortless fixation without
+     horizontal eye movement.
+2. **Hard Budget (Screen Width Cap / 视屏硬上限)**:
+   - Chinese: **~30–32 DU**
+   - Latin scripts: **~48–50 DU**
+   - A subtitle crossing the hard budget crowds screen boundaries and forces active eye
+     saccades. Any sentence exceeding the hard budget is an imperative candidate for
+     pre-planned splitting.
+
+### Pre-planning multi-piece cuts (`k ≥ 2` pieces with `¦`)
+
+When translating a long source statement whose target rendering will clearly exceed the
+hard budget, plan its division before committing to timestamps:
+- Propose $k \ge 2$ balanced pieces using suggested cut markers (`¦`).
+- Aim for each piece to settle comfortably within the soft budget (~12–20 DU) and last
+  at least ~1.0 s.
+- Always cut at natural syntactic seams (意群气口: after commas, before clausal
+  connectives, or between topic and comment).
+- Never split mechanically by character count: phrasing governs cuts, while Display Units
+  tell you when to look.
 
 For Chinese, the practical translation of the numbers: a 2-second block holds about 18
-characters, not 30.
+Display Units, not 30.
 
 ## When a block busts its budget
 

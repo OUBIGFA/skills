@@ -129,6 +129,26 @@ pronoun from its verb, a verb from its auxiliary or negation, a prepositional ve
 its preposition. That is exactly the inventory of ASR damage in an English source — and
 the same principle applies to the boundaries you place in the target language.
 
+### ASR repair boundaries: acoustic pause vs. syntactic closure (ASR修复边界与生理停顿)
+
+Audio pauses in auto-generated captions often reflect physiological breaths or hesitation
+rather than real syntactic closures. Respect the division of ASR repair:
+
+- **Never cut on a physiological pause that breaks a thought unit**: speakers frequently
+  pause mid-clause to breathe, swallow, or check their screen. A dip in the audio waveform
+  is physical silence, NOT syntactic completion. Never place a cut across an incomplete
+  verb-object, head-modifier, or prepositional phrase simply because an acoustic gap exists.
+- **Never sever a unit on dangling connectors**: never let an ASR cut leave a clausal
+  connector or preposition dangling at the end of a block (`because.`, `of.`, `when.`,
+  `以及。`, `当。`, `把。`, `通过。`). Such words are syntactic heads and must attach to the
+  continuation clause.
+- **Tame run-on comma chains**: spoken speech often runs on through dozens of clauses
+  connected only by commas. During ASR auditing, identify genuine completion points of
+  independent thoughts and treat them as sentence boundaries, enabling downstream
+  translation to breathe.
+- **Never rewrite spoken grammar**: repair mishearings and broken words, but preserve
+  the speaker's actual spoken syntax and vocabulary.
+
 ## Orphan taxonomy
 
 An orphan is any block-edge fragment that cannot work as a subtitle on its own.
@@ -186,6 +206,27 @@ The comfort zone (12–25 chars, ~1.8–4.5 s for Chinese) is calibration for "e
 never a quota. A 28-character line with no natural interior seam stays whole; a
 20-character line carrying two separate statements still splits. Phrasing decides; the
 numbers only tell you when to look.
+
+### Line-level Display Unit Budget and piece planning (行级显示单元预算与分段规划)
+
+Subtitle lines have physical screen-width limits. Evaluate line width using **Display Units (DU)**:
+- 1 full-width CJK character = 1.0 DU
+- 1 Latin letter, numeral, or half-width symbol = 0.5 DU
+- Punctuation reading cost = 0 (under CJK counting)
+
+Two budget boundaries govern every line:
+- **Soft Budget (Scan Comfort / 舒适视读区)**: ~18–25 DU for Chinese (~35–42 DU for Latin).
+  A line within this budget is parsed in a single effortless glance.
+- **Hard Budget (Display Cap / 视屏硬上限)**: ~30–32 DU for Chinese (~45–50 DU for Latin).
+  Any translation whose natural text crosses the hard budget cannot fit comfortably on one row.
+
+**Planning multi-piece cuts (`k ≥ 2` pieces with `¦`)**:
+When a translated sentence exceeds the hard budget, do not wait until formatting to hack it apart
+mid-word. Pre-plan its division into $k \ge 2$ balanced pieces using suggested thought-unit seams (`¦`):
+- Each piece should target the soft budget (~12–20 DU) and have at least ~1.0 s display duration.
+- Always cut at the highest natural syntactic node (意群气口) — after a comma, before a clausal
+  connective, or between topic and comment.
+- Never pad or re-expand text just to fill a piece quota: meaning and brevity outrank piece counts.
 
 ## Keep real multi-block sentences multi-block
 

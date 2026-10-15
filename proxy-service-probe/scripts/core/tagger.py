@@ -172,9 +172,15 @@ def tag_and_rename_nodes(results, resort=False):
         city = r.get("city") or ""
 
         poison_tag = (r.get("geo_decision") or {}).get("poison_tag")
-        ai_sup = bool(r.get("ai_supported", False) and not poison_tag)
+        orig_has_ai = bool("❇️" in orig or "❇" in orig or "❇️" in pname or "❇" in pname)
+        if r.get("ai_supported") is not None:
+            ai_sup = bool(r.get("ai_supported", False) and not poison_tag)
+        elif p.get("_ai_supported") is not None:
+            ai_sup = bool(p["_ai_supported"] and not poison_tag)
+        else:
+            ai_sup = bool(orig_has_ai and not poison_tag)
         r["ai_supported"] = ai_sup
-        orig_has_sparkle = bool("✨️" in orig or "✨" in orig)
+        orig_has_sparkle = bool("✨️" in orig or "✨" in orig or "✨️" in pname or "✨" in pname)
         orig_has_hq = bool("♥️" in orig or "♥" in orig)
         orig_has_key = bool(re.search(r'(?i)\bkey(?![a-z])', orig))
         orig_has_fast = bool(re.search(r'(?i)\bfast(?![a-z])', orig))
@@ -184,17 +190,27 @@ def tag_and_rename_nodes(results, resort=False):
         # Groq 解锁状态: 独立作为 ✨️ 综合全通的硬性门槛
         if "ai_details" in r and r["ai_details"]:
             groq_pass = bool(r["ai_details"].get("groq", False))
+        elif p.get("_groq_passed") is not None:
+            groq_pass = bool(p["_groq_passed"])
         else:
             groq_pass = bool(ai_sup)
 
-        yt_pass = r.get("youtube_passed", False)
+        if "youtube_passed" in r and r["youtube_passed"] is not None:
+            yt_pass = bool(r["youtube_passed"])
+        elif p.get("_youtube_passed") is not None:
+            yt_pass = bool(p["_youtube_passed"])
+        else:
+            yt_pass = None
+
         if "shield_passed" in r and r["shield_passed"] is not None:
             cf_pass = bool(r["shield_passed"])
+        elif p.get("_shield_passed") is not None:
+            cf_pass = bool(p["_shield_passed"])
         elif r.get("shield_details") and isinstance(r["shield_details"], dict):
             from .shield_probe import shield_passed
             cf_pass = shield_passed(r["shield_details"])
         else:
-            cf_pass = False
+            cf_pass = None
 
         # 综合全通 ✨️: 必须同时满足 AI五大全通 + Groq解锁 + YouTube免登实播 + 免盾达成
         # 且丢包率必须健康 (< 20%)，严重丢包/高抖动节点不授予 ✨️ 徽章
@@ -202,10 +218,12 @@ def tag_and_rename_nodes(results, resort=False):
         loss_val = r.get("loss_rate") if r.get("loss_rate") is not None else liveness_info.get("loss_rate")
         loss_ok = bool(loss_val is None or loss_val < 20.0)
 
-        if r.get("youtube_details") or r.get("shield_details"):
+        if yt_pass is not None and cf_pass is not None:
             sparkle = bool(ai_sup and groq_pass and yt_pass and cf_pass and loss_ok)
-        elif "youtube_passed" in r and "shield_passed" in r and (yt_pass or cf_pass):
-            sparkle = bool(ai_sup and groq_pass and yt_pass and cf_pass and loss_ok)
+        elif yt_pass is None and cf_pass is not None:
+            sparkle = bool(ai_sup and groq_pass and orig_has_sparkle and cf_pass and loss_ok)
+        elif r.get("youtube_details") or r.get("shield_details"):
+            sparkle = bool(ai_sup and groq_pass and (yt_pass is True) and (cf_pass is True) and loss_ok)
         else:
             sparkle = bool(ai_sup and groq_pass and orig_has_sparkle and not poison_tag and loss_ok)
 
@@ -227,7 +245,7 @@ def tag_and_rename_nodes(results, resort=False):
             is_landing = True
         else:
             is_landing = bool("_Lnd" in pname or (orig_has_usai and p.get("dialer-proxy")))
-        is_usai = bool(cc == "US" and ai_sup and (is_landing or orig_has_usai))
+        is_usai = bool(cc == "US" and ai_sup)
 
         is_cg = "_ChromeGo" in orig or "_ChromeGo" in pname
 
