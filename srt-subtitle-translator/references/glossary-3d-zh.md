@@ -6,14 +6,11 @@ Chinese target. Read it whenever the source video is about Cinema 4D, Blender, M
 
 ## The alignment rule
 
-**One term per concept across every 3D application: Cinema 4D's Simplified Chinese
-wording.** Not the Traditional Chinese rendering, not Blender's zh-CN strings, not the
-literal dictionary word.
-
-The reason is the audience, not the software. Chinese 3D viewers learned the vocabulary
-from C4D's mainland localization, so those words are the ones that land instantly. A
-subtitle that says 内插 when the viewer knows 内部挤压 has failed even though it is
-"a translation" — the viewer stops, re-reads, and loses the demonstration on screen.
+**This skill's house default aligns shared 3D concepts to Cinema 4D's Simplified Chinese
+wording.** Keep one rendering per concept across applications. This is a target-audience
+convention, not a claim that other applications' localizations are universally wrong.
+An explicit user glossary, the actual on-screen label, or a different target locale takes
+precedence over this default.
 
 This holds even when the video is a Blender or Maya tutorial: translate `Inset Faces` as
 `内部挤压`, not Blender's own 内插面; translate Maya's `Extrude` as `挤压`, not 挤出.
@@ -62,10 +59,10 @@ When community slang fails the test, ship the plain wording with the original br
 at first appearance (基础形体（Blocking）), and keep the verbatim string for anything the
 viewer watches being typed on screen (命名对象就叫 Blocking).
 
-## Never these renderings
+## Avoid in this house glossary
 
-These are unconditional — no context makes them right. They are wrong words, not
-context-sensitive choices.
+Use these renderings for the listed technical senses in ordinary Simplified Chinese
+narration. They do not override literal UI labels, user-locked terms, or unrelated senses.
 
 | Never | Always | Source term | Why the drift happens |
 |---|---|---|---|
@@ -82,7 +79,7 @@ context-sensitive choices.
 | 大型 | **基础形体** | Blocking / Blockout | spoken shorthand ("拉大型"); outside the niche it reads as "large-scale" and parses as nothing |
 | 图元 | **略去，只留对象名** | Primitive (a category word stacked onto a named object) | 这是 Unity 中文文档与图形学教材里 Primitive 的译法，C4D 观众不这么叫；三层名词还会把屏幕上真正要找的名字（直线样条）埋掉 |
 
-Everything outside this table is a default that context can override.
+The table is scoped to those concepts; apply the context tests above before substituting.
 
 ## One English word, several Chinese words
 
@@ -142,8 +139,8 @@ are overlapping` → 克隆体重叠了.
 **Primitive** — 说话人常把类别词叠在对象名后面，一句话里出现三个同指的词：`the line
 spline primitive`、`the cube primitive`、`the null primitive`。中文不叠 —— 对象名自己就把
 意思说完了：`Go to the line spline primitive` → 找到直线样条。类别词译出去，不是译进来，
-因为观众要按名字找到屏幕上那个东西。（图形学 API 语境里的点、线、三角形图元是另一回事，
-与本文件无关。）
+因为观众要按名字找到屏幕上那个东西。若原文在区分基础几何体和可编辑对象，类别本身就是有效
+信息，必须保留；图形学 API 中的点、线、三角形图元也不能按这条省略。
 
 **Deformer vs Modifier** — Blender's *Modifier* is a stack of procedural operations
 (Subdivision, Array, Boolean, Solidify); C4D's *Deformer* is only the shape-bending
@@ -384,8 +381,10 @@ them unsearchable, which is the opposite of what a tutorial viewer needs.
   `Octane`, `Arnold`, `V-Ray`, `Unreal`, `After Effects`, `Nuke`
 - Acronyms: `UV`, `HDRI`, `GI`, `AO`, `AOV`, `IK`, `FK`, `LUT`, `VDB`, `ACES`, `PBR`
 - Formats: `OBJ`, `FBX`, `Alembic`, `USD`, `EXR`, `PNG`
-- Application-exclusive features: `XPresso`, `MoSpline`, `Pyro`, `Geometry Nodes`,
-  `Grease Pencil`, `Eevee`, `Cycles`, `SOP` / `DOP` / `VOP`, `Wrangle`, `Hypershade`
+- Application-exclusive identifiers: `XPresso`, `MoSpline`, `Pyro`, `Eevee`, `Cycles`,
+  `SOP` / `DOP` / `VOP`, `Wrangle`, `Hypershade`. Features with established localized
+  names such as Geometry Nodes / 几何节点 and Grease Pencil / 蜡笔 follow the UI/context
+  rule rather than being locked to English in every sentence.
 
 Abbreviations the speaker actually says stay as spoken: `C4D`, `AE`, `RS`, `PS`. Do not
 expand `C4D` into `Cinema 4D` in a subtitle — it costs characters and the viewer already

@@ -1,101 +1,80 @@
-# Edge Cases and Delivery
+# File Handling and Delivery
 
-## Long files
+## Output and parts
 
-For roughly 60 blocks or fewer, inline output is acceptable. Above that, write the
-translation beside the source using the original extension. Use `source-zh.srt` for
-Simplified Chinese, `source-zh-hant.srt` for Traditional Chinese, `source-en.srt` for
-English, and `source-bi.srt` for bilingual output.
+Write UTF-8 beside the source and retain its extension. Use a target-language suffix
+(`-zh`, `-zh-hant`, `-en`, etc.), or `-bi` for requested bilingual output. Deliver a file
+rather than a long subtitle dump in chat. Do not overwrite the input or an existing
+output without explicit authorization.
 
-When the translation is built in parts, use the local tool:
+For parts, resolve the script path from the skill directory:
 
 ```text
-python scripts/assemble_subtitle.py output.srt parts\part1.srt parts\part2.srt
+python <skill-dir>/scripts/assemble_subtitle.py <output.srt> <work/part1.srt> <work/part2.srt>
 ```
 
-The tool writes UTF-8, keeps SRT blocks intact, emits one VTT header, and keeps the
-first ASS part's document header before adding later event lines. Validate the assembled
-file before cleaning the parts.
+- SRT parts are valid SRT; each may start numbering at 1. Assembly renumbers the result
+  without changing dialogue, timing or markup. Ad-hoc pipe-separated rows are unsupported.
+- The first VTT part contains its document header. Later parts may be cue/body blocks or
+  complete VTT with the same header. All body blocks are kept; invalid STYLE/REGION
+  placement is rejected rather than silently moved or dropped.
+- The first ASS/SSA part is a complete document. Later parts are event lines, or complete
+  documents with matching metadata and Format. Later events are inserted inside Events,
+  before trailing sections such as Fonts. Conflicting or unrecognized content fails.
+- Empty/malformed parts, duplicated input paths, format mismatches, and output paths
+  aliasing an input are rejected. Existing outputs require `--overwrite`; use it only
+  when replacement was authorized.
 
-## Cleanup on Windows
+Validate the complete assembled output with `check_subtitle.py --source ... --lang ...`.
+Assembly validation does not replace source comparison or translation review.
 
-Only recycle temporary files and folders created during the current task. Never touch a
-pre-existing scratch file. After the delivered output exists and the checker reports no
-errors, use the recycle bin rather than permanent deletion:
+## Workspace and cleanup
+
+Create `.srt-subtitle-translator-work` beside the source; if it already exists, create a
+unique suffixed sibling instead of adopting or emptying it. Put all task-created parts,
+logs, data, copied/generated helpers and validation output there. Keep the source and
+final deliverable outside. Without a source path, use a unique workspace `_temp/` folder.
+
+Keep parts while correcting validation failures. When ending the task, recycle this
+task's intermediates even if validation failed; preserve the source and final output.
+Check that cleanup actually happened and report exact remaining paths if it did not.
+Do not remove pre-existing files or follow links outside the owned task folder.
+
+On Windows, use an available recycle capability. For a known task-owned directory,
+PowerShell can use the standard recycle-bin API:
 
 ```powershell
 Add-Type -AssemblyName Microsoft.VisualBasic
-[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
-  '<absolute-file-path>', 'OnlyErrorDialogs', 'SendToRecycleBin')
+[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory(
+  '<absolute-task-owned-directory>', 'OnlyErrorDialogs', 'SendToRecycleBin')
+Test-Path -LiteralPath '<absolute-task-owned-directory>'
 ```
 
-For a directory, use `DeleteDirectory` with the same final two arguments. Do not use
-`rm`, `del`, or `Remove-Item`. If validation fails, keep the parts so the translation can
-be corrected and assembled again. Before replying to the user, recycle the task
-workspace and all intermediate artifacts, including artifacts from failed validation.
-
-If the sandbox blocks `Add-Type` ("compiles and loads .NET code at runtime") and COM
-instantiation, the equivalent recycle call is available through Python's `ctypes`:
-
-```python
-import ctypes, sys
-class OP(ctypes.Structure):
-    _fields_ = [("hwnd", ctypes.c_void_p), ("wFunc", ctypes.c_uint),
-                ("pFrom", ctypes.c_wchar_p), ("pTo", ctypes.c_wchar_p),
-                ("fFlags", ctypes.c_uint16), ("fAnyOperationsAborted", ctypes.c_bool),
-                ("hNameMappings", ctypes.c_void_p), ("lpszProgressTitle", ctypes.c_wchar_p)]
-op = OP(); op.wFunc = 3                      # FO_DELETE
-op.pFrom = "\0".join(sys.argv[1:]) + "\0\0"  # double-null terminated list
-op.fFlags = 0x0040 | 0x0010 | 0x0004 | 0x0400  # ALLOWUNDO|NOCONFIRMATION|SILENT|NOERRORUI
-ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
-```
-
-Pass every path in one call (recursing into a directory is not automatic; `FO_DELETE` on
-a directory does remove its contents). Verify with `os.path.exists` that each target is
-gone, and only if that still fails report the remaining paths instead of claiming success.
+For one file, use `DeleteFile` instead. On other platforms, use an available trash/recycle
+operation. If the environment blocks the operation or has no suitable capability, report
+the leftovers; do not bypass the restriction through another API or claim success.
+Permanent deletion is not the fallback unless the user authorizes it.
 
 ## Encoding
 
-Read sources defensively as UTF-8, UTF-8 BOM, GB18030, or UTF-16. Always write the
-delivered subtitle as UTF-8. The checker accepts legacy source encodings but requires
-the output to be UTF-8. Console output may use a legacy code page; inspect the file or
-use the checker rather than trusting terminal glyphs.
+The checker accepts UTF-8, UTF-8 BOM, GB18030 and UTF-16 sources. Outputs and assembly
+parts must be UTF-8. A legacy console code page does not establish file corruption;
+inspect the file itself. Report actual mojibake or uncertain decoding rather than silently
+inventing repaired text.
 
-If the source itself contains mojibake, report it and do not pretend that it was
-recovered. Do not silently repair unknown corruption.
+## Anomalies
 
-## Timing anomalies
-
-| Symptom | Handling |
+| Case | Response |
 |---|---|
-| Overlap | Report it; do not invent timestamps. ASS layered events may overlap. |
-| Zero or reversed duration | Preserve and flag the source anomaly. |
-| Source gap | Keep it; never stretch a cue to fill silence. Merging across it is allowed only when the merge fixes a nameable defect; the checker reports the crossing as a warning. |
-| Dense block | Remove padding, condense payload, then split at a natural target-language seam. |
-| New output gap | Reject it unless it matches a source gap inside the same continuous span. |
+| Reversed/zero duration or malformed timestamps | Report the source defect; do not invent replacement times or claim validation succeeded. |
+| Source overlap | Preserve and flag unless repair is authorized; ASS layers may legitimately overlap. |
+| Source gap | Preserve unless crossing repairs a nameable defect. It is not proof of audible silence. |
+| Dense short cue | Check padding and time-window mapping first; preserve all meaningful payload. |
+| Existing speaker lines or ASS breaks | Keep them, raising `--max-lines` to the existing count when needed. |
+| Bilingual output | Translation above source wording; review both lines and markup scope. Two-line permission is not bilingual-content validation. |
+| No audio | Compare source text/timestamps; explicitly leave acoustic alignment unverified. |
 
-The checker uses one configurable subtitle-gap threshold as a pause proxy. It cannot
-prove an audible pause without the audio; the threshold structures the audit trail
-(warnings on every crossed gap), it does not forbid judgement-based merges.
-
-## Markup and speakers
-
-Keep formatting, positioning, voice/class, ruby, karaoke, and ASS override markers with
-the text they affect. Keep escaped entities escaped. Translate the word in a bracketed
-sound cue when appropriate (`[music]` → `[音乐]`) but retain the bracket shape and `♪`.
-
-Keep each dash-prefixed speaker line on its own line. Keep structural speaker labels;
-their colon is not a segmentation signal. Use `--max-lines 2` for multi-speaker output.
-
-## Bilingual output
-
-Only produce bilingual subtitles when requested. Put the target language first and the
-source second in the same block, with no blank line between them. Because the reading
-load doubles, keep the translated line shorter and validate with `--max-lines 2`.
-
-## Reporting
-
-Report the output path, ordinary or strict mode, block count before and after, concrete
-repair categories, unresolved ASR/timing/terminology issues, the checker result, and a
-brief statement that self-created intermediates were recycled. Do not put notes or
-explanations inside subtitle text.
+Do not turn a validation failure into an endless retry loop: correct recoverable defects;
+if a source anomaly or missing evidence prevents validation, say what remains unresolved.
+The delivery reply includes exact error/warning counts and cleanup status, not notes inside
+subtitle text.

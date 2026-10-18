@@ -425,6 +425,17 @@ def sort_nodes_by_region_and_landing(items, resort=False):
         # 送中/受限地区污染节点不授予 ♥️，与打标层 format_node_name 保持一致
         if '_⚠️' in name:
             return False
+        if isinstance(item, dict):
+            shield_det = item.get("shield_details") or (item.get("proxy") or {}).get("_shield_details") or {}
+            waf_eval = shield_det.get("waf_evaluation") or {}
+            if (
+                shield_det.get("any_cf_mitigated")
+                or waf_eval.get("any_cf_mitigated")
+                or any(p.get("cf_mitigated") for p in (waf_eval.get("probes") or {}).values())
+                or item.get("any_cf_mitigated")
+                or (item.get("proxy") or {}).get("_any_cf_mitigated")
+            ):
+                return False
         # 打标层已给出结论（含浏览器复测沿用已有 ♥️）时以其为准，排位与命名不再各算一套
         if isinstance(item, dict) and isinstance(item.get('is_high_quality'), bool):
             return item['is_high_quality']

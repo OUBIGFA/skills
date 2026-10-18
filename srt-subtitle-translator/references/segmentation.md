@@ -1,34 +1,36 @@
 # Segmentation Reference
 
-Read this on every translation task. Segmentation is no longer a separate authorized
-mode — repairing ASR breakage and placing boundaries where the *translation* breathes is
-the default workflow. The only exception is strict mode (the user explicitly demanded an
-untouched timeline), where you translate in place and only condense.
+Use `repair → translate → divide`. Ordinary SRT/VTT may change boundaries; explicit
+strict mode and ASS/SSA translation keep the existing timeline. A whole sentence is the
+unit of understanding, not necessarily a single subtitle block.
 
-## Why boundaries matter more than they look
+## Find a defect before removing a seam
 
-A viewer reads a subtitle in one glance. If a block ends in the middle of a grammatical
-unit, the eye has to hold an incomplete structure in memory until the next block appears,
-and the next block starts with something that means nothing on its own. Broadcast
-guidelines all converge on the same principle: break at the highest syntactic node
-available, so each block is a self-contained chunk.
+Read both sides of each boundary:
 
-ASR-generated subtitles ignore this completely. They cut on pause detection and on a
-fixed character budget, which is why auto-captions strand articles, prepositions,
-technical terms, and single trailing words. And the damage compounds in translation:
-a boundary that merely looks awkward in English can be *impossible* in Chinese, because
-the two languages order their sentences differently.
+1. Does the first side finish a usable phrase?
+2. Does the next side begin a usable phrase, rather than supplying a stranded word or
+   argument of the previous side?
 
-The mirror-image failure is over-merging: collapsing a long sentence into one wall of
-text because "it is one sentence". That makes the subtitle unreadable in its time window
-and destroys breaks the speaker actually made. Both failures are equally wrong; a large
-drop in block count is a warning sign, not an achievement.
+These are phrase tests, not a requirement that every subtitle be a full sentence. Keep
+natural multi-block sentences. Topic continuity, fast speech, or a shared subject alone
+is not a reason to chain-merge their blocks.
 
-## Repair, translate, then divide
+| Defect | Source example | Repair |
+|---|---|---|
+| Orphan completion | `...in the geometry` / `nodes.` | Reunite the term. |
+| Stranded connector | `...based on the` / `same technology` | Keep connector and complement together. |
+| Dependent opening | `add some` / `turbulence` | Translate the full verb/object phrase. |
+| Split UI term | `Rope` / `Dynamics tag` | Preserve one searchable label. |
+| Trailing modifier | `create variations` / `using MoGraph` | Translate together, then find a target-language seam. |
+| Filler-only flash | `Right.` for 0.14 s | Remove only empty filler; combine with its own thought if needed. |
 
-The fixed working order of this skill: **first repair orphan words and other ASR
-breakage, then translate whole sentences, then divide the translation on the timeline.**
-Shown on a real failure. Source, with an orphan tail:
+A repair must not add bridging words or repeat subjects to make the pieces look complete.
+Each operation, qualifier, number and relation must remain traceable to the source.
+
+## Example: repair without over-merging
+
+Source:
 
 ```srt
 4
@@ -40,282 +42,74 @@ we are going to take a look at one of many methods on how to create variations o
 using MoGraph.
 ```
 
-The wrong way — translate each block in place to "preserve the timeline":
+`介绍一种创建随机变化的方法` / `使用 MoGraph` fails twice: the trailing modifier
+is detached, and “random” was invented. Read the source as one thought, then use a natural
+rendering such as `来看看用 MoGraph 做出各种变化的其中一种方法` within its combined
+3.985–12.445 s span. Local Chinese grammar can put the means before the verb; this does
+not authorize moving a separate downstream operation to an earlier time window.
 
-```srt
-4
-00:00:03,985 --> 00:00:10,760
-介绍一种创建随机变化的方法
+If a shorter multi-piece rendering is needed, possible thought boundaries are
+`来看看其中一种方法 ¦ 用 MoGraph 做出各种变化`. Determine the interior time from audio
+or the source cue evidence, not from the `¦` marker or target character counts alone.
+Without audio, report that a newly estimated interior time was not acoustically verified.
+An intact phrase may retain a long-duration warning rather than receive an artificial cut.
 
-5
-00:00:10,760 --> 00:00:12,445
-使用 MoGraph
-```
+## ASR repair and acoustic evidence
 
-`使用 MoGraph` trails the sentence it belongs inside. Chinese puts the means *before*
-the action — `用 MoGraph 做出变化` — so no placement of these two blocks can ever
-read naturally. The boundary itself makes natural Chinese impossible.
+Repair clear mishearings, broken word boundaries and missing sentence punctuation.
+Preserve the speaker's meaning and register; do not formalize spoken grammar or guess
+an uncertain parameter/name. A hesitation or physiological breath does not prove that a
+syntactic thought has ended. Conversely, adjacent timestamps do not prove uninterrupted
+speech. Never claim to have heard a pause from subtitle timestamps alone.
 
-The right way — merge the defect, translate the sentence whole, then fit the result to
-the speech span:
+**Keep the corresponding source time window.** Removing `okay, so` or shortening one
+phrase does not make its time slot available for a later action. Do not pull a later
+operation, screen change, or multi-clause explanation into an earlier short filler cue.
+Check actual speech when audio is available; otherwise use the source cues conservatively.
 
-```srt
-4
-00:00:03,985 --> 00:00:12,445
-来看看用 MoGraph 做出各种变化的其中一种方法
-```
+## Gaps and coverage
 
-Twenty characters, one glance, natural word order — and nothing in it that the audio did
-not have: no `我们`, no `接下来`, and `variations` is not upgraded into `随机变化`, a word
-the speaker never said (`of stuff` drops out because it is a vague filler noun, not
-payload). It spans 8.5 s — longer than the 7 s comfort anchor — but the speech simply
-lasts that long and the line is short; explain the checker's duration warning rather than
-forcing a split with no natural seam.
+- Preserve a source gap when both sides are usable phrases and the translation has a
+  natural seam there.
+- Cross a gap only for a specific seam defect. Record the affected source cues, gap and
+  reason. A long gap deserves stronger evidence; it is not automatically forbidden.
+- The checker reports every covered source gap beyond its 2 ms numerical tolerance,
+  including gaps below `--pause-gap`. The configurable pause proxy groups spans for
+  length-fidelity and nearby-boundary review; it does not authorize a merge or erase a gap.
+- Output gaps must not uncover source speech. A preserved or shortened source gap is
+  legal; a moved gap over source content is not. A cue entirely inside a source gap is
+  invalid even if it merely touches the preceding/following cue edges.
+- Overlapping ASS events are independent layers, not adjacent fragments to merge. Keep
+  all events and their non-Text fields; compare their coverage as a union of intervals.
 
-Had the faithful Chinese come out long — say 35 characters — the sentence would instead
-be split at a *Chinese* phrase boundary and distributed across the same span,
-proportionally to the speech:
+## Divide the translation
 
-```srt
-4
-00:00:03,985 --> 00:00:08,500
-来看看其中一种方法
+Cut at a natural phrase/clause boundary: between operations, before a connective that
+belongs to the following clause, or between a topic and its comment. Avoid separating
+names, technical terms, number/unit pairs, modifiers from their heads, or verbs from
+necessary complements. Do not pad a piece just to make it a full sentence.
 
-5
-00:00:08,500 --> 00:00:12,445
-用 MoGraph 做出各种变化
-```
+Evaluate duration and Display Units together using [reading-load.md](reading-load.md).
+The configured thresholds prompt review; neither width nor a target piece count is a
+cutting rule. Plan balanced pieces before assigning times, then verify each phrase fits
+its corresponding spoken material. Splitting a dense sentence does not create more total
+reading time.
 
-Note two things. The split point is not where English cut it — it is where the *Chinese*
-breathes; that is always the test, every output block being a phrase a native speaker of
-the target language would say in one breath. And splitting did not make the text longer:
-neither piece gained a subject or a connective to look self-sufficient.
+## Re-read both directions
 
-## Splits and merges must not change the text's length
+- Read A → B: does A leave a required complement hanging until B?
+- Read B alone: is it a phrase, or only an orphan tail?
+- Compare A+B with the source: did repair add padding, drop a condition/hedge, or move
+  downstream content forward?
 
-A repair is a boundary operation, not a licence to rewrite. Two failures show up
-specifically at seams, and both are invisible once you stop comparing with the source:
+The checker's Chinese suffix/prefix word lists are only heuristics. `看`, `开始`, `地`,
+and similar strings can occur in perfectly valid phrases or words. Do not replace a
+natural phrase, invent a noun, or move a boundary merely to silence such a warning.
 
-- **Merging invites padding.** Reuniting two blocks into one sentence tempts you to add a
-  connective or a subject to bridge them (`然后`, `我们`) — words the audio never had. The
-  merged sentence should read as the speaker's one sentence, not as two sentences glued.
-- **Splitting invites inflation.** Distributing one sentence across two blocks tempts you
-  to make each piece "complete" by repeating the subject or restating the object. Each
-  piece should be a phrase the speaker's own sentence contained, nothing more.
+## Before delivery
 
-The test is arithmetic: the sum of the pieces should say what the source span said, in
-about the length the rest of the file uses for that much speech. `check_subtitle.py
---source` reports the file's own median output-to-source length ratio and flags the spans
-that stray from it in either direction.
-
-## Auditing the source: the two tests
-
-Before translating, judge every source boundary on the source text:
-
-1. **Completeness** — does the first block end on a complete phrase or clause?
-2. **Independence** — can the second block be understood without borrowing a noun, verb,
-   object, or complement from the first?
-
-Either test fails → the boundary is an ASR defect; the blocks belong to one sentence and
-are translated together. Both pass → the boundary marks a real phrase break in the
-speech. Keep it *if the translation also breaks naturally there*; when the target
-language's word order wants the break elsewhere, the sentence is still translated whole
-and re-divided at its own seams — within the same continuous speech, never across a real
-pause.
-
-The Netflix Timed Text Style Guide lists what a break must never separate: an article
-from its noun, an adjective from its noun, a first name from a last name, a subject
-pronoun from its verb, a verb from its auxiliary or negation, a prepositional verb from
-its preposition. That is exactly the inventory of ASR damage in an English source — and
-the same principle applies to the boundaries you place in the target language.
-
-### ASR repair boundaries: acoustic pause vs. syntactic closure (ASR修复边界与生理停顿)
-
-Audio pauses in auto-generated captions often reflect physiological breaths or hesitation
-rather than real syntactic closures. Respect the division of ASR repair:
-
-- **Never cut on a physiological pause that breaks a thought unit**: speakers frequently
-  pause mid-clause to breathe, swallow, or check their screen. A dip in the audio waveform
-  is physical silence, NOT syntactic completion. Never place a cut across an incomplete
-  verb-object, head-modifier, or prepositional phrase simply because an acoustic gap exists.
-- **Never sever a unit on dangling connectors**: never let an ASR cut leave a clausal
-  connector or preposition dangling at the end of a block (`because.`, `of.`, `when.`,
-  `以及。`, `当。`, `把。`, `通过。`). Such words are syntactic heads and must attach to the
-  continuation clause.
-- **Tame run-on comma chains**: spoken speech often runs on through dozens of clauses
-  connected only by commas. During ASR auditing, identify genuine completion points of
-  independent thoughts and treat them as sentence boundaries, enabling downstream
-  translation to breathe.
-- **Never rewrite spoken grammar**: repair mishearings and broken words, but preserve
-  the speaker's actual spoken syntax and vocabulary.
-
-## Orphan taxonomy
-
-An orphan is any block-edge fragment that cannot work as a subtitle on its own.
-
-| Type | Source pattern | Example |
-|---|---|---|
-| Sentence-completion tail | second block is only the last word or two of the sentence | `... in the geometry` / `nodes.` |
-| Stranded connector | first block ends on article, preposition, conjunction, auxiliary, phrasal-verb particle | `... based on the` / `same technology.` |
-| Dependent opening | second block opens as the object or complement of the first | `We can also add some` / `turbulence.` |
-| Split term | a named entity, UI label, or technical term is cut in half | `Rope` / `Dynamics tag` |
-| Trailing modifier | second block is a modifier the target language must move inside the sentence | `... create variations of stuff` / `using MoGraph.` |
-| Flash block | a sub-second block carrying no idea of its own, produced by mechanical timing | `Right.` on screen for 0.14s |
-
-All of these mean: translate the sentence as one unit. A flash block of pure filler
-(`Okay`, `Right`) disappears in translation anyway; the merge gives the surviving text a
-usable time window.
-
-## The subtitle gap as evidence
-
-The gap between one block's end and the next block's start is timing evidence, not proof
-of what the audio sounds like:
-
-- A **near-zero gap** is the signature of a mechanical ASR cut — the speaker did not
-  pause there. Boundaries like this are freely re-placed to fit the translation.
-- A **clear gap in the source subtitles** is only a pause proxy. Without audio, do not
-  call it an audible silence; use the configured threshold mechanically and flag the
-  uncertainty when it matters. The threshold is a judgement aid, not a ban: an output
-  block may cross a source gap at or above it, but only when the merge fixes a specific,
-  nameable defect — and the delivery reply must report the crossing. When the sides of
-  the gap are each complete and the translation has a natural seam there, keep the gap.
-
-## Placing boundaries in the translation
-
-Once a sentence is translated whole, fit it to its speech span:
-
-**One block** when the line reads in one glance (Chinese: within the ~12–25 character
-scan-comfort zone) — even if the span is long; a short line over a long span beats an
-artificial split.
-
-**Split** when, after honest condensing, the line still fails a one-glance read, or it
-carries two or more independent statements:
-
-- Cut at a natural target-language phrase boundary: a `，` separating two statements, a
-  clause edge, before a connective (但是/所以/然后/接着), between an operation and its
-  consequence, between topic and comment. Each piece must be something a native speaker
-  would say in one breath — the two tests above, applied to the target text.
-- Place interior time points proportionally to the spoken material, snapped to source
-  punctuation or an existing source pause proxy. The first piece starts
-  where the speech starts, the last ends where it ends, and the pieces tile the span
-  exactly.
-- Each piece must be readable in its window — a piece that flashes by too fast to read
-  means the split point is in the wrong place or the split was unnecessary.
-
-The comfort zone (12–25 chars, ~1.8–4.5 s for Chinese) is calibration for "effortless",
-never a quota. A 28-character line with no natural interior seam stays whole; a
-20-character line carrying two separate statements still splits. Phrasing decides; the
-numbers only tell you when to look.
-
-### Line-level Display Unit Budget and piece planning (行级显示单元预算与分段规划)
-
-Subtitle lines have physical screen-width limits. Evaluate line width using **Display Units (DU)**:
-- 1 full-width CJK character = 1.0 DU
-- 1 Latin letter, numeral, or half-width symbol = 0.5 DU
-- Punctuation reading cost = 0 (under CJK counting)
-
-Two budget boundaries govern every line:
-- **Soft Budget (Scan Comfort / 舒适视读区)**: ~18–25 DU for Chinese (~35–42 DU for Latin).
-  A line within this budget is parsed in a single effortless glance.
-- **Hard Budget (Display Cap / 视屏硬上限)**: ~30–32 DU for Chinese (~45–50 DU for Latin).
-  Any translation whose natural text crosses the hard budget cannot fit comfortably on one row.
-
-**Planning multi-piece cuts (`k ≥ 2` pieces with `¦`)**:
-When a translated sentence exceeds the hard budget, do not wait until formatting to hack it apart
-mid-word. Pre-plan its division into $k \ge 2$ balanced pieces using suggested thought-unit seams (`¦`):
-- Each piece should target the soft budget (~12–20 DU) and have at least ~1.0 s display duration.
-- Always cut at the highest natural syntactic node (意群气口) — after a comma, before a clausal
-  connective, or between topic and comment.
-- Never pad or re-expand text just to fill a piece quota: meaning and brevity outrank piece counts.
-
-## Keep real multi-block sentences multi-block
-
-A long sentence whose source boundaries all fall on genuine phrase breaks — and whose
-translation also breaks naturally at those points — keeps them:
-
-```srt
-4
-00:00:18,505 --> 00:00:25,380
-In this video, I'm going to give you a comparison to the old UV editor
-
-5
-00:00:25,380 --> 00:00:30,960
-and provide you with a lay of the land so you know how to use it and potentially adapt
-
-6
-00:00:30,960 --> 00:00:33,700
-some of your workflows to the new UV editor.
-```
-
-Boundary 4/5 breaks before a coordinating conjunction starting a full clause: a real
-seam, and Chinese breaks naturally there too — keep. Boundary 5/6 strands `adapt` from
-its object: a defect. Blocks 5 and 6 are translated as one unit and re-divided where the
-Chinese breathes — the timestamps 25,380 and 33,700 anchor the span, and the interior
-point moves to wherever the Chinese phrase boundary wants it. Collapsing all three
-blocks into one 15-second block would be the opposite error.
-
-## Universal Laws of Thought-Unit Segmentation (意群切分三大公理)
-
-Never rely on word-for-word translation or mechanical cut-and-paste. When translating and subdividing spoken language, every block boundary must obey three fundamental linguistic principles:
-
-### 1. The Law of Semantic & Syntactic Closure (语义与句法闭合律)
-Every subtitle block must be a standalone **Thought Unit (意群)** or **Breath Group (气口)**.
-- A native viewer reading the block must feel a complete semantic impression — never left "hanging in mid-air" waiting for an essential verb argument, clausal complement, or head noun.
-- **Governing Verbs (支配动词)** that take a full clausal object (e.g. "看看", "看看能否", "试图", "准备", "想要") MUST NOT be stranded at the end of a block if the governed clause only arrives in the next block.
-- **Remedy order for a flagged tail.** Try rewriting the tail so the block ends on a noun
-  or a result before you delete, move, or merge anything: this keeps the payload and
-  leaves the timeline untouched. A soft "let's see how it looks" ending (`这样定好，再动一下看`)
-  becomes `这样定好，再动一下看看效果`; a gaze-direction ending (`让它往上看`) becomes
-  `让视线朝上`. Move the word into the next block, or merge, only when no natural
-  noun-final rewrite exists. Deleting the word outright is the last resort, because it
-  is payload whenever it changes the meaning.
-
-### 2. The Law of Clausal Introducer Head-Attachment (关联与引导成分前置律)
-Clausal connectives, conjunctions, relative markers, and prepositions are syntactic heads of the clause they introduce — they belong to the **beginning of the continuation unit**, never the tail of the preceding unit.
-- **Connectives & Transitions**: (因为/所以/如果/但是/然后/而且/以及/也就是说/换句话说) must lead the following clause.
-- **Prepositions & Case Markers**: (关于/对于/为了/把/让/给/向/从/由) must stay with their nominal/verbal object.
-
-### 3. The Law of Modification & Argument Integrity (修饰与论元完整律)
-Never place a boundary between tightly-bound syntactic pairs:
-- **Structural / Aspectual Particles**: (的/地/得/着/了/过) must attach to their governing phrase; never let "的/地/得" or suffixes (之类/等等/一样) start a continuation block.
-- **Specifiers & Classifiers**: (一个/某种/某份) must remain attached to their head noun.
-- **Verb & Direct Object**: A transitive verb must not be severed from its core direct object unless the verb has self-contained action meaning.
-
----
-
-## Two-Pass Auditing Protocol (双向顺读自检协议)
-
-Before delivering any subtitle segment, run this two-pass cognitive test on every pair of adjacent blocks in continuous speech:
-
-1. **Forward Suspension Test (顺读悬空感测试)**:
-   Read Block A aloud. Does it leave the listener expecting an immediate complement that was cut off? (e.g. "做一只完全动态的鸟会很有趣 看看" -> "看看什么？"). If yes, the boundary is broken. Move the dangling connector/verb to Block B ("...很有趣" | "看看能做些什么").
-
-2. **Isolated Meaning Test (孤立可懂度测试)**:
-   Cover Block A and read Block B alone. Can Block B be understood as a spoken phrase on its own, or does it start with a broken tail/particle (e.g. "能做些什么" vs "看看能做些什么")? A healthy subtitle block always carries an intact internal structure.
-
-## Self-check before writing the output
-
-- Within each span the blocks tile it exactly; no new gap exists anywhere in the output
-- Every block that crosses a source gap at or above the configured threshold fixes a
-  specific, nameable defect that could not be fixed without crossing, and is reported
-  with its reason in the delivery reply
-- Every block is a single line and reads as a natural, self-contained target-language
-  phrase — nothing in the file exists only because the source happened to cut there
-- No word in the output answers to nothing in the audio — merges added no bridging
-  connectives, splits added no repeated subjects, and no line was padded to fill its window
-- No block ends on a stranded connector; no block is a bare completion tail or a
-  trailing modifier the target language wants inside the sentence
-- No named term, UI label, or number+unit pair is split across a boundary
-- Long sentences stay multi-block where real phrase breaks exist, in both languages
-- Every merge fixes a specific, nameable defect; every added or moved boundary lands on
-  a target-language seam, nameable the same way; no piece flashes by unread
-- No boundary was placed, and no wording was cut, to satisfy a character count
-- `scripts/check_subtitle.py --source <original>` reports zero errors, and every
-  "crosses a source gap" warning has been explained in the delivery reply
-
-`check_subtitle.py` mechanically proves the audio claims (speech coverage, exact
-tiling, no overlap) and flags every crossing of a source gap (pause proxy) for
-re-audit, wrapped blocks, heavy merges, blocks
-that exceed the reading-speed budget or the scan-comfort zone, spans whose translated
-length strays from the file's own norm, and a suspiciously low retention ratio. It cannot
-judge whether a boundary is natural in the target language — that stays your job.
+Confirm that every removed boundary fixes a defect, every new boundary has a natural
+seam and timing evidence, every crossed gap has a reason, and no source speech is left
+uncovered. Run the checker against the source and review its warnings. It verifies file
+structure and interval coverage, not audible pauses, word-level alignment, translation
+quality, or grammatical completeness.

@@ -202,8 +202,26 @@ def tag_and_rename_nodes(results, resort=False):
         else:
             yt_pass = None
 
+        shield_det = r.get("shield_details") or p.get("_shield_details") or {}
+        waf_eval = shield_det.get("waf_evaluation") or {}
+        waf_score = shield_det.get("waf_shield_score", waf_eval.get("waf_shield_score"))
+
+        # WARP 套壳识别并附加 [⚡WARP] 污染标记
+        is_warp = shield_det.get("is_warp_wrapped") or waf_eval.get("is_warp_wrapped")
+        if is_warp and "[⚡WARP]" not in (poison_tag or ""):
+            poison_tag = f"{poison_tag or ''}[⚡WARP]"
+
+        # 检查 OpenAI 算力降智：若命中重度降智惩罚，剥夺 ❇️ AI 徽章
+        openai_p = waf_eval.get("probes", {}).get("openai_sentinel", {})
+        if openai_p.get("degraded") is True and openai_p.get("level") == "DEGRADED_HEAVY":
+            if r.get("ai_supported") is not None:
+                ai_sup = False
+                r["ai_supported"] = False
+
         if "shield_passed" in r and r["shield_passed"] is not None:
             cf_pass = bool(r["shield_passed"])
+        elif shield_det.get("sparkle_badge") is True or (waf_score is not None and waf_score >= 85):
+            cf_pass = True
         elif p.get("_shield_passed") is not None:
             cf_pass = bool(p["_shield_passed"])
         elif r.get("shield_details") and isinstance(r["shield_details"], dict):
@@ -221,7 +239,7 @@ def tag_and_rename_nodes(results, resort=False):
         if yt_pass is not None and cf_pass is not None:
             sparkle = bool(ai_sup and groq_pass and yt_pass and cf_pass and loss_ok)
         elif yt_pass is None and cf_pass is not None:
-            sparkle = bool(ai_sup and groq_pass and orig_has_sparkle and cf_pass and loss_ok)
+            sparkle = bool(ai_sup and groq_pass and (orig_has_sparkle or shield_det.get("sparkle_badge")) and cf_pass and loss_ok)
         elif r.get("youtube_details") or r.get("shield_details"):
             sparkle = bool(ai_sup and groq_pass and (yt_pass is True) and (cf_pass is True) and loss_ok)
         else:
@@ -251,12 +269,28 @@ def tag_and_rename_nodes(results, resort=False):
 
         rep = r.get("ip_reputation") or p.get("_ip_reputation") or {}
         sc = valid_reputation_score(rep.get("score"))
+        has_cf_mitigated = bool(
+            shield_det.get("any_cf_mitigated")
+            or waf_eval.get("any_cf_mitigated")
+            or any(p_item.get("cf_mitigated") for p_item in (waf_eval.get("probes") or {}).values())
+            or any(
+                isinstance(v, dict) and (v.get("cf_mitigated") or v.get("reason") == "cf_mitigated_header")
+                for v in shield_det.values()
+            )
+            or r.get("any_cf_mitigated")
+            or p.get("_any_cf_mitigated")
+            or r.get("cf_mitigated")
+            or p.get("_cf_mitigated")
+        )
+        r["any_cf_mitigated"] = has_cf_mitigated
+
+        # ♥️ 高信誉/纯净 IP 判定: 信誉分 >= 80 且无任何 cf-mitigated 硬拦截且无污染标记
         if r.get("is_high_quality") is True:
-            is_hq = bool(not poison_tag)
+            is_hq = bool(not poison_tag and not has_cf_mitigated)
         elif rep.get("status") == "observed" and sc is not None:
-            is_hq = bool(sc >= 80 and not poison_tag)
+            is_hq = bool(sc >= 80 and not poison_tag and not has_cf_mitigated)
         else:
-            is_hq = bool(orig_has_hq and not poison_tag)
+            is_hq = bool(orig_has_hq and not poison_tag and not has_cf_mitigated)
 
         # 流媒体：实测以实测为准，未测继承原 _NF / _D+
         if r.get("media_details"):
@@ -321,18 +355,42 @@ def tag_and_rename_nodes(results, resort=False):
             or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', r.get("tag") or "")
         )
 
-        # 核心准则升级：
-        # 1. 只有符合 ♥️ 标准（is_hq=True）的家宽节点才能获得 🏠 徽章
-        if rep.get("status") == "observed" or "is_high_quality" in r or "ip_reputation" in r:
-            is_res_hq = bool(is_res_cand and is_hq)
-        else:
-            is_res_hq = bool(is_res_cand and (is_hq or r.get("is_residential") or p.get("is_residential") or "🏠" in orig or "🏠" in pname))
+        # 核心准则升级：四级家宽形态精准仲裁
+        # Level 1: 原生民用住宅宽带 -> 综合信誉分 >= 80 授予 🏠，< 80 降级为 _ISP
+        # Level 2: 商用/机房双 ISP -> 严禁 🏠，统一打标为 _ISP 后缀
+        # Level 3: 住宅代理池 -> 剥离 🏠 与 ♥️ 资格
+        # Level 4: 数据中心/机房 -> 普通机房节点，不带家宽相关标记
+        res_level = (
+            r.get("residential_level")
+            or ip_info.get("residential_level")
+            or rep.get("residential_level")
+            or (rep.get("details") or {}).get("residential_level")
+        )
 
-        # 2. 分数低于 80 但又是家宽节点的，加上英文缩写家宽后缀 (_ISP，不出现任何中文)；又是家宽又是专线的则只保留专线 (_IPLC)
-        has_res_suf = bool(is_res_cand and not is_res_hq and not is_iplc)
+        if res_level == "Level 1: True Residential":
+            is_res_hq = bool(is_hq)
+            has_res_suf = bool(not is_res_hq and not is_iplc)
+        elif res_level == "Level 2: Commercial Dual-ISP":
+            is_res_hq = False  # 严禁授予 🏠
+            has_res_suf = bool(not is_iplc)  # 统一授予 _ISP
+        elif res_level == "Level 3: Residential Proxy":
+            is_res_hq = False
+            has_res_suf = False
+            is_hq = False  # 剥离 ♥️ 纯净资格
+        elif res_level == "Level 4: Datacenter":
+            is_res_hq = False
+            has_res_suf = False
+        else:
+            # 兼容旧版基于 is_res_cand 的推断
+            if rep.get("status") == "observed" or "is_high_quality" in r or "ip_reputation" in r:
+                is_res_hq = bool(is_res_cand and is_hq)
+            else:
+                is_res_hq = bool(is_res_cand and (is_hq or r.get("is_residential") or p.get("is_residential") or "🏠" in orig or "🏠" in pname))
+            has_res_suf = bool(is_res_cand and not is_res_hq and not is_iplc)
+
         r["is_residential"] = is_res_hq
         r["has_res_suffix"] = has_res_suf
-        r["is_res_candidate"] = is_res_cand
+        r["is_res_candidate"] = is_res_cand or bool(res_level in ("Level 1: True Residential", "Level 2: Commercial Dual-ISP"))
 
         # 清除残留于城市/自定义段的原节点家宽名称（不再保留如 HiNet家宽, 双ISP家宽, Seller双ISP 等中缀）
         if city:

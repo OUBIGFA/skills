@@ -36,17 +36,25 @@
 - 不复用旧 `google_multi_signals` 为有效来源。默认无跨运行 GeoIP 缓存，HTTP 429/超时/解析错误完整留痕。
 - 详细判据、开源参考与纯属地复核命令见 [geolocation.md](geolocation.md)。
 
-### 1.4 IP 信誉与欺诈风险评估 (Net.Coffee)
-该来源不再参与属地投票；须回显被查询 IP 才使用信誉字段，失败保留诊断而不是默认为好 IP。
-- **Trust Score**：0-100 分。
-  - `>= 75`：良好 (`good`)。
-  - `45 - 74`：一般 (`moderate`)。
-  - `< 45`：较差 (`poor`)。
-- **属性标签（Flags）**：
-  - `isResidential`（住宅家宽）
-  - `is_datacenter`（机房/数据中心）
-  - `is_vpn` / `is_proxy` / `is_tor`（VPN/代理/Tor出口）
-  - `is_crawler` / `is_abuser`（爬虫/滥用记录）
+### 1.4 IP 信誉与家宽综合判定体系 (Composite Reputation & Residential Engine v3.0)
+彻底打破对单一第三方 API 的依赖，构建“本地 PTR/ASN + 24小时持久化 SQLite 缓存 + Scamalytics/DNSBL 权威反欺诈 + Net.Coffee 兜底容灾”的渐进式多维综合评估架构。
+
+- **三层极速探测流水线**：
+  1. **本地极速层 (0-20ms)**：本地 SQLite 24小时有效缓存（命中直接返回）；本地 `socket.gethostbyaddr` rDNS/PTR 域名特征提取；核心 Eyeball/IDC ASN 分类；
+  2. **基础元数据层 (100-250ms)**：IPinfo、ipwho.is 基础属性与 DoH/DNSBL 黑名单快速检测；
+  3. **权威风控与兜底层 (200-400ms)**：Scamalytics 免 Key 欺诈分与代理标记结构化提取；AbuseIPDB 恶意威胁（免配置自动短路，有 Key 自动富化）；Net.Coffee 仅作为后备兜底。
+- **家宽真实性四级形态精确分类**：
+  - **Level 1: 原生民用住宅宽带 (True Residential)**：ASN 属于已知 Eyeball 运营商且 PTR 命中动态住宅正则，无机房标记。**若信誉分 >= 80 且无任何 cf-mitigated 硬拦截授予 `🏠` 专属徽章；若 < 80 授予 `_ISP` 后缀**。
+  - **Level 2: 商用/机房双 ISP (Commercial Dual-ISP)**：属于 ISP 机构但位于 IDC 托管环境或缺乏民用动态 PTR。**严禁授予 `🏠` 徽章，统一授予纯英文 `_ISP` 后缀**。
+  - **Level 3: 住宅代理池 (Residential Proxy)**：高危轮换池或黑灰产代理。**剥离 `🏠` 与 `♥️` 资格**，列入风控警告池。
+  - **Level 4: 数据中心/机房 (Datacenter / Hosting)**：纯机房/云商节点，不带家宽相关标记。
+- **综合信誉评分计算模型 (Composite Reputation Score: 0–100)**：
+  $$\text{Score} = \text{Base}(100) - \text{Penalty}_{\text{Fraud}} - \text{Penalty}_{\text{Abuse}} - \text{Penalty}_{\text{DC}} - \text{Penalty}_{\text{Blacklist}} + \text{Bonus}_{\text{CleanRes}}$$
+  - 欺诈扣分：Scamalytics 分数 <= 15 扣 0 分；16-40 扣 `(Score-15)*0.5` 分；>40 扣 `25 + (Score-40)*0.8` 分；
+  - 恶意扣分：AbuseIPDB 滥用分 * 0.4；
+  - 机房扣分：纯机房固定扣 10 分（基准上限 90）；
+  - 黑名单扣分：DNSBL 命中每项扣 15 分；
+  - 纯净家宽奖励：Level 1 且欺诈分 < 10 奖励 +5 分（上限 100 封顶）。
 
 ---
 
@@ -91,25 +99,27 @@
 
 ---
 
-## 4. 目标网站免盾 / 过盾检测 (Shield Probe)
+## 4. 异构 5 站免盾与防降智探测体系 (WAF Shield & Anti-Degradation Probe v3.0)
 
-测试节点在访问主流云安全防御目标时的免质询/过盾能力。
+全面替代传统简单的单站 HTTP 状态码与文本匹配，消除探测脚本自身 TLS 指纹暴露造成的“假弹盾”，并深度量化识别 HTTP 200 下的 AI 算力惩罚与隐性降智。
 
-- **监控目标**：
-  1. `cloudflare`: `https://www.cloudflare.com/`（弱挑战首页）
-  2. `chatgpt`: `https://chatgpt.com/`
-  3. `anthropic`: `https://www.anthropic.com/`
-  4. `gemini`: `https://gemini.google.com/`
-  5. `claude`: `https://claude.ai/`
-- **质询识别特征（Challenge Markers）**：
-  - 响应头 `cf-mitigated: challenge`
-  - 页面正文特征：`just a moment`, `checking your browser`, `verify you are human`, `cf-chl-`, `checking if the site connection is secure`, `challenges.cloudflare.com`, `turnstile`, `请完成安全验证` 等。
-  - 状态码 `403`, `451`, `1020` 等阻断码。
-- **执行阶段**：
-  - **HTTP 初查**：使用 Chrome 140 仿真头请求各目标，快速分类 `passed`、`challenge`、`blocked`。
-  - **浏览器复核**：针对重点节点或全量节点，在 Playwright Chromium 中加载页面并等待最多 8 秒，验证质询是否能自动通过。
-- **免盾判定规则（`shield_passed`）**：
-  必须满足：**核心盾标通过（Cloudflare 官网 或 Claude/Anthropic 官方体系直接通过或质询自动解除），且在全部 5 站（`cloudflare`, `chatgpt`, `anthropic`, `gemini`, `claude`）中至少有 2 站过盾（`passed` 或 `auto_passed`）**，才判定为“规定网站免盾”并具备授予 `✨️` 徽章的过盾资格；未观测（`unknown`）、阻断（`blocked`）与质询未解除（`challenge`）的站点不计入通过数。有浏览器观测的站点以浏览器结果为准，否则以 HTTP 结果为准。
+- **自适应双模 TLS 指纹通信底座**：
+  - **Mode A (增强仿真模式)**：存在 `curl_cffi` 时，启用 1:1 Chrome 131 BoringSSL JA4 扩展乱序与 HTTP/2 握手仿真；
+  - **Mode B (零依赖回退模式)**：未安装时，自动调用深度调优的 `ssl.SSLContext`（Chrome 加密套件排序 + ALPN 强制协商 + 完整 Client Hints 伪装）。
+- **两阶段流式截断探测 (Two-Stage Streaming)**：
+  - **阶段一**：响应头毫秒级短路判定（0 KB Body 下载），命中 `cf-mitigated: challenge` 或 Google `/sorry/` 立即关闭流；
+  - **阶段二**：流式截断下载（最多仅读前 16KB），单节点 5 站并发总耗时控制在 350ms–550ms。
+- **异构五站探针矩阵与四级灰度赋分 (满分 100 分，每站 20 分)**：
+  1. **OpenAI Sentinel (AI 算力盾)**：POST `https://chatgpt.com/backend-api/sentinel/chat-requirements`，解析 `proofofwork.difficulty` 十六进制阈值（`>= 0x0ffff` 满血 20分，`0x00010 <= diff < 0x0ffff` 12分，`< 0x00010` 坐实降智惩罚 6分，拦截 0分）；
+  2. **Google & YouTube (reCAPTCHA Enterprise)**：Google 搜索 429//sorry/ 拦截 + YouTube 登录/机器人墙（`Sign in to confirm you’re not a bot`）扫描；
+  3. **Reddit Fastly (严苛机房 ASN 盾)**：`/r/all/top.json` 数据直通 (20分) vs 403 `Blocked by network security` 硬拦截 (0分)；
+  4. **TikTok / X Social (商业社媒反爬)**：会话建立直通 (20分) vs 滑块验证码 `verify-bar` / `captcha` (6分)；
+  5. **Cloudflare Strict & Trace (CF 官方挑战头与套壳核验)**：严格站无 `cf-mitigated` 挑战 (15分) + `1.1.1.1/cdn-cgi/trace` 原生出口 `warp=off` (5分)；检测到 `warp=on/plus` 扣 8 分并标记套壳。
+- **免盾综合得分 (WAF Shield Score 0–100) 与徽章授权**：
+  - **`[✨️]` 综合全通徽章**：必须满足 **WAF Shield Score >= 85** 且至少 4 站完美直通 + AI 全通 + Groq 解锁 + YouTube 免登实播 + 丢包率 < 20%；
+  - **`[❇️]` AI 服务徽章**：主流流媒体解锁 + OpenAI Sentinel **无高危降智惩罚** (`difficulty >= 0x00010`)；
+  - **`[⚡WARP]` 污染标记**：实测 `warp=on` 或 `warp=plus` 时自动追加套壳污染标记；
+  - **`[Key]` 核心跳板遴选联动**：结合公式 `Key_Index = 0.45 * Composite_Reputation + 0.35 * WAF_Shield + 0.20 * Speed_Stability`，且在 OpenAI Sentinel 探针中无高危降智惩罚、Reddit 机房盾不封禁。
 
 ---
 
@@ -187,16 +197,16 @@ Key 节点是专门用于在落地节点（`_Lnd`/`_USAI`）建立多跳链路�
 
 ### 6.1 节点命名结构
 ```text
-[国旗] [✨️] [❇️] [♥️] [Key / Fast] [国家][_城市]_[编号][IPLC后缀][落地后缀][流媒体后缀][来源后缀]
+[国旗] [✨️] [🏠 / ♥️] [❇️] [Key / Fast] [国家][_城市]_[编号][IPLC后缀][落地后缀][流媒体后缀][来源后缀]
 ```
 
 ### 6.2 标签位解析
 1. **国旗 Emoji**：根据 `geo_decision.cc` 生成。送中节点保留已确认的实际属地并附 `_⚠️CN`；普通强分歧/证据不足用 `🏳️ 未知`，不拿原名当检测结论。
 2. **前置能力徽章（国旗后、国名前，严格有序: ✨️ > 🏠 / ♥️ > ❇️ > Key > Fast）**：
-   - **`✨️`**：综合全通能力徽章（必须同时满足：① AI五大全通 + Groq解锁；② YouTube 免登录实播通过；③ 免盾达成：https://claude.ai/ 过盾且其他四站有一站过盾）。
+   - **`✨️`**：综合全通能力徽章（必须同时满足：① AI五大全通 + Groq解锁；② YouTube 免登录实播通过；③ 免盾达成：WAF Shield Score >= 85 且至少 4 站完美直通；④ 测活丢包率 < 20%）。
    - **`❇️`**：AI 五大核心全解锁（OpenAI + Claude + Gemini + HuggingFace + Grok 均通过）。
-   - **🏠**：优质家宽专属徽章（具备真实家宽/双ISP特征且 Net.Coffee 信誉分 >= 80，与 ♥️ 严格互斥；低分家宽剥离 🏠 改用纯英文 _ISP 后缀，专线家宽只保留 _IPLC）。
-   - **♥️**：高信誉机房 IP（具备普通机房属性且 Net.Coffee 信誉分 >= 80，与 🏠 严格互斥；送中/污染节点不授予）。
+   - **🏠**：优质家宽专属徽章（具备真实家宽/双ISP特征且综合信誉分 >= 80，无任何 cf-mitigated 硬拦截，与 ♥️ 严格互斥；低分家宽剥离 🏠 改用纯英文 _ISP 后缀，专线家宽只保留 _IPLC）。
+   - **♥️**：高信誉机房 IP（具备普通机房属性且综合信誉分 >= 80，无任何 cf-mitigated 硬拦截，与 🏠 严格互斥；送中/污染节点不授予）。
    - **`Key`**：评选出的优质直连前置跳板节点。
    - **`Fast`**：主动完整测速达到 Key/Fast 级（稳态 >= 12 Mbps 且最低 >= 6 Mbps）但未被选为 Key 的节点（如 HTTP 高速节点、超出国家配额的节点）。
    - *注：`Key` 与 `Fast` 严格互斥，优先授予 `Key`；3 秒防断流快检、未开启测速或未达标节点不带 Key/Fast 标签。*
@@ -218,7 +228,7 @@ Key 节点是专门用于在落地节点（`_Lnd`/`_USAI`）建立多跳链路�
      - **`_ChromeGo`** 等自定义来源标识。
 
 ### 6.3 典型命名示例
-- `🇯🇵 ✨️❇️♥️Key日本_1_NF`：日本优质直连前置跳板、综合全通（免盾+YT免登）、AI全通、高信誉 IP、测速达标、支持奈飞。
+- `🇯🇵 ✨️♥️❇️Key日本_1_NF`：日本优质直连前置跳板、综合全通（免盾+YT免登）、高信誉 IP、AI全通、测速达标、支持奈飞。
 - `🇺🇸 ✨️❇️Fast美国_12`：美国高速直连节点（测速达标，非 Key）、综合全通、AI全通。
 - `🇺🇸 ✨️❇️美国_1_USAI_NF_D+`：美国落地、综合全通、AI全通、支持奈飞与迪士尼。
 - `🇸🇬 ❇️新加坡_2_Lnd`：新加坡落地、AI全通。

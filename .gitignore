@@ -85,3 +85,8 @@ fofa_config.json
 *.env
 *.env.*
 !*.env.example
+
+# 本地运行时持久化缓存数据库
+cache/
+**/cache/
+*.db

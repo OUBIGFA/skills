@@ -906,7 +906,118 @@ class TestProxyServiceProbe(unittest.TestCase):
         self.assertIn("🇺🇸 ❇️Fast美国_2_USAI_NF_D+", usai_group)
         self.assertIn("🇺🇸 ❇️Fast美国_3_USAI_NF_D+", usai_group)
 
+    def test_cf_mitigated_moved_from_sparkle_to_heart(self):
+        """
+        验证用户准则：
+        1. ✨️ 移除无 cf-mitigated 的限制：当满足 AI五大全通 + Groq解锁 + YouTube免登 + WAF Shield >= 85 (4站直通)，
+           即使存在 cf-mitigated 硬拦截，依然获得 ✨️。
+        2. ♥️ 加上无 cf-mitigated 的限制：当存在 cf-mitigated 硬拦截时，即使信誉分 >= 80 也剥夺 ♥️；
+           若为 Level 1 原生家宽，剥夺 🏠 并降级为 _ISP；
+        3. 当不存在 cf-mitigated 且信誉分 >= 80 时，正常获得 ♥️（或 Level 1 获得 🏠）。
+        """
+        from core.tagger import tag_and_rename_nodes
+
+        batch = [
+            # 节点 1: 机房节点，高信誉 (85分)，全通能力，但触发了 cf-mitigated
+            {
+                "proxy": {"name": "机房全通带CF拦截", "type": "vless", "server": "1.1.1.1", "port": 443},
+                "cc": "US",
+                "ai_supported": True,
+                "groq_passed": True,
+                "youtube_passed": True,
+                "loss_rate": 0.0,
+                "shield_details": {
+                    "waf_shield_score": 88,
+                    "sparkle_badge": True,
+                    "any_cf_mitigated": True,
+                    "waf_evaluation": {
+                        "waf_shield_score": 88,
+                        "any_cf_mitigated": True,
+                        "probes": {
+                            "cf_strict_trace": {"level": "BLOCKED", "cf_mitigated": True, "score": 8}
+                        }
+                    }
+                },
+                "ip_reputation": {"score": 85, "status": "observed"}
+            },
+            # 节点 2: Level 1 原生家宽，高信誉 (90分)，触发了 cf-mitigated
+            {
+                "proxy": {"name": "家宽带CF拦截", "type": "trojan", "server": "2.2.2.2", "port": 443},
+                "cc": "TW",
+                "residential_level": "Level 1: True Residential",
+                "shield_details": {
+                    "any_cf_mitigated": True
+                },
+                "ip_reputation": {"score": 90, "status": "observed"}
+            },
+            # 节点 3: 机房节点，高信誉 (85分)，无 CF 拦截，全通能力
+            {
+                "proxy": {"name": "机房全通无CF拦截", "type": "vless", "server": "3.3.3.3", "port": 443},
+                "cc": "SG",
+                "ai_supported": True,
+                "groq_passed": True,
+                "youtube_passed": True,
+                "loss_rate": 0.0,
+                "shield_details": {
+                    "waf_shield_score": 95,
+                    "sparkle_badge": True,
+                    "any_cf_mitigated": False,
+                    "waf_evaluation": {
+                        "waf_shield_score": 95,
+                        "any_cf_mitigated": False,
+                        "probes": {
+                            "cf_strict_trace": {"level": "PASS", "cf_mitigated": False, "score": 20}
+                        }
+                    }
+                },
+                "ip_reputation": {"score": 85, "status": "observed"}
+            },
+            # 节点 4: Level 1 原生家宽，高信誉 (90分)，无 CF 拦截
+            {
+                "proxy": {"name": "家宽无CF拦截", "type": "trojan", "server": "4.4.4.4", "port": 443},
+                "cc": "JP",
+                "residential_level": "Level 1: True Residential",
+                "shield_details": {
+                    "any_cf_mitigated": False
+                },
+                "ip_reputation": {"score": 90, "status": "observed"}
+            }
+        ]
+
+        tag_and_rename_nodes(batch)
+        by_cc = {r["cc"]: r for r in batch}
+
+        # 节点 1 检验 (US): 带有 ✨️ 和 ❇️，但绝无 ♥️
+        r1 = by_cc["US"]
+        self.assertFalse(r1["is_high_quality"])
+        self.assertTrue(r1["comprehensive_sparkle"])
+        self.assertIn("✨️", r1["final_name"])
+        self.assertNotIn("♥️", r1["final_name"])
+
+        # 节点 2 检验 (TW): Level 1 家宽有 cf-mitigated -> is_high_quality 为 False，剥夺 🏠，降级为 _ISP
+        r2 = by_cc["TW"]
+        self.assertFalse(r2["is_high_quality"])
+        self.assertFalse(r2["is_residential"])
+        self.assertTrue(r2["has_res_suffix"])
+        self.assertNotIn("🏠", r2["final_name"])
+        self.assertIn("_ISP", r2["final_name"])
+
+        # 节点 3 检验 (SG): 无 cf-mitigated，既有 ✨️ 又有 ♥️
+        r3 = by_cc["SG"]
+        self.assertTrue(r3["is_high_quality"])
+        self.assertTrue(r3["comprehensive_sparkle"])
+        self.assertIn("✨️", r3["final_name"])
+        self.assertIn("♥️", r3["final_name"])
+
+        # 节点 4 检验 (JP): 无 cf-mitigated，Level 1 正常获得 🏠
+        r4 = by_cc["JP"]
+        self.assertTrue(r4["is_high_quality"])
+        self.assertTrue(r4["is_residential"])
+        self.assertIn("🏠", r4["final_name"])
+        self.assertNotIn("_ISP", r4["final_name"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

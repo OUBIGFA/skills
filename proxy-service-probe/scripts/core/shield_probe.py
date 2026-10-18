@@ -68,21 +68,66 @@ def classify_http_response(status, headers, text, target):
 
 
 def probe_sites_http(proxies, targets=None, timeout=(3.0, 6.0)):
-    """对监控目标执行 HTTP 快速免盾初查。"""
-    targets = targets or SHIELD_TARGETS
-    results = {}
-    session = requests.Session()
-    session.trust_env = False
+    """对监控目标执行异构 5 站免盾与防降智快速初查。
 
-    for target in targets:
-        try:
-            resp = session.get(target["url"], proxies=proxies, timeout=timeout, headers={"User-Agent": UA})
-            res = classify_http_response(resp.status_code, resp.headers, resp.text, target)
-            results[target["name"]] = {**res, "http_status": resp.status_code, "method": "http"}
-        except requests.RequestException as e:
-            results[target["name"]] = {"status": "unknown", "reason": f"request_error:{type(e).__name__}", "method": "http"}
+    若未传入自定义 targets，默认启动新一代 evaluate_waf_shield 异构五站探针引擎；
+    若传入自定义 targets，则保持向后兼容的逐站 HTTP 探测。
+    """
+    if targets is not None:
+        results = {}
+        session = requests.Session()
+        session.trust_env = False
+        for target in targets:
+            try:
+                resp = session.get(target["url"], proxies=proxies, timeout=timeout, headers={"User-Agent": UA})
+                res = classify_http_response(resp.status_code, resp.headers, resp.text, target)
+                results[target["name"]] = {**res, "http_status": resp.status_code, "method": "http"}
+            except requests.RequestException as e:
+                results[target["name"]] = {"status": "unknown", "reason": f"request_error:{type(e).__name__}", "method": "http"}
+        session.close()
+        return results
 
-    session.close()
+    from .waf_shield_probe import evaluate_waf_shield
+
+    to_sec = timeout[0] if isinstance(timeout, (list, tuple)) else timeout
+    waf_res = evaluate_waf_shield(proxy=proxies, timeout=to_sec)
+    probes = waf_res.get("probes", {})
+
+    results = {
+        "waf_evaluation": waf_res,
+        "waf_shield_score": waf_res.get("waf_shield_score", 0),
+        "waf_grade": waf_res.get("waf_grade", "F"),
+        "sparkle_badge": waf_res.get("sparkle_badge", False),
+        "ai_full_power": waf_res.get("ai_full_power", False),
+        "is_warp_wrapped": waf_res.get("is_warp_wrapped", False),
+        "any_cf_mitigated": waf_res.get("any_cf_mitigated", False),
+        "cloudflare": {
+            "status": "passed" if probes.get("cf_strict_trace", {}).get("level") == "PASS" else "challenge" if probes.get("cf_strict_trace", {}).get("cf_mitigated") else "blocked",
+            "score": probes.get("cf_strict_trace", {}).get("score", 0),
+            "method": "http_v3"
+        },
+        "chatgpt": {
+            "status": "passed" if probes.get("openai_sentinel", {}).get("level") == "PASS" else "challenge" if probes.get("openai_sentinel", {}).get("cf_mitigated") else "blocked",
+            "score": probes.get("openai_sentinel", {}).get("score", 0),
+            "degraded": probes.get("openai_sentinel", {}).get("degraded", True),
+            "method": "http_v3"
+        },
+        "gemini": {
+            "status": "passed" if probes.get("google_youtube", {}).get("level") == "PASS" else "blocked",
+            "score": probes.get("google_youtube", {}).get("score", 0),
+            "method": "http_v3"
+        },
+        "reddit": {
+            "status": "passed" if probes.get("reddit_fastly", {}).get("level") == "PASS" else "blocked",
+            "score": probes.get("reddit_fastly", {}).get("score", 0),
+            "method": "http_v3"
+        },
+        "tiktok": {
+            "status": "passed" if probes.get("tiktok_social", {}).get("level") == "PASS" else "blocked",
+            "score": probes.get("tiktok_social", {}).get("score", 0),
+            "method": "http_v3"
+        },
+    }
     return results
 
 
@@ -158,9 +203,9 @@ def shield_passed(results):
     免盾判定标准 (若有浏览器观测则以浏览器为准，否则以 HTTP 为准):
     免盾的核心是节点未被 Cloudflare WAF / 人机验证拦截，能够顺畅访问受保护的站点。
     判定标准:
-    1. 核心目标通过: Cloudflare 官网 或 Claude/Anthropic 官方体系 (claude / anthropic) 至少一站直接通过或质询自动解除；
-    2. 且在全部 5 站 (cloudflare, anthropic, chatgpt, gemini, claude) 中，至少有 SHIELD_MIN_PASSED 站 (>=2) 通过。
-    未观测 (unknown)、阻断 (blocked) 或质询未解除 (challenge) 的站点不计入通过数。
+    1. 真实浏览器体系 (若包含浏览器观测): Cloudflare 官网 或 Claude/Anthropic 官方体系至少一站通过，且总通过数 >= 2；
+    2. 新一代 WAF 体系 (纯 HTTP 无浏览器观测): 若包含 waf_shield_score / waf_evaluation，则要求得分 >= 70；
+    3. 传统/逐站 HTTP 体系兜底: 核心盾标至少一站通过，且总通过数 >= 2。
     """
     if not results:
         return False
@@ -172,6 +217,22 @@ def shield_passed(results):
             return item in ("passed", "auto_passed")
         return False
 
+    # 1. 优先以真实浏览器观测结果为准 (Playwright 真实访问过盾)
+    has_browser = any(isinstance(v, dict) and v.get("method") == "browser" for v in results.values())
+    if has_browser:
+        cf_pass = _passed(results.get("cloudflare"))
+        claude_pass = _passed(results.get("claude")) or _passed(results.get("claude_ai")) or _passed(results.get("anthropic"))
+        total_passed = sum(1 for t in SHIELD_TARGETS if _passed(results.get(t["name"])))
+        if (cf_pass or claude_pass) and total_passed >= SHIELD_MIN_PASSED:
+            return True
+
+    # 2. 纯 HTTP 模式下的 WAF 评分体系
+    if "waf_shield_score" in results or "waf_evaluation" in results:
+        waf_eval = results.get("waf_evaluation") or {}
+        score = results.get("waf_shield_score", waf_eval.get("waf_shield_score", 0))
+        return score >= 70
+
+    # 3. 传统/逐站 HTTP 体系兜底
     cf_pass = _passed(results.get("cloudflare"))
     claude_pass = _passed(results.get("claude")) or _passed(results.get("claude_ai")) or _passed(results.get("anthropic"))
 

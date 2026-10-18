@@ -232,7 +232,7 @@ def run_services(row, proxy_url, dims, runner_ips):
             row.setdefault("shield_details", {})
     finally:
         if player is not None:
-            player.join()
+            player.join(timeout=60.0)
     if dims["youtube"]:
         yt_res = browser.get("youtube") or {"status": "unknown", "reason": "player_thread_failed"}
         row["youtube_passed"] = yt_res.get("status") == "passed"

@@ -17,12 +17,11 @@ changes the speaker's register.
 Two operations look similar and are opposites. Getting them straight is most of what
 separates a professional subtitle from a plausible one.
 
-- **Removing noise** — filler, hesitation, self-repair, repetition. Always right: those
-  tokens cost the viewer characters and carry nothing.
-- **Adding smoothness** — subjects the speaker omitted, connectives that make two blocks
-  flow, category nouns, politeness, explanation of a term just named. Always wrong, even
-  though it reads better in isolation: it puts words in the speaker's mouth and spends the
-  viewer's reading budget on nothing.
+- **Removing noise** — filler, hesitation, abandoned starts, or repetition only when
+  those tokens add no information, emphasis, uncertainty, or speaker intent.
+- **Adding smoothness** — invented framing, explanations, or repeated subjects added
+  just to connect two blocks. Supply only what target-language grammar needs to express
+  the source meaning; do not enlarge the claim.
 
 So the working rule is: **the shortest wording that still says everything the source
 said.** Not shorter — a summary is not a subtitle. Not longer — a subtitle is read in a
@@ -91,8 +90,8 @@ it.
 | `We rolled back the deployment because the memory usage was spiking.` | `因为内存占用激增，我们回滚了部署。` | `我们回滚了部署，因为内存占用激增了。` | Spoken conversation naturally uses trailing causal clauses; inverting it forces the viewer to wait for the action. |
 | `I decided to join the team, although it took five months to convince me.` | `虽然花了五个月才说服我，但我还是决定加入团队。` | `我决定加入团队，虽然这花了好五个月才说服我。` | Follows the speaker's emotional and narrative progression. |
 
-When a sentence is later divided across multiple subtitle lines, simultaneous unfolding
-ensures each sliced piece lines up with the exact words spoken at that moment.
+When dividing a sentence, compare each piece with the corresponding source cues. This
+helps preserve unfolding order but does not prove word-level audio alignment.
 
 ## Noise filtering
 
@@ -114,13 +113,11 @@ Keep the same words when they carry meaning:
 
 Condense fragmented self-talk instead of transcribing it:
 
-- `Cool, let's check this, yeah, maybe this is okay` → one clean clause: "let's check
-  this — looks fine"
-- `I mean, like, maybe just move this over here` → "move this over here"
+- `Cool, let's check this, yeah, maybe this is okay` → "let's check this — maybe it's okay"
+- `I mean, like, maybe just move this over here` → "maybe move this over here"
 
-Note what condensing is *not*: it does not license rebuilding the sentence bigger. The
-condensed line keeps the speaker's own claim and nothing more — `maybe this is okay`
-becomes "looks fine", not "效果看起来已经相当不错了".
+Keep `maybe` when it expresses uncertainty or a tentative suggestion. Condensing does
+not turn a possibility into a confident claim, nor expand it into extra evaluation.
 
 Never remove: operations, parameter values, object or menu names, visual judgements,
 warnings, causal explanations ("because…", "otherwise…"), negation, and hedges that change
@@ -159,8 +156,11 @@ the expansion reads slower and takes more space.
   inventing a target-language transliteration.
 - Software, renderers, plugins, algorithms, file formats, and acronyms stay in their
   original form unless a stable target-language term exists and is more familiar
-- On first appearance of an important concept, `译名（original）` — target term with the
-  original in brackets — is worth the extra characters; afterwards use the short form
+- On first appearance of an important technical concept, keep `译名（original）` so the
+  viewer can identify it in the UI or literature; use the short form thereafter. English
+  parenthetical content is fully exempt from DU, CPS, and scan-width statistics under
+  the house policy in [reading-load.md](reading-load.md). This is a counting exemption,
+  not permission to delete annotations or add variant translations.
 - Menu paths, buttons, and parameter names are what the viewer must find on screen. If
   the software they are watching ships an English UI, keep the label in English. If a
   localized UI is standard for that tool in the target market, use the localized label.
@@ -216,15 +216,13 @@ Two traps when deriving a term yourself:
 
 Divide terms into two distinct discipline levels:
 
-- **LOCKED (刚性锁定)**: User-specified translations, explicit glossary entries, CLI
-  commands and flags, product and model names, code identifiers, and URLs.
-  - *Hard requirement*: reproduce character-for-character with zero alteration.
-  - Never modify spelling, casing, or surrounding whitespace conventions.
-  - Never translate, omit, or replace a LOCKED term with a synonym.
-- **preferred (柔性偏好)**: Global consistency defaults discovered across the file.
-  - *Soft guide*: maintain uniformity throughout the file, but allow context-sensitive
-    flexibility when the physical UI or grammatical syntax genuinely demands it
-    (e.g. an on-screen menu label vs. conversational narration).
+- **LOCKED (刚性锁定)**: User/project-mandated renderings, literal CLI commands and
+  flags, product/model names, code identifiers, URLs, and strings visibly typed on screen.
+  Preserve spelling, case and internal spacing exactly. Do not treat every entry in the
+  bundled domain glossary as locked.
+- **preferred (柔性偏好)**: Bundled domain defaults and terminology derived from the file.
+  Maintain one rendering per concept, allowing the actual UI label, target locale and
+  contextual sense to decide when the default does not fit.
 
 ### Single final rendering mandate (no slash alternatives)
 
@@ -234,8 +232,8 @@ Subtitles are finished broadcast captions, never drafts or translators' working 
 - **Never emit slash-separated alternatives** (such as `微调/蒸馏` or `选项A / 选项B`).
   Pick the single most faithful, natural term and commit to it.
 - **Never emit bracketed variant explanations** (such as `提示词（或称指令）`).
-- **The only permitted slash**: when the source identifier literally contains one, such as
-  a CLI command (`/compact`), a URL, or an explicit fractional setting (`1/2`).
+- Keep literal slashes in source identifiers, paths, URLs, commands, fractions or units.
+  The prohibition concerns translator alternatives, not slash characters themselves.
 
 ## ASR error repair
 
@@ -249,12 +247,12 @@ than translating the mistake:
   which domain term it *sounds like*: `a chromium` → acromion (肩峰), `squat` → quad
   (四边形), `font tag` → Phong tag, `apparent` → parent, `the jar` → the jaw, `Guru
   shading` → Gouraud shading, `cilia` → silhouette, `Slide bends` → slight bends,
-  `F2, N3 and N4` → F2, F3 and F4. In technical speech the implausible word is almost
-  always the misheard one; the plausible domain term is what was said
+  `F2, N3 and N4` → possibly F2, F3 and F4. Context supplies candidates, not proof:
+  verify uncertain names/numbers with available evidence and report unresolved readings.
 
-Use the surrounding blocks and the domain to infer intent. When you genuinely cannot
-recover the meaning, translate what is there and keep it readable — never leave a block
-blank and never refuse the file because parts of it are noisy.
+Use surrounding cues, domain context and available audio. Repair a likely reading only
+when sufficiently supported. Otherwise translate the recoverable meaning, keep uncertainty
+visible in the delivery report, and do not invent the missing operation, value or name.
 
 Repairs stay inside the block they belong to; do not move content across boundaries to
 "fix" the transcript (when blocks are merged, repairs go into the merged block).

@@ -287,6 +287,15 @@ class LanguageProfileTests(unittest.TestCase):
         profile = CHECKER.get_language_profile("xx-unknown")
         self.assertEqual("default", profile["target_language"])
 
+    def test_zh_profile_max_cps_calibrated(self):
+        profile = CHECKER.get_language_profile("zh")
+        self.assertEqual(4.5, profile["max_cps"])
+
+    def test_short_duration_density_overload_warning(self):
+        # 16 characters in 2.0s is 8.0 chars/s on a short block -> must flag short-duration overload
+        warnings = run_check(srt((0.0, 2.0, "这极为方便也可以直接把节点拖进去")), lang="zh")[2]
+        self.assertTrue(any("short-duration overload" in w for w in warnings), warnings)
+
 
 class StructuralContractTests(unittest.TestCase):
     def test_non_utf8_output_is_rejected(self):
@@ -464,6 +473,29 @@ class CrossGapMergeTests(unittest.TestCase):
         self.assertEqual([], errors)
         self.assertFalse([w for w in warnings if "check for padding" in w], warnings)
         self.assertFalse([w for w in warnings if "check for dropped payload" in w], warnings)
+
+
+    def test_bracketed_original_annotation_excluded_from_budget(self):
+        """Bracketed dual-language term on first appearance (e.g. 基础形体（Blocking）)
+        is an auxiliary reference note and must not count toward the reading budget."""
+        # 4 CJK chars (4 DU), bracketed (Blocking) costs 0 DU
+        w1 = CHECKER.display_width("基础形体（Blocking）", "cjk")
+        self.assertEqual(4.0, w1)
+        w2 = CHECKER.display_width("基础形体(Blocking)", "cjk")
+        self.assertEqual(4.0, w2)
+        # 5 CJK chars (5 DU), bracketed (Pulse Modifier) costs 0 DU
+        w3 = CHECKER.display_width("脉冲修改器（Pulse Modifier）", "cjk")
+        self.assertEqual(5.0, w3)
+
+    def test_bracketed_original_annotation_no_false_short_overload(self):
+        """A 1.8s cue with 8 Chinese chars + bracketed English original must not
+        trigger a short-duration overload warning."""
+        output = srt((0.0, 1.8, "我们先做基础形体（Blocking）"))
+        # Chinese core is "我们先做基础形体" (8 DU), 8 DU / 1.8s = 4.44 cps <= 4.5 cps
+        _, errors, warnings, _ = run_check(output, lang="zh")
+        self.assertEqual([], errors)
+        self.assertFalse(any("short-duration overload" in w for w in warnings), warnings)
+        self.assertFalse(any("chars/s" in w for w in warnings), warnings)
 
 
 if __name__ == "__main__":

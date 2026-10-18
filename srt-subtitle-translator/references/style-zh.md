@@ -89,14 +89,10 @@ boundary and distribute them across the speech span.
 This is not a general punctuation ban. Commas `，`, enumeration commas `、`, and
 question marks `？` are normal within one thought and do not justify a split by themselves.
 (Exclamation marks `！`/`!` are forbidden throughout and must not appear in any block.)
-Colons `：` must never be used to introduce explanations, elaborations, or causal
-clauses in spoken dialogue. Subtitles represent speech, and spoken Chinese connects
-thoughts with commas `，`, spoken connectives (`因为`/`由于`), or separate blocks —
-never with explanatory colons. Where written prose uses a colon to link an explanation,
-spoken Chinese prefers a comma or natural rewrite. The only valid exception for a colon
-is a non-dialogue structural label: speaker tags (`John：`), UI key-value pairs, menu paths,
-or code strings present in the source. Meaning decides the boundary, but internal `。`
-and `；`, as well as any exclamation marks `！`/`!`, receive automatic mechanical warnings.
+Colons `：` are avoided in explanatory dialogue under this house style; use a comma or
+natural spoken phrasing. Keep source speaker labels, literal UI/code strings, and menu
+paths unchanged. The checker warns mechanically about internal `。`/`；` and exclamation
+marks; it cannot distinguish every structural label from spoken wording.
 
 Structural speaker labels, UI labels, menu paths, code, and strings the viewer sees typed
 are exceptions and remain faithful to the source. A punctuation mark that belongs to
@@ -131,9 +127,9 @@ Punctuation inside a line is not a substitute for a subtitle boundary. Split whe
 meaning contains two thought units, especially when `。` or `；` makes the separation
 explicit. Do not split merely because a normal comma or enumeration comma appears internally.
 
-A sentence that runs into the next block gets no ellipsis, no dash, no trailing comma —
-the timeline carries the continuation. Reserve `⋯`(U+2026) strictly for an internal pause
-of two seconds or more, or an interruption, never as a line-ending ornament.
+A sentence that continues into the next block needs no decorative ellipsis, dash or
+trailing comma. Use `…` (U+2026) only when it conveys a meaningful pause or interruption;
+do not infer an audible pause from subtitle gaps alone.
 
 No emoji, no citation markers, no translator notes, no bracketed commentary.
 
@@ -156,6 +152,10 @@ for them before writing:
 - **Adjacent identical characters.** `取消勾选选中线框` jams on 取消勾选＋选中. Change
   one word or keep the UI label verbatim: `取消勾选 Selected Wireframe`.
 
+- **短轴优先检查冗词，不删有效语气**：不要把口语扩写成书面长句。在短字幕中优先删除无意义
+  填充和套话；“在某种程度上”“也许”等只要影响程度或确定性就必须保留。按
+  [reading-load.md](reading-load.md) 结合时长检查，不再另设互相冲突的字数硬上限。
+
 Also prefer the verbs practitioners actually speak — `切一刀`, `拉出一条边`, `把点拨一下`
 — over bookish variants (`进行切割`, `执行边的拉出`). Reading each finished batch aloud
 in your head is the cheapest full-coverage naturalness check there is: it catches both the
@@ -176,8 +176,9 @@ are full-width `“”`, and work titles take `《》`. Switch only on request, 
 - Use Chinese characters only for a name with an established Chinese rendering. When the
   current input already provides an English form and no established Chinese rendering
   is supported, preserve that English form exactly instead of creating a phonetic version.
-- On first appearance of an important concept, `中文（English）`; afterwards the short
-  form alone
+- **首次出现括号中英双标**：重要行业概念首次出现时保留 `中文（English）`，如
+  `基础形体（Blocking）`、`内部挤压（Inset）`；后续用短称。英文括号内容全部从 DU、CPS
+  和扫描宽度负荷统计中扣除，不因长度或英文标点取消豁免；不要把统计豁免误当成删除注记。
 - Pick the wording the target audience already uses, not the literal or dictionary one.
   A technically correct term the viewer has never seen costs them a re-read, and in a
   subtitle a re-read means the demonstration on screen is gone

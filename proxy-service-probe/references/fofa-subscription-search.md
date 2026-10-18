@@ -16,7 +16,9 @@
 
 ```json
 {
+  "base_url": "https://fofa.info",
   "token": "your_fofa_jwt_token_here",
+  "tokens": [],
   "email": "",
   "key": "",
   "quake_key": "",
@@ -32,9 +34,13 @@
 ### 字段说明
 | 字段 | 类型 | 说明 |
 | :--- | :--- | :--- |
+| `base_url` | string | FoFa API 基础地址（默认 `https://fofa.info`，支持第三方中转站/镜像站如 `fafaapi.info`） |
 | `token` | string | FoFa Web 端 JWT 授权凭据（自动注入 `Authorization` 请求头与 `fofa_token` Cookie） |
-| `email` | string | FoFa 官方 API 账号邮箱（选填，用于官方 API 调用） |
-| `key` | string | FoFa 官方 API Key（选填，用于官方 API 调用） |
+| `tokens` | list | FoFa Web 多 Token 列表（支持多账号轮询切换，防单账号限流） |
+| `account` | object | FoFa / NOSEC 登录账号与密码（`{"username": "...", "password": "..."}`），供自动化登录与免登刷新脚本使用 |
+| `email` | string | FoFa 账号邮箱（用于官方 API 或自动登录） |
+| `password` | string | FoFa / NOSEC 登录密码（用于自动登录续期） |
+| `key` | string | FoFa 官方 API Key（选填，用于官方 API 调用，永不过期） |
 | `quake_key` | string | 360 Quake API Key 凭证（自动注入 `X-QuakeToken` 请求头） |
 | `proxy` | string | 本地 HTTP/SOCKS 代理客户端地址（如 `http://127.0.0.1:3067`），网络受阻时自动尝试代理与直连双通道保底 |
 | `page_size`| int | 每次检索请求的结果数量（FoFa / Quake 单页通常支持最大 50 条） |
@@ -43,7 +49,11 @@
 | `default_query` | string | FoFa 未指定语法时使用的默认搜索语句 |
 | `quake_default_query` | string | Quake 未指定语法时使用的默认搜索语句 |
 
-> 环境变量覆盖：支持通过 `FOFA_TOKEN`, `FOFA_KEY`, `FOFA_EMAIL`, `QUAKE_KEY` / `QUAKE_TOKEN`, `FOFA_PROXY` 在无配置文件或 CI 环境下动态注入。
+> **Token 自动化续期 (免去手动 F12 抓取)**：
+> 1. **一键浏览器登录**：运行 `python scripts/fofa_search.py --login`，系统通过 Playwright 调起浏览器载入 NOSEC 统一登录页，自动填入凭据、过 Cloudflare Turnstile 验证并提取 `fofa_token` 自动保存回写至 `fofa_config.json`。
+> 2. **到期自动静默续期**：在 `fofa_config.json` 中配置 `account`（或 `email` + `password`），后续执行搜索时只要检测到 Token 即将到期或已过期，系统会在发起搜索前自动执行登录刷新，维持 30 天无感连续使用。
+> 3. **官方 API Key (终身免维护)**：直接在 `fofa_config.json` 中填入官方 `key`，调用官方 API，终身无需维护 Token。
+> 环境变量覆盖：支持通过 `FOFA_TOKEN`, `FOFA_KEY`, `FOFA_EMAIL`/`FOFA_USER`, `FOFA_PASSWORD`, `FOFA_BASE_URL`, `QUAKE_KEY` / `QUAKE_TOKEN`, `FOFA_PROXY` 在无配置文件或 CI 环境下动态注入。
 
 ---
 
@@ -117,23 +127,34 @@ status_code="200" && body!="<html" && (body="proxies:" || body="\"outbounds\":" 
 ## 5. 命令行使用指南
 
 ```bash
-# 1. 默认双引擎协同：优先检索家宽/双ISP/高纯净度订阅 (FoFa + 360 Quake 协同并全局去重)
+# 1. 测绘引擎鉴权状态诊断 (检测 FoFa API Key、Web Token 到期时间、自动登录凭据及 Quake 额度)
+python scripts/fofa_search.py --check-auth
+
+# 2. 自动化登录 FoFa/NOSEC 并提取最新 Token 自动保存至 fofa_config.json (免除手动 F12 复制)
+python scripts/fofa_search.py --login
+# 亦可指定账号密码直接静默执行:
+python scripts/fofa_search.py --login -u your_email@domain.com --password your_password
+
+# 3. 默认双引擎协同：优先检索家宽/双ISP/高纯净度订阅 (FoFa + 360 Quake 协同并全局去重)
 python scripts/fofa_search.py --output spatial_proxies.yaml
 
-# 2. 指定单引擎运行 (如 仅 Quake 家宽 / 仅 FoFa Hysteria 2)
+# 4. 检索时开启自动续期 (Token 过期时自动调用登录刷新)
+python scripts/fofa_search.py --auto-login --output spatial_proxies.yaml
+
+# 5. 指定单引擎运行 (如 仅 Quake 家宽 / 仅 FoFa Hysteria 2)
 python scripts/fofa_search.py --engine quake --preset residential --output quake_residential.yaml
 python scripts/fofa_search.py --engine fofa --preset hy2 --output fofa_hy2.yaml
 
-# 3. 使用 Quake 自定义语法
+# 6. 使用 Quake 自定义语法
 python scripts/fofa_search.py --engine quake --quake-query 'status_code: 200 AND response: "vless"' -o quake_vless.yaml
 
-# 4. 仅检索并查看双引擎发现的目标 URL (去重展示，不下载订阅)
+# 7. 仅检索并查看双引擎发现的目标 URL (去重展示，不下载订阅)
 python scripts/fofa_search.py --dry-run-targets
 
-# 5. 一键联动：抓取节点后直接调用主流水线进行全套服务能力检测与配置渲染
+# 8. 一键联动：抓取节点后直接调用主流水线进行全套服务能力检测与配置渲染
 python scripts/fofa_search.py --probe --output final_probed.yaml
 
-# 6. 主流水线直接以测绘源作为输入 (默认优先 residential 家宽/优质过盾)
+# 9. 主流水线直接以测绘源作为输入 (默认优先 residential 家宽/优质过盾)
 python scripts/probe_services.py --input spatial:residential --output out.yaml
 python scripts/probe_services.py --input quake:residential --output out.yaml
 ```

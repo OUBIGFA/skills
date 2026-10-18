@@ -1,62 +1,79 @@
-# Format Reference — SRT, WebVTT, ASS/SSA
+# Formats: SRT, WebVTT, ASS/SSA
 
-Only dialogue wording may change. Timestamps, format structure, metadata, identifiers,
-settings, non-text event fields, and protected markup are part of the file contract.
-`scripts/check_subtitle.py` checks this contract when `--source` is supplied.
+Keep the source format unless the user requests conversion. Preserve protected markers
+and non-dialogue structure; the checker compares them when `--source` is supplied.
 
 ## SRT
 
-- Keep the `HH:MM:SS,mmm` timestamp shape and use UTF-8 for the output.
-- Renumber indices sequentially from 1 only when ordinary-mode boundaries change.
-- Preserve formatting and positioning tags such as `<i>`, `<b>`, `<font>`, and `{an8}`.
-- Keep one subtitle line unless the user requests bilingual or multi-speaker output.
+- Write UTF-8 with sequential indices from 1 and blank lines between blocks.
+- Keep timestamp spelling in strict mode. Ordinary output uses `HH:MM:SS,mmm`.
+- Preserve inline formatting and positioning, including `<i>`, `<b>`, `<font>` and `{\an8}`.
+- Rebuild indices after ordinary-mode merge/split operations. The assembler does this
+  automatically even when each part starts numbering at 1.
 
-In strict mode, the number, order, index, timestamp line, and protected markup of every
-block must match the source. Only the dialogue wording can differ.
+Strict mode keeps block count, order, index, timestamp line, and each block's ordered
+protected markers. A whole-file tag count alone is not sufficient: moving formatting to
+another cue is a change even when no tag is lost.
 
 ## WebVTT
 
-Preserve exactly after normalizing line endings:
+Keep the `WEBVTT` header/metadata, NOTE/STYLE/REGION blocks, cue settings, identifiers,
+escapes, voice/class/ruby tags and karaoke timestamps. STYLE and REGION blocks belong
+before the first cue; NOTE blocks may also appear between cues. A header must start with
+the exact `WEBVTT` token, not a longer word, and cannot contain a timing arrow.
 
-- the `WEBVTT` header and its metadata;
-- every `NOTE`, `STYLE`, and `REGION` block;
-- cue identifiers and cue settings such as `position:50% align:center`;
-- HTML/VTT tags, ruby, karaoke timestamps, and escaped entities.
+Ordinary-mode boundary changes:
 
-Ordinary mode may merge or split cues inside a continuous source span. A merged cue
-keeps the first cue's identifier and settings; if settings differ, retain the first and
-report the choice. Do not duplicate a cue identifier. Karaoke-timed text cannot safely
-be translated word by word; flag it for a separate timing-aware treatment.
+- A merged cue keeps the first covered cue's ID and settings. Report differences in
+  discarded settings rather than pretending every cue setting survived the merge.
+- For a split, keep the source ID on the first piece only; later pieces omit it. All
+  pieces retain the source settings. Do not create a duplicate ID just to satisfy mapping.
+- Preserve the original marker inventory. Avoid splitting inside a styled or karaoke-timed
+  run if it would require duplicating/reassigning tags; use a format-aware, explicitly
+  reviewed treatment rather than silently flattening markup.
 
-VTT timestamps use a dot before milliseconds and may omit the hour. Keep the source
-shape. `NOTE`/`STYLE`/`REGION` blocks are not subtitle cues and do not count as blocks.
+VTT timestamps use decimal milliseconds, optionally without hours. Preserve source
+spelling in strict mode. Static blocks do not count as cues.
 
 ## ASS/SSA
 
-Parse the `[Events]` `Format:` line to locate fields; the Text field can contain commas.
-Modify only the Text field of `Dialogue:` events. Preserve:
+Translate only the Text field of Dialogue events, in both ordinary and strict modes.
+Use the Events `Format:` declaration: field names must be unique and Text must be last
+because its content may contain commas. Preserve:
 
-- all sections, section order, script metadata, styles, and field layout;
-- `Comment:`, `Picture:`, `Sound:`, and other non-Dialogue events;
-- Layer, Start, End, Style, Name, margins, Effect, and every other non-Text field;
-- override tags such as `{\pos(...)}`, `{\k...}`, colors, fades, and existing `\N`,
-  `\n`, and `\h` markers.
+- sections, styles, field layout, and non-Dialogue records;
+- event count and file order, even if starts are not chronologically sorted;
+- every non-Text field, including Start, End, Layer, Style, Name, margins and Effect;
+- override tags, karaoke timing, drawing/positioning codes, and `\N`, `\n`, `\h` markers.
 
-Do not add line breaks. Do not merge a sign/effect event with dialogue. Overlap between
-layered ASS events is allowed and is reported as a warning rather than an error.
-Strict mode compares each event's non-Text fields and timestamp line exactly.
+Do not merge, split, retime, or discard a layered sign. Overlap is legal for layered ASS
+and receives a review warning, not an error. Matching events by their position in the
+file avoids confusing a sign with the dialogue underneath it. Resegmentation of styled
+ASS is outside this translation workflow and needs separate authorization and validation.
 
-## Timing-less input
+## Markup and bilingual output
 
-A transcript without timestamps is not a subtitle file. Translate its paragraphs in the
-same shape and state that no timeline work was possible.
+Keep paired formatting tags balanced and escapes escaped. Entities are decoded only for
+load measurement, not rewritten in the file. Translate sound-cue words when appropriate
+(`[music]` → `[音乐]`), preserving their brackets. Literal UI/code strings remain literal.
 
-## Explicit conversion only
+For bilingual output, put the translation first and source wording second. Do not
+blindly duplicate protected tags on both lines: retain the markers with translated text,
+or wrap the paired cue once when that preserves their scope. Review mixed style/voice
+runs manually. `--max-lines 2` permits two lines; it does not prove that the source wording
+was retained or that every markup scope is semantically correct.
 
-Explain losses before conversion:
+The checker compares marker inventories for ordinary SRT/VTT and ordered markers per cue
+in strict mode and ASS. It is not a renderer or a semantic markup-alignment checker.
 
-- VTT → SRT loses cue settings, NOTE/STYLE/REGION blocks, and may lose cue identifiers.
-- ASS/SSA → SRT/VTT loses styles, positioning, layer information, karaoke timing, and
-  override tags; `\N` becomes a real line break and needs re-auditing.
-- After conversion, `--source` comparison across formats is not valid. Validate the
-  converted file independently and report the loss.
+## Explicit conversion
+
+Explain format losses before conversion:
+
+- VTT → SRT loses cue settings, NOTE/STYLE/REGION blocks, and may lose identifiers.
+- ASS/SSA → SRT/VTT loses style, positioning, layers, drawing/karaoke information, and
+  override effects; explicit breaks become ordinary line breaks needing review.
+
+Cross-format `--source` comparison is not supported. Validate the converted file
+independently, compare its text and timing manually, and report unverified structure.
+Do not use `--format` to disguise a conversion; it only selects a parser.

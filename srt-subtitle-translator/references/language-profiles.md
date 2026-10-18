@@ -1,35 +1,39 @@
-# Language Profile Reference
+# Language Profiles
 
-The executable values live in `config/language_profiles.json`. This file explains how
-to choose and override them; it is not a second configuration source.
+[config/language_profiles.json](../config/language_profiles.json) is the executable
+configuration. Do not copy its thresholds into another settings table or treat them as
+universal linguistic limits.
 
 ## Fields
 
-- `target_language`: human-readable name used in reports and fallback notices.
-- `counting`: `cjk` counts full-width characters as 1, Latin letters/digits as 0.5,
-  and punctuation as 0; `raw` counts every visible character including spaces.
-- `final_punctuation`: `none` warns on ordinary trailing stopping/pausing punctuation
-  (full stops, commas, colons, semicolons, exclamation marks); genuine terminal question
-  marks (`？`/`?`) are explicitly exempted and preserved. `standard` follows the target
-  language's normal subtitle practice.
-- `max_cps`: reading-speed review threshold in display-cost units per second.
-- `max_width`: one-glance scan-width review threshold in Display Units (DU: full-width CJK = 1.0, Latin/digit = 0.5; defines the soft comfort budget, while ~1.25–1.3x serves as the screen hard cap).
-- `spacing`: whether the checker reports missing CJK/Latin or CJK/digit spacing.
-- `ban_exclamation`: whether exclamation marks are reported as a style violation.
+- `target_language`: nonempty display name.
+- `counting`: `cjk` uses weighted display cost; `raw` counts displayed characters,
+  including internal spaces. Both exempt English parenthetical content from load.
+- `final_punctuation`: `none` reviews trailing stopping/pausing punctuation while
+  preserving genuine `?`/`？`; `standard` follows ordinary target-language punctuation.
+- `max_cps`: finite positive number, reading-cost units per second.
+- `max_width`: finite positive number, per-line scan-cost review threshold. This is not
+  a measured pixel width or an automatically enforced screen cap.
+- `spacing`: optional boolean, default `false`; review CJK/Latin and CJK/digit spacing.
+- `ban_exclamation`: optional boolean, default `false`; review `!` and `！`.
+
+Quoted numbers, booleans used as numbers, NaN, infinity, and nonpositive limits are
+invalid. See [reading-load.md](reading-load.md) for counting and warning interpretation.
 
 ## Resolution
 
-Language codes are normalized to lowercase and `_` becomes `-`. An exact profile wins;
-otherwise a regional code such as `en-US` uses `en`; an unknown code uses `default`.
-The checker reports the requested code, so an unknown-language fallback is visible rather
-than silently treated as a supported locale.
+Normalize codes to lowercase and replace `_` with `-`. An exact profile wins, then the
+longest configured prefix: `zh-Hant-TW` uses `zh-hant`, and `en-US` uses `en`. The
+Traditional-Chinese locales `zh-TW`, `zh-HK`, and `zh-MO` use `zh-hant` unless explicitly
+configured. An unknown language uses the required `default` profile and is reported.
 
-## Custom profiles
+## Overrides
 
-Pass a project-specific JSON file with `--lang-config`. Keep the same required fields
-and use `--lang <code>` to select a profile. A malformed file is an error; the checker
-does not silently fall back to built-in settings when an explicitly supplied file cannot
-be loaded.
+Use `--lang-config <project.json>` with the same schema and `--lang <code>`. Invalid
+custom files fail visibly; they do not silently fall back. `--max-cps`, `--max-width`,
+`--min-duration`, `--max-duration`, `--max-lines`, and `--pause-gap` permit explicit
+project calibration. The CLI rejects invalid values and contradictory duration bounds.
+`--strict` requires `--source`; without a source there is no timeline to lock.
 
-The numerical values are review triggers, not hard subtitle quotas. Human judgement
-still decides whether a natural phrase should remain intact or be re-segmented.
+An explicit platform or user guide controls the chosen profile. Do not change the
+shipped Chinese 4.5 DU/s preset merely to make a dense file's warnings disappear.

@@ -1,8 +1,14 @@
 {
-  "token": "",
+  "base_url": "https://fofa.info",
+  "account": {
+    "username": "your_email@example.com",
+    "password": "your_fofa_password"
+  },
+  "token": "your_fofa_jwt_token_here",
+  "tokens": [],
   "email": "",
   "key": "",
-  "quake_key": "",
+  "quake_key": "your_360_quake_key_here",
   "proxy": "http://127.0.0.1:3067",
   "page_size": 80,
   "timeout": 12,

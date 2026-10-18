@@ -14,9 +14,13 @@ from core.fofa import (
     DEFAULT_PRESET,
     PRESET_QUERIES,
     _extract_nuxt_targets,
+    _search_fofa_signed_web_api,
+    _sign_fofa_web_message,
+    check_fofa_auth,
     deduplicate_and_sort_proxies,
     fetch_subscription_nodes,
     get_default_config_path,
+    inspect_jwt_token,
     load_fofa_config,
     resolve_query,
     search_and_fetch_proxies,
@@ -335,6 +339,165 @@ proxies:
         self.assertEqual(len(nodes_s), 1)
         mock_search_and_fetch.assert_called_with(query_or_preset="billing", engine="all")
 
+    def test_inspect_jwt_token(self):
+        # 1. 空或非字符串
+        self.assertFalse(inspect_jwt_token("")["valid"])
+        self.assertFalse(inspect_jwt_token(None)["valid"])
+
+        # 2. 非 JWT 格式 (保持透传)
+        res_non_jwt = inspect_jwt_token("simple-opaque-token")
+        self.assertTrue(res_non_jwt["valid"])
+        self.assertFalse(res_non_jwt["is_jwt"])
+
+        # 3. 构造已过期的 JWT
+        expired_payload = {"username": "tester", "exp": 1500000000}  # 2017年
+        p_b64 = base64.urlsafe_b64encode(json.dumps(expired_payload).encode()).decode().rstrip("=")
+        expired_jwt = f"eyJhbGciOiJIUzI1NiJ9.{p_b64}.mocksignature"
+        res_exp = inspect_jwt_token(expired_jwt)
+        self.assertTrue(res_exp["is_jwt"])
+        self.assertTrue(res_exp["expired"])
+        self.assertFalse(res_exp["valid"])
+        self.assertEqual(res_exp["username"], "tester")
+
+        # 4. 构造未来的有效 JWT
+        valid_payload = {"username": "future_user", "exp": 2500000000}
+        p_val_b64 = base64.urlsafe_b64encode(json.dumps(valid_payload).encode()).decode().rstrip("=")
+        valid_jwt = f"eyJhbGciOiJIUzI1NiJ9.{p_val_b64}.mocksignature"
+        res_val = inspect_jwt_token(valid_jwt)
+        self.assertTrue(res_val["is_jwt"])
+        self.assertFalse(res_val["expired"])
+        self.assertTrue(res_val["valid"])
+        self.assertEqual(res_val["username"], "future_user")
+
+    def test_load_fofa_config_tokens_list(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump({
+                "token": "tok1, tok2\ntok3",
+                "tokens": ["tok4", "tok1"],
+                "base_url": "https://custom.fofa.relay"
+            }, f)
+            temp_path = f.name
+
+        try:
+            cfg = load_fofa_config(temp_path)
+            self.assertEqual(cfg["base_url"], "https://custom.fofa.relay")
+            # 应该解析出去重且保序的 tokens_list
+            self.assertIn("tok1", cfg["tokens_list"])
+            self.assertIn("tok2", cfg["tokens_list"])
+            self.assertIn("tok3", cfg["tokens_list"])
+            self.assertIn("tok4", cfg["tokens_list"])
+            self.assertEqual(len(cfg["tokens_list"]), 4)
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    def test_search_fofa_signed_web_api_expired_token(self):
+        # 过期 Token 应当在本地直接拦截并返回错误，不发出任何网络请求
+        expired_payload = {"username": "test_user", "exp": 1000}
+        p_b64 = base64.urlsafe_b64encode(json.dumps(expired_payload).encode()).decode().rstrip("=")
+        expired_jwt = f"eyJhbGciOiJIUzI1NiJ9.{p_b64}.mocksignature"
+
+        targets, err = _search_fofa_signed_web_api("test_query", token=expired_jwt)
+        self.assertEqual(targets, [])
+        self.assertIsNotNone(err)
+        self.assertIn("过期", err)
+
+    def test_sign_fofa_web_message(self):
+        sig = _sign_fofa_web_message("fullfalsepage1qbase64Ym9keT0icHJveGllczoic2l6ZTEwdHMxMDAw")
+        self.assertTrue(bool(sig))
+        self.assertGreater(len(sig), 50)
+
+    @patch("core.fofa._make_request")
+    def test_check_fofa_auth(self, mock_make_request):
+        # 模拟官方 API /api/v1/info/my 响应
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "error": False,
+            "email": "user@domain.com",
+            "vip_level": 2,
+            "fcoin": 50
+        }
+        mock_make_request.return_value = mock_resp
+
+        cfg = {
+            "key": "test_key",
+            "token": "",
+            "quake_key": ""
+        }
+        report = check_fofa_auth(cfg)
+        self.assertEqual(report["fofa_api"]["status"], "valid")
+        self.assertEqual(report["fofa_api"]["email"], "user@domain.com")
+
+    def test_update_fofa_config_token(self):
+        from core.fofa_login import update_fofa_config_token
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump({
+                "token": "old_token",
+                "tokens": ["old_token"],
+                "quake_key": "qk_123",
+                "proxy": "http://127.0.0.1:3067"
+            }, f)
+            temp_path = f.name
+
+        try:
+            ok = update_fofa_config_token("new_token_456", email="new@fofa.so", config_path=temp_path)
+            self.assertTrue(ok)
+            with open(temp_path, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            self.assertEqual(saved["token"], "new_token_456")
+            self.assertEqual(saved["email"], "new@fofa.so")
+            self.assertEqual(saved["tokens"], ["new_token_456", "old_token"])
+            # 保持已有配置不丢失
+            self.assertEqual(saved["quake_key"], "qk_123")
+            self.assertEqual(saved["proxy"], "http://127.0.0.1:3067")
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    def test_ensure_fofa_token_valid(self):
+        from core.fofa import ensure_fofa_token
+        # 构造有效未来 token
+        future_payload = {"username": "valid_user", "exp": 2500000000}
+        p_b64 = base64.urlsafe_b64encode(json.dumps(future_payload).encode()).decode().rstrip("=")
+        valid_jwt = f"eyJhbGciOiJIUzI1NiJ9.{p_b64}.sig"
+
+        cfg = {"token": valid_jwt, "tokens_list": [valid_jwt]}
+        ok, msg = ensure_fofa_token(cfg, auto_login=False)
+        self.assertTrue(ok)
+        self.assertIn("有效", msg)
+
+    @patch("core.fofa_login.login_fofa_and_extract_token")
+    def test_ensure_fofa_token_expired_triggers_refresh(self, mock_login):
+        from core.fofa import ensure_fofa_token
+        # 构造已过期 token
+        expired_payload = {"username": "expired_user", "exp": 1000}
+        p_b64 = base64.urlsafe_b64encode(json.dumps(expired_payload).encode()).decode().rstrip("=")
+        expired_jwt = f"eyJhbGciOiJIUzI1NiJ9.{p_b64}.sig"
+
+        new_jwt = "eyJhbGciOiJIUzI1NiJ9.mock_new_payload.sig"
+        mock_login.return_value = (True, new_jwt, "续期成功")
+
+        cfg = {
+            "token": expired_jwt,
+            "tokens_list": [expired_jwt],
+            "email": "user@example.com",
+            "password": "pwd"
+        }
+        ok, msg = ensure_fofa_token(cfg, auto_login=True)
+        self.assertTrue(ok)
+        self.assertEqual(cfg["token"], new_jwt)
+        self.assertIn("成功", msg)
+
+    def test_cli_login_arguments(self):
+        import fofa_search
+        args = fofa_search.parse_args(["--login", "--username", "test_user", "--password", "test_pass", "--headless"])
+        self.assertTrue(args.login)
+        self.assertEqual(args.username, "test_user")
+        self.assertEqual(args.password, "test_pass")
+        self.assertTrue(args.headless)
+
 
 if __name__ == "__main__":
     unittest.main()
+

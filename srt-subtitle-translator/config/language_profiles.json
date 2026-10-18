@@ -12,7 +12,7 @@
     "target_language": "简体中文",
     "counting": "cjk",
     "final_punctuation": "none",
-    "max_cps": 9.0,
+    "max_cps": 4.5,
     "max_width": 25,
     "spacing": true,
     "ban_exclamation": true
@@ -21,7 +21,7 @@
     "target_language": "繁體中文",
     "counting": "cjk",
     "final_punctuation": "none",
-    "max_cps": 9.0,
+    "max_cps": 4.5,
     "max_width": 25,
     "spacing": true,
     "ban_exclamation": true

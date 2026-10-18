@@ -301,30 +301,46 @@ def query_ip_info(ip, timeout=(3.0, 6.0)):
 
     with ThreadPoolExecutor(max_workers=3) as pool:
         records = list(pool.map(query, providers))
-    # 信誉源只用于信誉，不把聚合商的同源 GeoIP 重复算作一票。
-    evidence, text = fetch_evidence(f'https://ip.net.coffee/api/ip/lookup/{target}', timeout=timeout)
-    coffee = {}
-    try:
-        data = json.loads(text)
-        if evidence['status'] == 'ok' and isinstance(data, dict) and public_ip(data.get('ip')) == target:
-            coffee = data
-    except ValueError:
-        pass
-    if not coffee:
-        evidence.update(status='invalid' if evidence['status'] == 'ok' else evidence['status'],
-                        error=evidence.get('error', 'ip_mismatch_or_missing'))
-    score = valid_reputation_score(coffee.get('trust_score'))
-    flags = {k: coffee.get(v) if type(coffee.get(v)) is bool else None
-             for k, v in {'residential': 'isResidential', 'datacenter': 'is_datacenter',
-             'mobile': 'is_mobile', 'vpn': 'is_vpn', 'proxy': 'is_proxy', 'tor': 'is_tor',
-             'crawler': 'is_crawler', 'abuser': 'is_abuser'}.items()}
-    connection = coffee.get('connection') if isinstance(coffee.get('connection'), dict) else {}
-    reputation = {"ip": target, "provider": "Net.Coffee", "score": score,
-                  "status": "observed" if score is not None else "unknown", "flags": flags,
-                  "checked_at": evidence.get('observed_at'), "source": evidence}
-    return {**geo_consensus(records), "ip": target, "records": records,
-            "score": score, "flags": flags, "asn": connection.get('asn'),
-            "isp": connection.get('isp'), "reputation": reputation, "reputation_source": evidence}
+    from .reputation_engine import evaluate_ip_reputation
+
+    # 提取已发现的 asn, isp, flags 供多维信誉与家宽形态精确仲裁
+    asn_candidate = next((r.get('asn') for r in records if r.get('asn')), None)
+    isp_candidate = next((r.get('isp') for r in records if r.get('isp')), None)
+    flags_candidate = {}
+    for r in records:
+        if isinstance(r.get('flags'), dict):
+            flags_candidate.update(r['flags'])
+
+    to_sec = timeout[0] if isinstance(timeout, (list, tuple)) else timeout
+    rep_result = evaluate_ip_reputation(
+        ip=target,
+        asn_raw=asn_candidate,
+        isp_name=isp_candidate or "",
+        ipinfo_flags=flags_candidate,
+        timeout=to_sec
+    )
+    score = rep_result.get("score")
+    flags = rep_result.get("flags") or {}
+    res_level = rep_result.get("residential_level")
+    reputation = {
+        "ip": target,
+        "provider": rep_result.get("provider", "CompositeConsensus"),
+        "score": score,
+        "status": rep_result.get("status", "unknown"),
+        "flags": flags,
+        "residential_level": res_level,
+        "checked_at": rep_result.get("checked_at"),
+        "source": rep_result.get("source"),
+        "details": rep_result
+    }
+    final_asn = asn_candidate or rep_result.get("classification", {}).get("evidence", {}).get("asn")
+    final_isp = isp_candidate or rep_result.get("classification", {}).get("evidence", {}).get("isp")
+    return {
+        **geo_consensus(records), "ip": target, "records": records,
+        "score": score, "flags": flags, "residential_level": res_level,
+        "asn": final_asn, "isp": final_isp,
+        "reputation": reputation, "reputation_source": rep_result
+    }
 
 
 def arbitrate_geo(cf_trace=None, google_region=None, ip_info=None, exit_ips=None, orig_cc=None):

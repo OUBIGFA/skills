@@ -192,7 +192,10 @@ async def probe_youtube_async(proxy_url, expected_ip=None, videos=YOUTUBE_VIDEO_
 def probe_youtube(proxy_url, expected_ip=None):
     """同步包装入口。"""
     try:
-        return asyncio.run(probe_youtube_async(proxy_url, expected_ip=expected_ip))
+        return asyncio.run(asyncio.wait_for(
+            probe_youtube_async(proxy_url, expected_ip=expected_ip),
+            timeout=50.0
+        ))
     except Exception as e:
         return {
             "status": "unknown",

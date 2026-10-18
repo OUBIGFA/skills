@@ -1,93 +1,84 @@
 # -*- coding: utf-8 -*-
+"""Asset integrity checks, not wording snapshots or model-quality benchmarks."""
 import json
+import re
 import unittest
 from pathlib import Path
 
+from test_check_subtitle import CHECKER
+
 
 ROOT = Path(__file__).resolve().parents[1]
+LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+
+
+def local_links(path):
+    """Resolve maintained Markdown links relative to the containing document."""
+    for target in LINK_RE.findall(path.read_text(encoding="utf-8")):
+        target = target.split("#", 1)[0]
+        if not target or "://" in target or target.startswith("mailto:"):
+            continue
+        yield (path.parent / target).resolve()
 
 
 class SkillAssetTests(unittest.TestCase):
-    def test_skill_routes_controlled_expression_reference(self):
-        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-        reference = ROOT / "references" / "asd-ste100-subtitles.md"
-        self.assertTrue(reference.exists())
-        self.assertIn("ASD-STE100", skill)
-        self.assertIn("asd-ste100-subtitles.md", skill)
-        self.assertIn("删去无意义填充词", skill)
-        self.assertIn("保留信息载荷", skill)
-        reference_text = reference.read_text(encoding="utf-8")
-        self.assertIn("Information pass", reference_text)
-        self.assertIn("Economy pass", reference_text)
-        self.assertIn("negation", reference_text)
-        self.assertIn("do not force", reference_text)
+    def test_references_are_reachable_and_links_stay_inside_the_skill(self):
+        pending, visited = [ROOT / "SKILL.md"], set()
+        while pending:
+            document = pending.pop()
+            if document in visited:
+                continue
+            visited.add(document)
+            for target in local_links(document):
+                self.assertTrue(target.is_relative_to(ROOT), (document, target))
+                self.assertTrue(target.is_file(), (document, target))
+                if target.suffix == ".md":
+                    pending.append(target)
+        self.assertTrue(set((ROOT / "references").glob("*.md")).issubset(visited), visited)
 
-    def test_eval_manifest_covers_controlled_subtitle_pressure_cases(self):
-        manifest = json.loads((ROOT / "evals" / "evals.json").read_text(encoding="utf-8"))
-        ids = {item["id"] for item in manifest["evals"]}
-        self.assertIn(33, ids)
-        self.assertIn(34, ids)
-        prompts = "\n".join(item["prompt"] for item in manifest["evals"] if item["id"] in {33, 34})
-        self.assertIn("口水词", prompts)
-        self.assertIn("否定", prompts)
+    def test_documented_script_paths_exist(self):
+        documents = [ROOT / "SKILL.md", *(ROOT / "references").glob("*.md")]
+        mentioned = set()
+        for document in documents:
+            mentioned.update(re.findall(r"scripts/[A-Za-z0-9_-]+\.py", document.read_text(encoding="utf-8")))
+        self.assertTrue(mentioned)
+        for script in mentioned:
+            self.assertTrue((ROOT / script).is_file(), script)
 
-    def test_eval_manifest_is_valid_and_fixture_paths_exist(self):
+    def test_manifest_has_unique_cases_with_real_input_paths(self):
         manifest = json.loads((ROOT / "evals" / "evals.json").read_text(encoding="utf-8"))
         self.assertEqual("srt-subtitle-translator", manifest["skill_name"])
-        self.assertGreaterEqual(len(manifest["evals"]), 30)
-        missing = [
-            (item["id"], path)
-            for item in manifest["evals"]
-            for path in item.get("files", [])
-            if not (ROOT / path).exists()
-        ]
-        self.assertEqual([], missing)
+        self.assertTrue(manifest["evals"])
+        ids, referenced = set(), set()
+        for case in manifest["evals"]:
+            self.assertIs(type(case["id"]), int)
+            self.assertNotIn(case["id"], ids)
+            ids.add(case["id"])
+            for field in ("prompt", "expected_output"):
+                self.assertIsInstance(case[field], str)
+                self.assertTrue(case[field].strip(), (case["id"], field))
+            self.assertIsInstance(case.get("files", []), list)
+            for filename in case.get("files", []):
+                path = (ROOT / filename).resolve()
+                self.assertTrue(path.is_relative_to(ROOT), filename)
+                self.assertTrue(path.is_file(), (case["id"], filename))
+                referenced.add(path)
+        fixtures = {path.resolve() for path in (ROOT / "evals" / "fixtures").iterdir() if path.is_file()}
+        self.assertEqual(fixtures, referenced, "Remove orphan fixtures or bind them to a real case")
 
-    def test_language_profile_file_is_valid_json(self):
-        profiles = json.loads(
-            (ROOT / "config" / "language_profiles.json").read_text(encoding="utf-8")
-        )
+    def test_subtitle_fixtures_parse_as_their_declared_format(self):
+        for path in (ROOT / "evals" / "fixtures").iterdir():
+            with self.subTest(path=path.name):
+                fmt = CHECKER.EXT_FORMATS[path.suffix]
+                blocks, errors = CHECKER.parse_file(path, fmt, require_utf8=True)
+                self.assertEqual([], errors)
+                self.assertTrue(blocks)
+
+    def test_language_profiles_load_using_the_production_schema(self):
+        profiles = CHECKER.load_language_profiles(ROOT / "config" / "language_profiles.json")
         self.assertIn("default", profiles)
-        self.assertGreaterEqual(len(profiles), 10)
-
-    def test_skill_routes_simultaneous_interpreting_order(self):
-        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-        style_common = (ROOT / "references" / "style-common.md").read_text(encoding="utf-8")
-        style_zh = (ROOT / "references" / "style-zh.md").read_text(encoding="utf-8")
-        self.assertIn("同声传译式展开语序", skill)
-        self.assertIn("Simultaneous interpreting clause order", style_common)
-        self.assertIn("中文同声传译式展开语序", style_zh)
-
-    def test_skill_routes_terminology_locking_and_slash_ban(self):
-        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-        style_common = (ROOT / "references" / "style-common.md").read_text(encoding="utf-8")
-        style_zh = (ROOT / "references" / "style-zh.md").read_text(encoding="utf-8")
-        self.assertIn("LOCKED", skill)
-        self.assertIn("preferred", skill)
-        self.assertIn("slash-separated alternatives", skill)
-        self.assertIn("LOCKED (刚性锁定)", style_common)
-        self.assertIn("preferred (柔性偏好)", style_common)
-        self.assertIn("Single final rendering mandate", style_common)
-        self.assertIn("严禁输出斜杠备选译法", style_zh)
-
-    def test_skill_routes_asr_repair_boundaries(self):
-        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-        seg = (ROOT / "references" / "segmentation.md").read_text(encoding="utf-8")
-        style_common = (ROOT / "references" / "style-common.md").read_text(encoding="utf-8")
-        self.assertIn("division of ASR repair", skill)
-        self.assertIn("ASR repair boundaries", seg)
-        self.assertIn("physiological breaths", seg)
-        self.assertIn("Boundaries of ASR repair", style_common)
-
-    def test_skill_routes_display_units_budget(self):
-        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-        reading_load = (ROOT / "references" / "reading-load.md").read_text(encoding="utf-8")
-        seg = (ROOT / "references" / "segmentation.md").read_text(encoding="utf-8")
-        self.assertIn("Display Units", skill)
-        self.assertIn("行级显示单元预算", reading_load)
-        self.assertIn("Soft Budget", reading_load)
-        self.assertIn("Hard Budget", reading_load)
-        self.assertIn("Line-level Display Unit Budget", seg)
+        for code, profile in profiles.items():
+            self.assertEqual(profile, CHECKER.get_language_profile(code, profiles))
 
 
 if __name__ == "__main__":

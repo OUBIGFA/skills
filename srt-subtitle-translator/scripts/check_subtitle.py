@@ -1,52 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""check_subtitle.py — structural and readability validator for translated subtitle files.
+"""Validate SRT, WebVTT and ASS/SSA structure and configured reading load.
 
-Supports SRT (.srt), WebVTT (.vtt), and ASS/SSA (.ass/.ssa). The format is detected
-from the file extension; the output and the --source file must share one format —
-silent format conversion is itself an error.
+    python check_subtitle.py out-zh.srt --source input.srt --lang zh
+    python check_subtitle.py out-en.vtt --source input.vtt --lang en --strict
 
-    python check_subtitle.py out-zh.srt                     # check one file
-    python check_subtitle.py out-zh.srt --source in.srt     # also diff against the source
-    python check_subtitle.py out-en.srt --lang en           # non-Chinese target language
+Outputs must be UTF-8. Source files may also use GB18030 or UTF-16. SRT/VTT may
+be resegmented without dropping source coverage; ASS/SSA translation is Text-only.
+Strict mode additionally locks each SRT/VTT cue and its ordered protected markup.
+Source gaps are timing proxies, not acoustic evidence. Every covered source gap
+is reported; reading-load and linguistic heuristics require manual review.
 
-Checks performed on the output file:
-  - parseable; SRT indices sequential from 1; no empty text block
-  - start < end; no overlap with the following block (a warning, not an error, for
-    ASS, where layered or positioned events may overlap legitimately)
-  - duration below/above comfort thresholds, characters-per-second load using the
-    target language's reading-speed anchor (--lang, default zh)
-  - per-line scan width beyond the one-glance comfort zone (split or condense)
-  - one line per block — wrapping is not allowed; ASS \\N breaks count as lines
-  - disallowed trailing punctuation at end of a line (CJK targets only; question
-    marks remain valid, exclamation marks are forbidden)
-  - forbidden exclamation marks in subtitle text ('！' and '!')
-  - internal full stops and semicolons that may indicate two thought units were
-    placed in one Chinese subtitle block
-  - forbidden slash-separated alternative words (e.g. '微调/蒸馏'; subtitles require a single rendering)
-  - missing space between CJK and Latin/digits (zh target only; reported, not fatal)
-
-Extra checks when --source is given:
-  - source gaps at or above the configured pause proxy form separate speech spans;
-    smaller gaps may be preserved or re-placed
-  - every output block must overlap source speech; a block that crosses a source
-    gap (a pause proxy, not proof of audible silence) is allowed but reported as
-    a warning so the merge can be re-audited at delivery time
-  - every speech span is fully covered: pieces tile it from start to end with no
-    uncovered speech; boundaries inside a span may be re-placed (merges and
-    target-language re-splits are legal and reported as notes)
-  - length fidelity: how much text each speech span carries compared with the
-    source, to surface padding (words the audio never had) and dropped payload
-  - pass --strict to additionally require every block edge to pre-exist in the
-    source (timeline byte-for-byte untouched)
-  - block-count delta and the merge factor of each output block
-
-Exit code 0 = no errors (warnings may still be printed), 1 = errors found.
+Exit 0 means no errors, not no warnings. Exit 1 means validation errors; exit 2
+means invalid CLI arguments. No check here proves translation or audio accuracy.
 """
 
 import argparse
 from collections import Counter
+import html
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -58,20 +31,23 @@ import unicodedata
 for stream in (sys.stdout, sys.stderr):
     try:
         stream.reconfigure(encoding="utf-8")
-    except Exception:
+    except (AttributeError, OSError, ValueError):
         pass
 
 SRT_TIME_RE = re.compile(
     r"^(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})$"
 )
 VTT_TIME_RE = re.compile(
-    r"^(?:(\d{1,2}):)?(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(?:(\d{1,2}):)?(\d{2}):(\d{2})\.(\d{3})(?:\s+.*)?$"
+    r"^(?:(\d{2,}):)?(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(?:(\d{2,}):)?(\d{2}):(\d{2})\.(\d{3})(?:\s+.*)?$"
 )
 ASS_TIME_RE = re.compile(r"^(\d+):(\d{2}):(\d{2})\.(\d{2})$")
 
-# Markup carries no reading load: HTML-style tags (SRT/VTT), VTT voice/class/karaoke
-# tags, and ASS override blocks are stripped before measuring text.
-MARKUP_RE = re.compile(r"<[^>]*>|\{\\[^}]*\}")
+# Only tag-shaped text is markup: comparisons such as "1 < 3 > 2" remain visible.
+HTML_TAG_RE = re.compile(r"</?([A-Za-z][\w-]*)(?:\.[^\s<>/]*)?(?:\s+[^<>]*?)?\s*/?>")
+MARKUP_RE = re.compile(
+    HTML_TAG_RE.pattern + r"|<(?:(?:\d{2,}):)?\d{2}:\d{2}\.\d{3}>|\{\\[^}]*\}"
+)
+BRACKETED_ORIGINAL_RE = re.compile(r"\(([^()（）]*)\)|（([^()（）]*)）")
 
 # Duration bounds follow the Netflix Timed Text Style Guides and are language-
 # independent; the reading-speed anchor and scan-comfort width are per target
@@ -125,30 +101,39 @@ def load_language_profiles(path):
             raise ValueError("language profile %s has unsupported counting mode" % code)
         if profile["final_punctuation"] not in ("none", "standard"):
             raise ValueError("language profile %s has unsupported final punctuation mode" % code)
-        if float(profile["max_cps"]) <= 0 or float(profile["max_width"]) <= 0:
-            raise ValueError("language profile %s has non-positive reading limits" % code)
+        if not isinstance(profile["target_language"], str) or not profile["target_language"].strip():
+            raise ValueError("language profile %s needs a target_language name" % code)
+        for field in ("max_cps", "max_width"):
+            value = profile[field]
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or value <= 0):
+                raise ValueError("language profile %s needs a finite positive %s" % (code, field))
+        for field in ("spacing", "ban_exclamation"):
+            profile.setdefault(field, False)
+            if not isinstance(profile[field], bool):
+                raise ValueError("language profile %s needs a boolean %s" % (code, field))
     return profiles
 
 
 def get_language_profile(lang, profiles=None):
-    """Resolve an exact or regional language code, then fall back explicitly."""
-    profiles = profiles or LANG_PROFILES
-    normalized = (lang or "default").lower().replace("_", "-")
-    if normalized in profiles:
-        return profiles[normalized]
-    base = normalized.split("-", 1)[0]
-    return profiles.get(base, profiles["default"])
+    """Resolve a profile using the same rules as the CLI."""
+    return language_profile_resolution(lang, profiles)[0]
 
 
 def language_profile_resolution(lang, profiles=None):
-    """Return the profile and the code that supplied it."""
-    profiles = profiles or LANG_PROFILES
+    """Prefer exact codes, then script/region prefixes, then explicit default."""
+    profiles = LANG_PROFILES if profiles is None else profiles
     normalized = (lang or "default").lower().replace("_", "-")
     if normalized in profiles:
         return profiles[normalized], normalized
-    base = normalized.split("-", 1)[0]
-    if base in profiles:
-        return profiles[base], base
+    # Traditional-Chinese locales must not silently inherit Simplified Chinese.
+    candidate = {"zh-tw": "zh-hant", "zh-hk": "zh-hant", "zh-mo": "zh-hant"}.get(
+        normalized, normalized
+    )
+    while candidate:
+        if candidate in profiles:
+            return profiles[candidate], candidate
+        candidate = candidate.rsplit("-", 1)[0] if "-" in candidate else ""
     return profiles["default"], "default"
 
 
@@ -158,19 +143,8 @@ DISALLOWED_TRAILING_PUNCT = "。．.;；:：、,，！!"
 CJK_RE = re.compile(r"[㐀-䶿一-鿿豈-﫿぀-ヿ]")
 LATIN_RE = re.compile(r"[A-Za-z0-9]")
 INTERNAL_SEGMENTATION_MARKS = ("。", "；")
-# ==============================================================================
-# Syntactic Boundary & Thought-Unit Cohesion Engine (ZH/CJK)
-# ==============================================================================
-# A robust subtitle block must be a self-contained "thought unit" / "breath group".
-# Rather than static string matching, boundaries in continuous speech are validated
-# against universal functional grammatical categories to detect broken dependencies:
-#
-# 1. Clausal Connectives & Transitionals (must introduce the next clause, not hang at tail)
-# 2. Prepositions & Case Markers (must precede their object in the next block)
-# 3. Governing / Serial Introductory Verbs (verbs that take a clausal/VP complement)
-# 4. Structural & Aspectual Particles (must attach to their head, never stranded at head)
-# 5. Demonstratives & Classifiers (must not be separated from their head noun)
-# ==============================================================================
+# Chinese boundary heuristics are review hints, not a syntactic parser. A suffix
+# match can also be a complete phrase; never rewrite payload just to silence it.
 
 GRAMMAR_CATEGORIES_ZH = {
     # 关联/转折/因果/假设等从句引导范畴（连词必须前置于分句）
@@ -240,7 +214,11 @@ def read_text(path, require_utf8=False):
     if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
         encodings = ("utf-16", "utf-16-le", "utf-16-be")
     elif b"\x00" in raw:
-        encodings = ("utf-16-le", "utf-16-be", "utf-8-sig", "utf-8", "gb18030")
+        # Timestamp/header ASCII provides an endianness signal without a BOM.
+        # Trying LE first unconditionally also "decodes" BE into silent mojibake.
+        sample = raw[:4096]
+        utf16 = ("utf-16-be", "utf-16-le") if sample[::2].count(0) > sample[1::2].count(0) else ("utf-16-le", "utf-16-be")
+        encodings = (*utf16, "utf-8-sig", "utf-8", "gb18030")
     else:
         encodings = ("utf-8-sig", "utf-8", "gb18030", "utf-16")
     for enc in encodings:
@@ -299,6 +277,8 @@ def parse_srt(text):
             errors.append("invalid SRT timestamp near: %s" % lines[time_pos][:60])
         if not valid_clock(m.group(5), m.group(6), m.group(7)):
             errors.append("invalid SRT timestamp near: %s" % lines[time_pos][:60])
+        if any(SRT_TIME_RE.match(line) for line in lines[time_pos + 1:]):
+            errors.append("SRT block contains another timestamp; missing blank-line separator")
         blocks.append(make_block(
             int(idx_line) if idx_line and idx_line.isdigit() else None,
             to_seconds(m.group(1), m.group(2), m.group(3), m.group(4)),
@@ -307,19 +287,27 @@ def parse_srt(text):
     return blocks, errors
 
 
+def is_vtt_static(line):
+    """Recognize reserved VTT blocks without swallowing similarly named cue IDs."""
+    return line in ("STYLE", "REGION", "NOTE") or line.startswith(("NOTE ", "NOTE\t"))
+
+
 def parse_vtt(text):
     blocks, errors = [], []
     chunks = re.split(r"\n\s*\n", text.strip())
-    if not chunks or not chunks[0].lstrip("﻿").startswith("WEBVTT"):
-        errors.append("file does not start with a WEBVTT header")
+    header = chunks[0].lstrip("\ufeff") if chunks else ""
+    if (not re.fullmatch(r"WEBVTT(?:[ \t][^\n]*)?", header.split("\n")[0])
+            or "-->" in header):
+        errors.append("file does not start with a valid WEBVTT header")
     else:
         chunks = chunks[1:]
     for chunk in chunks:
         lines = [ln for ln in chunk.split("\n") if ln.strip() != ""]
         if not lines:
             continue
-        # NOTE/STYLE/REGION blocks are structure, not cues — preserved, not checked.
-        if lines[0].split()[0].upper() in ("NOTE", "STYLE", "REGION"):
+        if is_vtt_static(lines[0]):
+            if blocks and lines[0] in ("STYLE", "REGION"):
+                errors.append("VTT STYLE/REGION blocks must precede the first cue")
             continue
         time_pos = 0 if "-->" in lines[0] else 1
         if time_pos >= len(lines) or not VTT_TIME_RE.match(lines[time_pos]):
@@ -356,8 +344,9 @@ def parse_ass(text):
             continue
         if not line.lower().startswith("dialogue:"):
             continue  # Comment/Picture/Sound events are preserved, not checked
-        if not fields or "start" not in fields or "end" not in fields or "text" not in fields:
-            errors.append("Dialogue line before a usable Format line: %s" % line[:60])
+        if (not fields or not {"start", "end", "text"}.issubset(fields)
+                or fields[-1] != "text" or len(fields) != len(set(fields))):
+            errors.append("Dialogue line before a usable Format line (unique fields, Text last): %s" % line[:60])
             continue
         parts = line.split(":", 1)[1].split(",", len(fields) - 1)
         if len(parts) < len(fields):
@@ -382,7 +371,7 @@ def parse_ass(text):
             re.split(r"\\[Nn]", text_field),
             ass_fields=dict(zip(fields, parts)),
             ass_non_text=tuple(parts[i] for i, field in enumerate(fields)
-                               if field not in ("start", "end", "text"))))
+                               if field != "text")))
     if not blocks and not errors:
         errors.append("no Dialogue lines found in the [Events] section")
     return blocks, errors
@@ -395,48 +384,117 @@ def parse_file(path, fmt, require_utf8=False):
     return PARSERS[fmt](read_text(path, require_utf8=require_utf8))
 
 
-PROTECTED_MARKUP_RE = re.compile(r"<[^>]*>|\{\\[^}]*\}|\\[NnHh]")
+PROTECTED_MARKUP_RE = re.compile(
+    MARKUP_RE.pattern + r"|\\[NnHh]|&(?:#[0-9]+|#x[0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]*);"
+)
+
+
+def protected_markup_sequence(text):
+    return [match.group(0) for match in PROTECTED_MARKUP_RE.finditer(text)]
 
 
 def protected_markup_signature(text):
-    return Counter(PROTECTED_MARKUP_RE.findall(text))
+    return Counter(protected_markup_sequence(text))
 
 
-def vtt_structure(text):
+def block_markup(block):
+    # ASS line breaks have been split for readability; compare the original Text
+    # field so changing \\N to \\n (or moving one) is still detectable per event.
+    text = block.get("ass_fields", {}).get("text", "\n".join(block["lines"]))
+    return protected_markup_sequence(text)
+
+
+def markup_errors(text):
+    """Check paired formatting tags, allowing VTT's implicitly closed annotations."""
+    stack = []
+    for match in HTML_TAG_RE.finditer(text):
+        tag, name = match.group(0), match.group(1).lower()
+        if name not in {"b", "i", "u", "s", "font", "ruby", "rt"} or tag.endswith("/>"):
+            continue
+        if name in {"ruby", "rt"} and stack and stack[-1] == "rt":
+            stack.pop()  # Ruby text may end implicitly at the next ruby boundary.
+            if tag.startswith("</rt"):
+                continue
+        if tag.startswith("</"):
+            if not stack or stack.pop() != name:
+                return ["unbalanced or crossed subtitle markup near %s" % tag]
+        else:
+            stack.append(name)
+    return ["unclosed subtitle markup: %s" % ", ".join(stack)] if stack else []
+
+
+def vtt_structure(text, keep_cue_positions=False):
     chunks = re.split(r"\n\s*\n", text.strip())
     header = chunks[0].strip() if chunks else ""
     static = []
     for chunk in chunks[1:]:
         lines = [ln for ln in chunk.split("\n") if ln.strip()]
-        if lines and lines[0].split()[0].upper() in ("NOTE", "STYLE", "REGION"):
+        if lines and is_vtt_static(lines[0]):
             static.append(chunk.strip())
+        elif lines and keep_cue_positions:
+            static.append(None)
     return header, tuple(static)
 
 
 def ass_structure(text):
-    static = []
+    """Keep static lines and event positions; fields/markup are compared separately."""
+    static, in_events = [], False
     for line in text.split("\n"):
-        if not line.lstrip().lower().startswith("dialogue:"):
-            static.append(line)
+        if line.strip().startswith("["):
+            in_events = line.strip().lower() == "[events]"
+        if line.strip():
+            static.append(None if in_events and line.lstrip().lower().startswith("dialogue:") else line)
     return tuple(static)
 
 
 def overlapping_source_blocks(source_blocks, output_block):
-    """Return source events touched by an output interval, in source order."""
-    tolerance = 0.002
+    """Return source events with positive overlap, not just touching edges."""
     return [
         source for source in sorted(source_blocks, key=lambda block: block["start"])
-        if source["end"] > output_block["start"] + tolerance
-        and source["start"] < output_block["end"] - tolerance
+        if min(source["end"], output_block["end"])
+        - max(source["start"], output_block["start"]) > 1e-6
     ]
+
+
+def merge_intervals(intervals, join_gap=0.0):
+    """Union intervals, optionally grouping small gaps for the fidelity heuristic."""
+    merged = []
+    for start, end in sorted(intervals):
+        if end <= start:
+            continue
+        if merged and (start <= merged[-1][1] or start - merged[-1][1] < join_gap):
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return merged
+
+
+def uncovered_intervals(source_intervals, output_intervals, tolerance=0.002):
+    """Subtract output coverage from source coverage; nested ASS events are a union."""
+    missing, index = [], 0
+    for start, end in source_intervals:
+        cursor = start
+        while index < len(output_intervals) and output_intervals[index][1] <= start:
+            index += 1
+        for out_start, out_end in output_intervals[index:]:
+            if out_start >= end:
+                break
+            if out_start > cursor + tolerance:
+                missing.append((cursor, min(out_start, end)))
+            cursor = max(cursor, out_end)
+            if cursor >= end - tolerance:
+                break
+        if cursor < end - tolerance:
+            missing.append((cursor, end))
+    return missing
 
 
 def compare_structure(source_text, output_text, fmt, source_blocks, output_blocks, strict):
     """Check non-dialogue structure and protected markup without judging translation wording."""
     errors = []
     if fmt == "vtt":
-        source_header, source_static = vtt_structure(source_text)
-        output_header, output_static = vtt_structure(output_text)
+        source_header, source_static = vtt_structure(source_text, keep_cue_positions=strict)
+        output_header, output_static = vtt_structure(output_text, keep_cue_positions=strict)
         if source_header != output_header:
             errors.append("VTT header metadata changed")
         if source_static != output_static:
@@ -455,12 +513,17 @@ def compare_structure(source_text, output_text, fmt, source_blocks, output_block
             errors.append("VTT cue settings were removed")
         if any(settings not in source_settings for settings in output_settings):
             errors.append("VTT cue settings changed")
+        identified_sources = set()
         for position, output in enumerate(output_blocks, 1):
             covered = overlapping_source_blocks(source_blocks, output)
             if not covered:
                 continue
             first = covered[0]
-            if output.get("cue_id") != first.get("cue_id"):
+            # VTT identifiers are optional: keep an ID on the first split piece
+            # only, rather than making every legitimate split a duplicate-ID error.
+            expected_id = first.get("cue_id") if id(first) not in identified_sources else None
+            identified_sources.add(id(first))
+            if output.get("cue_id") != expected_id:
                 errors.append(
                     "VTT cue #%d identifier does not match the first covered source cue"
                     % position
@@ -473,24 +536,20 @@ def compare_structure(source_text, output_text, fmt, source_blocks, output_block
     elif fmt == "ass":
         if ass_structure(source_text) != ass_structure(output_text):
             errors.append("ASS non-Dialogue structure changed")
-        source_non_text = Counter(b.get("ass_non_text", ()) for b in source_blocks)
-        output_non_text = Counter(b.get("ass_non_text", ()) for b in output_blocks)
-        if any(output_non_text[key] > source_non_text[key] for key in output_non_text):
-            errors.append("ASS non-Text Dialogue fields changed")
-        for position, output in enumerate(output_blocks, 1):
-            covered = overlapping_source_blocks(source_blocks, output)
-            if not covered:
-                continue
-            if output.get("ass_non_text") != covered[0].get("ass_non_text"):
-                errors.append(
-                    "ASS event #%d non-Text fields do not match the first covered source event"
-                    % position
-                )
+        if len(source_blocks) != len(output_blocks):
+            errors.append("ASS Text-only translation cannot merge or drop events with non-Text fields")
+        for position, (source, output) in enumerate(zip(source_blocks, output_blocks), 1):
+            if source.get("ass_non_text") != output.get("ass_non_text"):
+                errors.append("ASS event #%d non-Text fields changed" % position)
 
     source_markup = protected_markup_signature(source_text)
     output_markup = protected_markup_signature(output_text)
     if source_markup != output_markup:
         errors.append("protected subtitle markup changed")
+    if strict or fmt == "ass":
+        for position, (source, output) in enumerate(zip(source_blocks, output_blocks), 1):
+            if block_markup(source) != block_markup(output):
+                errors.append("block #%d ordered protected markup changed" % position)
 
     if strict:
         if len(source_blocks) != len(output_blocks):
@@ -511,13 +570,37 @@ def compare_structure(source_text, output_text, fmt, source_blocks, output_block
     return errors
 
 
-def display_width(text, counting):
-    """Reading cost of a line, markup stripped.
+def visible_text(text):
+    """Decode displayed entities only after stripping real formatting tags."""
+    return html.unescape(MARKUP_RE.sub("", text)).replace(r"\h", " ").replace(r"\H", " ")
 
-    cjk: full-width chars cost 1, Latin letters/digits 0.5, punctuation free.
-    raw: every character costs 1, including spaces (conventional Latin cps).
+
+def strip_bracketed_originals(text):
+    """English parentheticals are fully exempt by house policy, not a width bug.
+
+    Repeating the substitution handles nested English annotations. Chinese
+    parenthetical payload remains visible; an annotation-only cue can cost zero.
     """
-    text = MARKUP_RE.sub("", text)
+    while True:
+        stripped = BRACKETED_ORIGINAL_RE.sub(
+            lambda match: "" if all(
+                not char.isalpha() or "LATIN" in unicodedata.name(char, "")
+                for char in (match.group(1) or match.group(2) or "")
+            ) else match.group(0), text
+        )
+        if stripped == text:
+            return stripped
+        text = stripped
+
+
+def display_width(text, counting):
+    """Configured reading/scan cost, not a pixel-width measurement.
+
+    English parentheticals are excluded from DU, CPS and scan-width budgets.
+    cjk: full-width chars cost 1, Latin letters/digits 0.5, punctuation free.
+    raw: every remaining displayed character costs 1, including internal spaces.
+    """
+    text = strip_bracketed_originals(visible_text(text))
     if counting == "raw":
         return float(len(text.strip()))
     total = 0.0
@@ -607,25 +690,31 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
         errors.append("no subtitle blocks found in %s" % out_path)
         return blocks, errors, warnings, notes
 
+    # ASS permits arbitrary event order and overlapping layers. Compare coverage
+    # chronologically without changing the event order used by Text-only checks.
+    latest_end = -1.0
+    for index, block in sorted(enumerate(blocks, 1), key=lambda item: item[1]["start"]):
+        if block["start"] < latest_end - 1e-6:
+            message = "#%d %s: overlaps an earlier block" % (index, block["time_line"])
+            if fmt == "ass":
+                warnings.append(message + " — fine for layered signs/dialogue")
+            else:
+                errors.append(message)
+        latest_end = max(latest_end, block["end"])
+
     for i, b in enumerate(blocks):
         pos = "#%d %s" % (i + 1, b["time_line"])
         if fmt == "srt" and b["index"] != i + 1:
             errors.append("%s: index is %s, expected %d" % (pos, b["index"], i + 1))
-        if i > 0 and b["start"] < blocks[i - 1]["start"] - 1e-6:
+        if fmt != "ass" and i > 0 and b["start"] < blocks[i - 1]["start"] - 1e-6:
             errors.append("%s: block is out of chronological order" % pos)
         text = " ".join(b["lines"]).strip()
-        if not MARKUP_RE.sub("", text).strip():
+        errors.extend("%s: %s" % (pos, error) for error in markup_errors(text))
+        if not visible_text(text).strip():
             errors.append("%s: empty subtitle text" % pos)
             continue
         if b["end"] <= b["start"]:
             errors.append("%s: end time is not after start time" % pos)
-        if i + 1 < len(blocks) and blocks[i + 1]["start"] < b["end"] - 1e-6:
-            msg = "%s: overlaps the next block" % pos
-            if fmt == "ass":
-                warnings.append(msg + " — fine if the events are layered signs/dialogue")
-            else:
-                errors.append(msg)
-
         dur = max(b["end"] - b["start"], 1e-6)
         width = display_width(text, cfg["counting"])
         cps = width / dur
@@ -638,6 +727,11 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
                 "%s: %.1f chars/s (limit %.1f for lang=%s), %.0f chars in %.2fs — %s"
                 % (pos, cps, cfg["max_cps"], cfg["lang"], width, dur, text[:30])
             )
+            if dur <= 2.5 and width >= 10.0:
+                warnings.append(
+                    "%s: short-duration overload (%.2fs carries %.0f chars, %.1f chars/s) — high risk of unreadable flash or collapsed/shifted timeline; verify audio alignment — %s"
+                    % (pos, dur, width, cps, text[:30])
+                )
         line_width = max((display_width(ln, cfg["counting"]) for ln in b["lines"]), default=0.0)
         if line_width > cfg["max_width"]:
             warnings.append(
@@ -652,7 +746,7 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
             )
         if cfg["final_punct"]:
             for ln in b["lines"]:
-                stripped = MARKUP_RE.sub("", ln).rstrip()
+                stripped = visible_text(ln).rstrip()
                 if stripped and stripped[-1] in DISALLOWED_TRAILING_PUNCT:
                     warnings.append("%s: line ends with '%s'" % (pos, stripped[-1]))
         if cfg.get("ban_exclamation"):
@@ -699,19 +793,19 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
             nxt_b = blocks[i + 1]
             gap = nxt_b["start"] - b["end"]
             # In a continuous subtitle span, check for fractured thought units.
-            if gap < cfg["pause_gap"]:
-                clean_text = MARKUP_RE.sub("", text).rstrip(" 。．,.;；：、，！？! ")
-                
-                # Check for dangling clausal connectives, prepositions, or governing verbs at tail
+            if fmt != "ass" and 0 <= gap < cfg["pause_gap"]:
+                clean_text = visible_text(text).rstrip(" 。．,.;；：、，！？! ")
+
+                # Suffix matches are review candidates, not proof of broken grammar.
                 for w in ALL_TAIL_DANGLING_ZH:
-                    if (clean_text.endswith(w) or clean_text.endswith(" " + w)) and clean_text != w:
+                    if clean_text.endswith(w):
                         warnings.append(
                             "%s: thought-unit boundary broken — ends on dangling %s '%s' before #%d; "
                             "move '%s' to the start of the next block or merge"
                             % (pos, "connector/verb", w, i + 2, w)
                         )
                         break
-                
+
                 # Check for stranded dependent particles at head of continuation block
                 nxt_text = " ".join(nxt_b["lines"]).strip()
                 nxt_clean = MARKUP_RE.sub("", nxt_text).lstrip()
@@ -740,6 +834,11 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
             errors.append("source: " + str(exc))
             return blocks, errors, warnings, notes
         errors.extend("source: " + e for e in src_parse_errors)
+        if not src:
+            errors.append("source has no subtitle blocks")
+        for index, block in enumerate(src, 1):
+            if block["end"] <= block["start"]:
+                errors.append("source block #%d: end time is not after start time" % index)
         errors.extend(compare_structure(src_text, out_text, fmt, src, blocks, cfg["strict"]))
         if cfg["strict"] and len(src) == len(blocks):
             for index, (source_block, output_block) in enumerate(zip(src, blocks), 1):
@@ -749,16 +848,13 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
         src_starts = {round(b["start"], 3) for b in src}
         src_ends = {round(b["end"], 3) for b in src}
         TOL = 0.002
-        # A source subtitle gap is only a pause proxy. Gaps at or above the configured
-        # threshold create separate spans; smaller gaps may be preserved or re-placed.
-        SMALL_GAP = cfg["pause_gap"]
-        segs = []
-        for s0, e0 in sorted((b["start"], b["end"]) for b in src if b["end"] > b["start"]):
-            if segs and s0 < segs[-1][1] + SMALL_GAP:
-                segs[-1][1] = max(segs[-1][1], e0)
-            else:
-                segs.append([s0, e0])
-        seg_pieces = [[] for _ in segs]
+        # Keep actual coverage separate from pause-proxy groups. A small source
+        # gap is still a gap, and overlapping ASS events must not create false gaps.
+        source_intervals = merge_intervals((b["start"], b["end"]) for b in src)
+        output_intervals = merge_intervals((b["start"], b["end"]) for b in blocks)
+        source_gaps = [(before[1], after[0])
+                       for before, after in zip(source_intervals, source_intervals[1:])]
+        segs = merge_intervals(source_intervals, cfg["pause_gap"])
         # Length fidelity credits each block to the spans it overlaps in proportion
         # to the overlap, so a block merged across a pause proxy is never
         # double-counted: span_costs[j] = [credited text volume, preview line].
@@ -777,9 +873,9 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
             overlaps = []  # (span index, seconds of overlap)
             for j, (ss, se) in enumerate(segs):
                 t = min(b["end"], se) - max(b["start"], ss)
-                if t > -TOL:
-                    overlaps.append((j, max(t, 0.0)))
-            if not overlaps:
+                if t > 1e-6:
+                    overlaps.append((j, t))
+            if not overlapping_source_blocks(src, b):
                 errors.append("%s: block lies outside source speech" % pos)
                 continue
             # A source subtitle gap is only a pause proxy — without audio it proves
@@ -788,8 +884,7 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
             # every stretch of source silence the block sits on is reported as a
             # warning, and the delivery report must give the merge a nameable reason.
             silence = []  # seconds covered of each inter-span source gap
-            for j in range(len(segs) - 1):
-                gap_start, gap_end = segs[j][1], segs[j + 1][0]
+            for gap_start, gap_end in source_gaps:
                 t = min(b["end"], gap_end) - max(b["start"], gap_start)
                 if t > TOL:
                     silence.append(t)
@@ -806,8 +901,6 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
             if b["end"] > segs[-1][1] + TOL:
                 warnings.append("%s: lingers %.2fs after source speech ends"
                                 % (pos, b["end"] - segs[-1][1]))
-            for j, _ in overlaps:
-                seg_pieces[j].append(b)
             vol = text_volume(block_text(b))
             share_total = sum(t for _, t in overlaps) or 1.0
             for j, t in overlaps:
@@ -821,36 +914,9 @@ def check(out_path, src_path, fmt, src_fmt, cfg):
             covered = [s for s in src if s["start"] >= b["start"] - TOL and s["end"] <= b["end"] + TOL]
             if len(covered) >= 3:
                 notes.append("%s: merges %d source blocks — re-audit each removed boundary" % (pos, len(covered)))
-        for j, pieces in enumerate(seg_pieces):
-            ss, se = segs[j]
-            span = "%s --> %s" % (fmt_time(ss), fmt_time(se))
-            if not pieces:
-                errors.append("speech span %s has no subtitles — its text was dropped" % span)
-                continue
-            pieces.sort(key=lambda b: b["start"])
-            if pieces[0]["start"] > ss + TOL:
-                errors.append("speech span %s: speech at the start is uncovered" % span)
-            if pieces[-1]["end"] < se - TOL:
-                errors.append("speech span %s: speech at the end is uncovered" % span)
-            source_gaps = []
-            source_in_span = sorted(
-                (b for b in src if b["start"] >= ss - TOL and b["end"] <= se + TOL),
-                key=lambda b: b["start"],
-            )
-            for source_before, source_after in zip(source_in_span, source_in_span[1:]):
-                gap_start, gap_end = source_before["end"], source_after["start"]
-                if TOL < gap_end - gap_start < cfg["pause_gap"]:
-                    source_gaps.append((gap_start, gap_end))
-            for a, b2 in zip(pieces, pieces[1:]):
-                gap_start, gap_end = a["end"], b2["start"]
-                gap = gap_end - gap_start
-                if gap > TOL and not any(
-                    abs(gap_start - allowed_start) <= TOL
-                    and abs(gap_end - allowed_end) <= TOL
-                    for allowed_start, allowed_end in source_gaps
-                ):
-                    errors.append("speech span %s: %.2fs of speech uncovered before %s"
-                                  % (span, gap, b2["time_line"]))
+        for start, end in uncovered_intervals(source_intervals, output_intervals, TOL):
+            errors.append("source speech %s --> %s: %.2fs uncovered"
+                          % (fmt_time(start), fmt_time(end), end - start))
         if new_edges:
             notes.append("%d block edges re-placed to fit target-language phrasing" % new_edges)
         fid_warnings, fid_notes = length_fidelity(segs, src, span_costs, cfg)
@@ -898,7 +964,22 @@ def main():
     ap.add_argument("--quiet", action="store_true", help="only print errors and the summary")
     args = ap.parse_args()
 
-    lang = args.lang.lower()
+    if args.strict and not args.source:
+        ap.error("--strict requires --source")
+    for field in ("max_cps", "max_width", "max_duration", "pad_factor", "drop_factor"):
+        value = getattr(args, field)
+        if value is not None and (not math.isfinite(value) or value <= 0):
+            ap.error("--%s must be finite and positive" % field.replace("_", "-"))
+    for field in ("min_duration", "pause_gap"):
+        value = getattr(args, field)
+        if not math.isfinite(value) or value < 0:
+            ap.error("--%s must be finite and non-negative" % field.replace("_", "-"))
+    if args.max_lines < 1 or args.min_duration > args.max_duration:
+        ap.error("--max-lines must be positive and min duration cannot exceed max duration")
+    if args.pad_factor <= 1 or not 0 < args.drop_factor < 1:
+        ap.error("--pad-factor must exceed 1 and --drop-factor must be between 0 and 1")
+
+    lang = args.lang.lower().replace("_", "-")
     try:
         profiles = load_language_profiles(args.lang_config)
     except ValueError as exc:
@@ -907,8 +988,8 @@ def main():
     cfg = {
         "lang": lang,
         "profile_code": profile_code,
-        "max_cps": args.max_cps if args.max_cps else profile["max_cps"],
-        "max_width": args.max_width if args.max_width else profile["max_width"],
+        "max_cps": args.max_cps if args.max_cps is not None else profile["max_cps"],
+        "max_width": args.max_width if args.max_width is not None else profile["max_width"],
         "counting": profile["counting"],
         "final_punct": profile["final_punctuation"] == "none",
         "ban_exclamation": profile.get("ban_exclamation", False),

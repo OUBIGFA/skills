@@ -42,6 +42,8 @@ if CURRENT_DIR not in sys.path:
 from core.fofa import (
     DEFAULT_PRESET,
     PRESET_QUERIES,
+    check_fofa_auth,
+    ensure_fofa_token,
     fetch_subscription_nodes,
     get_default_config_path,
     load_fofa_config,
@@ -93,6 +95,18 @@ def parse_args(argv=None):
                         help="合流目标配置路径 (Clash YAML / sing-box JSON): 搜索/测试完成后直接并入目标订阅底库")
     parser.add_argument("--insert", dest="insert_mode", action="store_true",
                         help="合流时的中间插入模式: 打破原有编号完全重排序并从 1 重新编号 (默认优先保留目标底库原节点及原有编号)")
+    parser.add_argument("--login", action="store_true",
+                        help="启动浏览器登录 FoFa/NOSEC 认证中心，自动捕获最新有效 Token 并回写至配置文件 (免除手动F12复制)")
+    parser.add_argument("--auto-login", "--auto-refresh", action="store_true",
+                        help="搜索前若检测到 Token 过期或不存在，自动尝试通过配置的账号密码或交互登录完成续期")
+    parser.add_argument("--username", "-u", default=None,
+                        help="FoFa / NOSEC 登录账号/邮箱 (优先于配置文件)")
+    parser.add_argument("--password", default=None,
+                        help="FoFa / NOSEC 登录密码 (优先于配置文件)")
+    parser.add_argument("--headless", action="store_true",
+                        help="登录时使用无头模式 (默认使用可视窗口模式以确保 Turnstile 人机验证顺利通过)")
+    parser.add_argument("--check-auth", "--auth-check", action="store_true",
+                        help="诊断 FoFa 官方 Key、Web Token 与 360 Quake Key 的可用状态、到期时间与配额")
     return parser.parse_args(argv)
 
 
@@ -106,18 +120,67 @@ def main(argv=None):
     cfg = load_fofa_config(args.config)
     cfg_src = cfg.get("_config_source") or "默认设置/环境变量"
     print(f"[*] 配置文件引用: {cfg_src}")
+
+    if args.username:
+        cfg["email"] = args.username
+    if args.password:
+        cfg["password"] = args.password
+    if args.proxy:
+        cfg["proxy"] = args.proxy
+    if args.timeout:
+        cfg["timeout"] = args.timeout
+
+    if args.check_auth:
+        print("[*] 正在执行测绘引擎鉴权凭据健康诊断...\n")
+        report = check_fofa_auth(cfg)
+        print("----------------- 凭证诊断结果 -----------------")
+        f_api = report.get("fofa_api", {})
+        f_api_status = f_api.get("status", "unknown").upper()
+        print(f"[FoFa 官方 API Key]   状态: {f_api_status:<10} 详情: {f_api.get('msg')}")
+
+        f_web = report.get("fofa_web", {})
+        f_web_status = f_web.get("status", "unknown").upper()
+        print(f"[FoFa Web 签名Token]  状态: {f_web_status:<10} 详情: {f_web.get('msg')}")
+        for t in f_web.get("tokens", []):
+            u_info = f"用户: {t.get('username')}" if t.get('username') else "未命名"
+            print(f"   -> Token #{t.get('index')} ({u_info}): {t.get('msg')}")
+
+        f_acc = report.get("fofa_account", {})
+        f_acc_status = f_acc.get("status", "unknown").upper()
+        print(f"[FoFa 自动登录凭据]  状态: {f_acc_status:<10} 详情: {f_acc.get('msg')}")
+
+        q_rep = report.get("quake", {})
+        q_status = q_rep.get("status", "unknown").upper()
+        print(f"[360 Quake 官方Key]   状态: {q_status:<10} 详情: {q_rep.get('msg')}")
+        print("------------------------------------------------\n")
+        return 0
+
+    if args.login:
+        from core.fofa_login import login_fofa_and_extract_token
+        ok, tok, msg = login_fofa_and_extract_token(
+            email=args.username or cfg.get("email"),
+            password=args.password or cfg.get("password"),
+            config_path=cfg.get("_config_source"),
+            proxy=cfg.get("proxy"),
+            headless=args.headless,
+            timeout=args.timeout or 60,
+            save_to_config=True
+        )
+        return 0 if ok else 1
+
+    # 自动续期检查：若指定了 --auto-login，或已配置账号密码且选用 fofa/all 引擎时，先调用 ensure_fofa_token 检查与续期
+    if args.engine in ("all", "fofa") and (args.auto_login or (cfg.get("email") and cfg.get("password"))):
+        ensure_fofa_token(cfg, auto_login=True, headless=args.headless, timeout=args.timeout or 60)
+
     print(f"[*] 选用检索引擎: {args.engine.upper()} (容错协同，自动去重)")
 
-    has_fofa = bool(cfg.get("token") or cfg.get("key"))
+    has_fofa = bool(cfg.get("token") or cfg.get("tokens_list") or cfg.get("key"))
     has_quake = bool(cfg.get("quake_key"))
 
     if not has_fofa and not has_quake:
         print("[!] 错误: 未检测到有效的 FoFa Token/Key 或 Quake Key 配置。")
         print(f"    请检查 {get_default_config_path()} 中的 key / token 或 quake_key。")
         return 1
-
-    if args.proxy:
-        cfg["proxy"] = args.proxy
     if args.timeout:
         cfg["timeout"] = args.timeout
 
