@@ -4,7 +4,7 @@ GitHub Gist 代理订阅搜索与节点提取模块 (core.gist)
 实现基于 GitHub Gist 的代理订阅主动检索与节点抓取能力。
 支持以独立 JSON 配置文件 (gist_config.json) 维护参数，
 采用方案 B (GitHub Fastly CDN Raw 直链免控拉取)，零风控、免 Token 频率限制，
-默认抓取 20 条最新有效目标，并严格过滤单源超过 200 节点的公开垃圾源。
+默认抓取 20 条最新有效目标，并严格过滤单源超过 300 节点的公开垃圾源。
 """
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
@@ -74,7 +74,7 @@ PRESET_GIST_QUERIES = {
 DEFAULT_GIST_PRESET = "residential"
 DEFAULT_TARGETS = 20
 DEFAULT_MAX_AGE_HOURS = 48
-DEFAULT_MAX_NODES_PER_SUB = 200
+DEFAULT_MAX_NODES_PER_SUB = 300
 DEFAULT_TIMEOUT = 12
 
 GIST_SEARCH_BASE_URL = "https://gist.github.com/search"
@@ -480,7 +480,7 @@ def fetch_gist_nodes(targets: List[Dict[str, Any]], config: Optional[Dict[str, A
     """
     利用方案 B (CDN Raw 直链免控拉取)，遍历所有目标 Gist 并解析出代理节点。
     支持自动展开 Gist 内嵌的 subscribes.txt 等直连机场订阅链接。
-    严格执行防污染契约：单源节点数超过上限 (默认 200) 时直接丢弃。
+    严格执行防污染契约：单源节点数超过上限 (默认 300) 时直接丢弃。
     """
     cfg = config or load_gist_config()
     proxy = cfg.get("proxy") or None

@@ -19,8 +19,8 @@ from typing import Any, Dict, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
-# Chrome 131 默认客户端提示头与标准化指纹头
-CHROME_CLIENT_HINTS = {
+# Chrome 131 基础通用客户端提示头
+CHROME_BASE_HINTS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -28,6 +28,12 @@ CHROME_CLIENT_HINTS = {
     "sec-ch-ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
     "sec-ch-ua-mobile": "?0",
     "sec-ch-ua-platform": '"Windows"',
+    "accept-language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+}
+
+# Chrome 131 默认网页导航提示头
+CHROME_NAVIGATE_HINTS = {
+    **CHROME_BASE_HINTS,
     "upgrade-insecure-requests": "1",
     "accept": (
         "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,"
@@ -37,8 +43,41 @@ CHROME_CLIENT_HINTS = {
     "sec-fetch-mode": "navigate",
     "sec-fetch-user": "?1",
     "sec-fetch-dest": "document",
-    "accept-language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
 }
+
+# 保持向后兼容历史调用
+CHROME_CLIENT_HINTS = dict(CHROME_NAVIGATE_HINTS)
+
+# Chrome 131 API/Fetch 提示头 (防止在 REST/JSON 请求中泄露 document 导航特征)
+CHROME_FETCH_HINTS = {
+    **CHROME_BASE_HINTS,
+    "accept": "*/*",
+    "sec-fetch-site": "same-origin",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-dest": "empty",
+}
+
+
+def build_chrome_headers(
+    mode: str = "navigate",
+    custom_headers: Optional[Dict[str, str]] = None
+) -> Dict[str, str]:
+    """构建情境感知 (Context-Aware) 的规范化 Chrome 131 请求头。
+
+    :param mode: 请求情境，'navigate' (默认 HTML 网页导航) 或 'fetch' / 'cors' (REST API / XHR 数据交互)
+    :param custom_headers: 自定义扩展或覆盖的请求头
+    :return: 规范合并后的请求头字典
+    """
+    m = (mode or "navigate").lower().strip()
+    if m in ("fetch", "cors", "api"):
+        headers = dict(CHROME_FETCH_HINTS)
+    else:
+        headers = dict(CHROME_NAVIGATE_HINTS)
+
+    if custom_headers:
+        for k, v in custom_headers.items():
+            headers[k] = v
+    return headers
 
 # Chrome 131 标准加密套件排序
 CHROME_CIPHER_SUITES = (
@@ -156,7 +195,8 @@ def request_streaming(
     json_data: Optional[Dict[str, Any]] = None,
     timeout: float = 4.0,
     max_body_bytes: int = 16384,
-    prefer_curl_cffi: bool = True
+    prefer_curl_cffi: bool = True,
+    mode: str = "navigate"
 ) -> StreamingResponse:
     """
     两阶段流式请求统一执行器。
@@ -166,14 +206,14 @@ def request_streaming(
     2. 检查响应头：若出现 cf-mitigated: challenge 或 Google /sorry/ 重定向，直接短路截断，0 KB Body 下载；
     3. 否则读取前 max_body_bytes (默认 16KB)，即刻中断流式连接并返回。
     """
-    req_headers = dict(CHROME_CLIENT_HINTS)
-    if headers:
-        req_headers.update(headers)
+    req_headers = build_chrome_headers(mode=mode, custom_headers=headers)
 
     body_payload: Optional[bytes] = None
     if json_data is not None:
         body_payload = json.dumps(json_data).encode("utf-8")
         req_headers.setdefault("Content-Type", "application/json")
+        if (mode or "").lower() in ("fetch", "cors", "api"):
+            req_headers.setdefault("accept", "application/json, text/plain, */*")
     elif isinstance(data, str):
         body_payload = data.encode("utf-8")
     elif isinstance(data, bytes):

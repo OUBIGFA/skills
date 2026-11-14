@@ -2,7 +2,7 @@
 """节点规范打标、命名与空号分配模块。"""
 import re
 from collections import defaultdict
-from .egress_geo import country_name_zh, flag_emoji, valid_reputation_score
+from .egress_geo import country_name_zh, flag_emoji, valid_reputation_score, is_ip_region_inconsistent, is_google_recognized_us
 from .renderer import sort_nodes_by_region_and_landing
 
 
@@ -26,9 +26,9 @@ def parse_existing_slot(name):
     """从节点名称中提取已有的数字序号，过滤 Key/Fast/AY 等干扰词。"""
     if not isinstance(name, str):
         return None
-    # 去除国旗与前缀标签
+    # 去除国旗与前缀标签 (包含美国节点专属的 Free 前缀)
     cleaned = re.sub(r'^(?:(?:[\U0001F1E6-\U0001F1FF]{2}|🏳️|\S+)\s*)', '', name.strip())
-    cleaned = re.sub(r'^(?:[❇✨♥️♥🏠]️?|\s+|Key|Fast)+', '', cleaned)
+    cleaned = re.sub(r'^(?:[❇✨♥️♥🏠]️?|\s+|Key|Fast|Free)+', '', cleaned)
     m = re.search(r'_(?:[A-Za-z]+_)?(\d+)(?:_|$)', cleaned)
     if not m:
         m = re.search(r'_(\d+)', cleaned)
@@ -36,7 +36,7 @@ def parse_existing_slot(name):
 
 
 _FLAG_RE = re.compile(r'^([\U0001F1E6-\U0001F1FF]{2}|🏳️?)\s*')
-_BADGES_RE = re.compile(r'^(?:[✨❇♥🏠]️?|Key|Fast)*')
+_BADGES_RE = re.compile(r'^(?:[✨❇♥🏠]️?|Key|Fast|Free)*')
 _CITY_SLOT_RE = re.compile(r'^(?:_([^_\d\s]+))?_(\d+)(?!\d)')
 
 
@@ -66,15 +66,16 @@ def parse_canonical_node(name):
 
 def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
                      is_high_quality=False, is_key=False, is_fast=False,
-                     is_landing=False, is_usai=False, media_details=None,
+                     is_landing=False, is_usai=False, is_goai=False, is_gui=False, media_details=None,
                      is_chromego=False, poison_tag=None, city="", is_iplc=False,
                      is_residential=False, has_res_suffix=False):
     """
     构造符合规范的节点名称:
     [国旗] [✨️] [🏠 / ♥️] [❇️] [Key/Fast] [国家][_城市]_[编号][IPLC/ISP后缀][落地后缀][流媒体后缀][来源后缀][污染标记]
     """
+    effective_goai = bool(is_goai or is_gui)
     if poison_tag:
-        ai_supported = comprehensive_sparkle = is_usai = is_high_quality = False
+        ai_supported = comprehensive_sparkle = is_usai = effective_goai = is_high_quality = False
     flag = flag_emoji(cc)
     cname = country_name_zh(cc)
 
@@ -91,14 +92,15 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
     if ai_supported:
         prefix_tags += "❇️"
     if is_key:
-        prefix_tags += "Key"
+        # 准则升级：只有带有 USAI 后缀的美国节点才改成 Free 前缀，其他符合 key 标准的美国节点继续用 Key 前缀
+        prefix_tags += "Free" if (cc == "US" and is_usai) else "Key"
     elif is_fast:
         prefix_tags += "Fast"
 
     # 2. 基础名称与编号
     country_part = f"{prefix_tags}{cname}{f'_{city}' if city else ''}_{slot}"
 
-    # 3. 后置后缀组合: 线路后缀 (IPLC / ISP) -> 落地 (_USAI / _Lnd) -> 流媒体 (_NF / _D+) -> 来源 (_ChromeGo) -> 污染标记
+    # 3. 后置后缀组合: 线路后缀 (IPLC / ISP) -> 落地 (_USAI / _GOAI / _Lnd) -> 流媒体 (_NF / _D+) -> 来源 (_ChromeGo) -> 污染标记
     # 规则：又是家宽又是专线的则只保留专线 (_IPLC)；低分家宽加上英文缩写 _ISP 后缀（不出现中文）
     if is_iplc:
         line_suffix = "_IPLC"
@@ -109,9 +111,11 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
 
     lnd_suffix = ""
     if is_landing:
-        lnd_suffix = "_USAI" if is_usai else "_Lnd"
+        lnd_suffix = "_USAI" if is_usai else ("_GOAI" if effective_goai else "_Lnd")
     elif is_usai:
         lnd_suffix = "_USAI"
+    elif effective_goai:
+        lnd_suffix = "_GOAI"
 
     md = media_details or {}
     media_suffix = ""
@@ -153,13 +157,14 @@ def tag_and_rename_nodes(results, resort=False):
 
     allocators = {cc: SlotAllocator(slots) for cc, slots in claimed_slots.items()}
 
-    # 2. 为未认领编号的节点分配该国最小空号
-    for r in results:
+    # 2. 为未认领编号的节点分配该国最小空号 (统一认定节点优先于地区不一致节点分配较小空号)
+    unassigned = [r for r in results if r["assigned_slot"] is None]
+    unassigned.sort(key=lambda r: (1 if is_ip_region_inconsistent(r) else 0, r.get("_orig_idx", 9999)))
+    for r in unassigned:
         cc = r.get("cc") or "UNK"
         if cc not in allocators:
             allocators[cc] = SlotAllocator()
-        if r["assigned_slot"] is None:
-            r["assigned_slot"] = allocators[cc].next_slot()
+        r["assigned_slot"] = allocators[cc].next_slot()
 
     # 3. 生成规范化名称并防止重名
     seen_names = set()
@@ -182,7 +187,8 @@ def tag_and_rename_nodes(results, resort=False):
         r["ai_supported"] = ai_sup
         orig_has_sparkle = bool("✨️" in orig or "✨" in orig or "✨️" in pname or "✨" in pname)
         orig_has_hq = bool("♥️" in orig or "♥" in orig)
-        orig_has_key = bool(re.search(r'(?i)\bkey(?![a-z])', orig))
+        is_us_node = (cc == "US" or bool(re.search(r'🇺🇸|美国|USA|\bUS\b', orig)) or bool(re.search(r'🇺🇸|美国|USA|\bUS\b', pname)))
+        orig_has_key = bool(re.search(r'(?i)\bkey(?![a-z])', orig) or (is_us_node and re.search(r'(?i)\bfree(?![a-z])', orig)))
         orig_has_fast = bool(re.search(r'(?i)\bfast(?![a-z])', orig))
         orig_has_nf = bool("_NF" in orig)
         orig_has_dp = bool("_D+" in orig)
@@ -253,8 +259,9 @@ def tag_and_rename_nodes(results, resort=False):
             is_key = bool(orig_has_key)
             is_fast = bool(orig_has_fast and not is_key)
 
-        # 流水线已实测判定直连/落地时以实测为准，不让原名里的 _Lnd/_USAI 覆盖本轮结果
+        # 流水线已实测判定直连/落地时以实测为准，不让原名里的 _Lnd/_USAI/_GOAI/_GUI 覆盖本轮结果
         orig_has_usai = bool("_USAI" in orig or "_USAI" in pname or r.get("is_usai"))
+        orig_has_goai = bool("_GOAI" in orig or "_GOAI" in pname or "_GUI" in orig or "_GUI" in pname or r.get("is_goai") or r.get("is_gui"))
         if isinstance(r.get("is_landing"), bool):
             is_landing = r["is_landing"]
         elif r.get("path") == "direct":
@@ -262,8 +269,24 @@ def tag_and_rename_nodes(results, resort=False):
         elif r.get("path") == "front":
             is_landing = True
         else:
-            is_landing = bool("_Lnd" in pname or (orig_has_usai and p.get("dialer-proxy")))
-        is_usai = bool(cc == "US" and ai_sup)
+            is_landing = bool("_Lnd" in pname or ((orig_has_usai or orig_has_goai) and p.get("dialer-proxy")))
+
+        # 检查 IP 属地是否统一认定
+        is_geo_inconsistent = is_ip_region_inconsistent(r)
+
+        # USAI 与 GOAI 判定规则:
+        # 准则：
+        # 1. 属地统一认定的美国 AI 节点 -> 正常授予 _USAI；
+        # 2. 属地判定存在不一致、但由谷歌认定为美国 IP 且具备 AI 能力的节点（不论多数决归属到哪个国家，如墨西哥、印尼等） -> 授予 _GOAI 后缀；
+        # 3. 属地不一致且非谷歌认定的节点，或不具备 AI 能力的节点 -> 严禁授予 _GOAI，亦不得授予 _USAI。
+        google_is_us = bool(is_google_recognized_us(r) or (orig_has_goai and not r.get("geo_decision")))
+        if not is_geo_inconsistent:
+            is_usai = bool(cc == "US" and ai_sup)
+            is_goai = False
+        else:
+            is_usai = False
+            is_goai = bool(google_is_us and ai_sup)
+        is_gui = is_goai
 
         is_cg = "_ChromeGo" in orig or "_ChromeGo" in pname
 
@@ -407,6 +430,8 @@ def tag_and_rename_nodes(results, resort=False):
             is_fast=is_fast,
             is_landing=is_landing,
             is_usai=is_usai,
+            is_goai=is_goai,
+            is_gui=is_goai,
             media_details=media_details,
             is_chromego=is_cg,
             poison_tag=poison_tag,
@@ -429,6 +454,8 @@ def tag_and_rename_nodes(results, resort=False):
                 is_fast=is_fast,
                 is_landing=is_landing,
                 is_usai=is_usai,
+                is_goai=is_goai,
+                is_gui=is_goai,
                 media_details=media_details,
                 is_chromego=is_cg,
                 poison_tag=poison_tag,
@@ -439,6 +466,7 @@ def tag_and_rename_nodes(results, resort=False):
             )
             r["assigned_slot"] = extra_slot
 
+        is_geo_inconsistent = is_ip_region_inconsistent(r)
         if "proxy" in r:
             p["name"] = new_name
             p["_is_key"] = is_key
@@ -446,6 +474,12 @@ def tag_and_rename_nodes(results, resort=False):
             p["_is_iplc"] = is_iplc
             p["_is_residential"] = is_res_hq
             p["_has_res_suffix"] = has_res_suf
+            p["_is_geo_inconsistent"] = is_geo_inconsistent
+            p["_is_usai"] = is_usai
+            p["_is_goai"] = is_goai
+            p["_is_gui"] = is_goai
+            if r.get("geo_decision"):
+                p["_geo_decision"] = r["geo_decision"]
             p["_key_score"] = r.get("key_score", 0.0)
             p["_ip_reputation"] = r.get("ip_reputation")
             p["_is_landing"] = is_landing
@@ -457,11 +491,21 @@ def tag_and_rename_nodes(results, resort=False):
             r["raw_node"]["_is_residential"] = is_res_hq
             r["raw_node"]["_has_res_suffix"] = has_res_suf
             r["raw_node"]["_is_landing"] = is_landing
+            r["raw_node"]["_is_geo_inconsistent"] = is_geo_inconsistent
+            r["raw_node"]["_is_usai"] = is_usai
+            r["raw_node"]["_is_goai"] = is_goai
+            r["raw_node"]["_is_gui"] = is_goai
+            if r.get("geo_decision"):
+                r["raw_node"]["_geo_decision"] = r["geo_decision"]
             if not is_landing:
                 r["raw_node"].pop("dialer-proxy", None)
 
         r["final_name"] = new_name
         r["slot"] = r["assigned_slot"]
+        r["is_geo_inconsistent"] = is_geo_inconsistent
+        r["is_usai"] = is_usai
+        r["is_goai"] = is_goai
+        r["is_gui"] = is_goai
         r["is_key"] = is_key
         r["is_fast"] = is_fast
         r["is_iplc"] = is_iplc

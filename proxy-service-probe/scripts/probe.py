@@ -209,7 +209,7 @@ def main():
 
     d = json.load(open(config, encoding='utf-8'))
     if 'outbounds' not in d:
-        print('未找到 outbounds，仅支持 sing-box 格式；Clash 配置请按 SKILL.md 适配解析层')
+        print('未找到 outbounds，仅支持 sing-box 格式；Clash 配置请先用 convert_dual.py 转为 sing-box JSON')
         sys.exit(1)
     nodes = [o for o in d['outbounds'] if o.get('type') in NODE_TYPES]
     if not nodes:

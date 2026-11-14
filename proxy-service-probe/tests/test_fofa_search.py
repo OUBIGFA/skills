@@ -193,10 +193,10 @@ proxies:
 
     @patch("core.fofa._make_request")
     def test_fetch_subscription_nodes_filters_oversized_sources(self, mock_request):
-        # 构造包含 205 个节点的庞大公开聚合配置
+        # 构造包含 305 个节点的庞大公开聚合配置
         nodes_list = [
             {"name": f"ss-{i}", "type": "ss", "server": f"10.0.0.{i%250}", "port": 1000 + i, "cipher": "aes-128-gcm", "password": "p"}
-            for i in range(205)
+            for i in range(305)
         ]
         import yaml
         large_yaml = yaml.safe_dump({"proxies": nodes_list})
@@ -205,13 +205,13 @@ proxies:
         mock_resp.text = large_yaml
         mock_request.return_value = mock_resp
 
-        # 默认限制 200 个，超过 200 个的订阅源应被丢弃
-        proxies_default = fetch_subscription_nodes(["http://aggregator.com"], config={"max_nodes_per_subscription": 200})
+        # 默认限制 300 个，超过 300 个的订阅源应被丢弃
+        proxies_default = fetch_subscription_nodes(["http://aggregator.com"], config={"max_nodes_per_subscription": 300})
         self.assertEqual(len(proxies_default), 0)
 
-        # 若显式放宽限制为 300，则应该被保留
-        proxies_relaxed = fetch_subscription_nodes(["http://aggregator.com"], max_nodes_per_sub=300)
-        self.assertEqual(len(proxies_relaxed), 205)
+        # 若显式放宽限制为 400，则应该被保留
+        proxies_relaxed = fetch_subscription_nodes(["http://aggregator.com"], max_nodes_per_sub=400)
+        self.assertEqual(len(proxies_relaxed), 305)
 
     @patch("core.fofa.search_all_targets")
     @patch("core.fofa.fetch_subscription_nodes")

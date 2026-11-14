@@ -121,7 +121,7 @@ def main():
     with open(os.path.join(workdir, 'latency_arbiter.json'), 'w', encoding='utf-8') as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
     print('\n仲裁数据已写入 latency_arbiter.json')
-    print('解读后将终裁写入 overrides.json（格式见 SKILL.md），再运行 rename.py')
+    print('解读后将终裁写入 overrides.json（格式见 references/egress-probing.md），再运行 rename.py')
 
 
 if __name__ == '__main__':

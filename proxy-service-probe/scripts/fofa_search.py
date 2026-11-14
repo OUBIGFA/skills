@@ -83,7 +83,7 @@ def parse_args(argv=None):
     parser.add_argument("--page-size", "--size", type=int, default=80, help="单页结果条数 (默认: 80)")
     parser.add_argument("--max-targets", type=int, default=None, help="最多抓取的订阅源数量 (默认全量抓取)")
     parser.add_argument("--max-nodes-per-sub", type=int, default=None,
-                        help="单订阅源节点数量上限 (默认: 200)，超过此上限的聚合源将被丢弃以防垃圾节点干扰")
+                        help="单订阅源节点数量上限 (默认: 300)，超过此上限的聚合源将被丢弃以防垃圾节点干扰")
     parser.add_argument("--timeout", type=int, default=None, help="HTTP 超时秒数 (默认使用配置文件中的值)")
     parser.add_argument("--proxy", default=None, help="本地 HTTP/SOCKS 代理地址 (如 http://127.0.0.1:3067)")
     parser.add_argument("--dry-run-targets", action="store_true",
@@ -170,7 +170,11 @@ def main(argv=None):
 
     # 自动续期检查：若指定了 --auto-login，或已配置账号密码且选用 fofa/all 引擎时，先调用 ensure_fofa_token 检查与续期
     if args.engine in ("all", "fofa") and (args.auto_login or (cfg.get("email") and cfg.get("password"))):
-        ensure_fofa_token(cfg, auto_login=True, headless=args.headless, timeout=args.timeout or 60)
+        auth_ok, auth_msg = ensure_fofa_token(cfg, auto_login=True, headless=args.headless, timeout=args.timeout or 60)
+        if not auth_ok:
+            print(f"[FoFa Auth] 提示: {auth_msg}")
+        else:
+            print(f"[FoFa Auth] {auth_msg}")
 
     print(f"[*] 选用检索引擎: {args.engine.upper()} (容错协同，自动去重)")
 

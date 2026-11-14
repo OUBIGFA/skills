@@ -16,6 +16,25 @@ class TestTLSFingerprint(unittest.TestCase):
         self.assertIsNotNone(ctx)
         self.assertTrue(is_curl_cffi_available())
 
+    def test_build_chrome_headers_modes(self):
+        from scripts.core.tls_fingerprint import build_chrome_headers
+
+        # 1. 默认导航模式 (navigate)
+        nav_headers = build_chrome_headers(mode="navigate")
+        self.assertEqual(nav_headers["sec-fetch-mode"], "navigate")
+        self.assertEqual(nav_headers["sec-fetch-dest"], "document")
+        self.assertEqual(nav_headers["sec-fetch-site"], "none")
+        self.assertEqual(nav_headers.get("upgrade-insecure-requests"), "1")
+        self.assertIn("text/html", nav_headers["accept"])
+
+        # 2. API / Fetch 模式 (fetch / cors)
+        api_headers = build_chrome_headers(mode="fetch", custom_headers={"origin": "https://chatgpt.com"})
+        self.assertEqual(api_headers["sec-fetch-mode"], "cors")
+        self.assertEqual(api_headers["sec-fetch-dest"], "empty")
+        self.assertEqual(api_headers["sec-fetch-site"], "same-origin")
+        self.assertNotIn("upgrade-insecure-requests", api_headers)
+        self.assertEqual(api_headers.get("origin"), "https://chatgpt.com")
+
     def test_streaming_response_properties(self):
         # 1. 模拟 Cloudflare 质询头短路
         resp1 = StreamingResponse(
@@ -75,6 +94,32 @@ class TestTLSFingerprint(unittest.TestCase):
         self.assertFalse(res.short_circuited)
         self.assertEqual(len(res.body_bytes), 8192)
         mock_resp.close.assert_called_once()
+
+    @patch("curl_cffi.requests.request")
+    def test_request_streaming_fetch_mode(self, mock_request):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"content-type": "application/json"}
+        mock_resp.iter_content.return_value = [b'{"ok": true}']
+        mock_request.return_value = mock_resp
+
+        res = request_streaming(
+            "POST",
+            "https://chatgpt.com/backend-api/sentinel/chat-requirements",
+            json_data={},
+            headers={"origin": "https://chatgpt.com"},
+            prefer_curl_cffi=True,
+            mode="fetch"
+        )
+        self.assertEqual(res.status_code, 200)
+        # 验证 curl_cffi 接收到的 headers
+        call_kwargs = mock_request.call_args[1]
+        sent_headers = call_kwargs["headers"]
+        self.assertEqual(sent_headers["sec-fetch-mode"], "cors")
+        self.assertEqual(sent_headers["sec-fetch-dest"], "empty")
+        self.assertEqual(sent_headers["sec-fetch-site"], "same-origin")
+        self.assertNotIn("upgrade-insecure-requests", sent_headers)
+        self.assertEqual(sent_headers["Content-Type"], "application/json")
 
 
 if __name__ == "__main__":

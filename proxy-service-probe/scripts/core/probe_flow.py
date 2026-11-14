@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack
 
 from .ai_probe import probe_all_ai
-from .egress_geo import flag_emoji, probe_egress, probe_geolocation
+from .egress_geo import flag_emoji, probe_egress, probe_geolocation, is_ip_region_inconsistent
 from .key_evaluator import is_front_capable, is_landing_role, pick_front_nodes, rank_front_candidates, select_key_nodes
 from .liveness import MAX_CHAIN_FRONTS, check_alive, check_alive_via_fronts, pick_chain_fronts, rank_chain_fronts
 from .media_probe import probe_all_media
@@ -173,6 +173,11 @@ def run_services(row, proxy_url, dims, runner_ips):
     node_proxies = {"http": proxy_url, "https": proxy_url}
     egress = probe_egress(node_proxies)
     exit_ip = egress["ipv4"]["ip"] or egress["ipv6"]["ip"]
+    if not exit_ip:
+        # 重试一次防抖：针对高延迟/高抖动优质节点（如跨国 Reality 握手超时）给予一次防抖复测
+        time.sleep(0.5)
+        egress = probe_egress(node_proxies, timeout=(4.0, 7.0))
+        exit_ip = egress["ipv4"]["ip"] or egress["ipv6"]["ip"]
     row["exit_ip"], row["egress"] = exit_ip, egress
     if not exit_ip:
         row["service_drop"] = ("未验证到公网出口" if row["path"] == "direct"
@@ -833,6 +838,7 @@ def report_row(r):
         "orig_name": r.get("orig_name"),
         "final_name": r.get("final_name"),
         "cc": r.get("cc"),
+        "is_geo_inconsistent": bool(is_ip_region_inconsistent(r)),
         "google_region": r.get("google_region"),
         "geo_decision": r.get("geo_decision"),
         "egress": r.get("egress"),

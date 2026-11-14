@@ -21,7 +21,13 @@ import requests
 import urllib3
 import yaml
 
-from core.parsers import load_proxies
+try:
+    from core.parsers import load_proxies
+except ImportError:
+    try:
+        from .parsers import load_proxies
+    except ImportError:
+        from scripts.core.parsers import load_proxies
 
 urllib3.disable_warnings()
 
@@ -153,7 +159,7 @@ def load_fofa_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "proxy": "",
         "page_size": 80,
         "timeout": 12,
-        "max_nodes_per_subscription": 200,
+        "max_nodes_per_subscription": 300,
         "default_query": PRESET_QUERIES[DEFAULT_PRESET],
         "quake_default_query": "",
         "_config_source": path
@@ -804,7 +810,7 @@ def fetch_subscription_nodes(targets: List[str], config: Optional[Dict[str, Any]
     """
     遍历获取各目标地址的代理订阅内容，解析并提取节点。
     使用 Clash/CFW 客户端 User-Agent 以获取最佳 YAML/Base64 订阅响应。
-    当单订阅源节点数量超过上限 (默认 200) 时自动丢弃，防范公开聚合低质垃圾源干扰。
+    当单订阅源节点数量超过上限 (默认 300) 时自动丢弃，防范公开聚合低质垃圾源干扰。
     """
     cfg = config or load_fofa_config()
     proxy = cfg.get("proxy") or None
@@ -812,7 +818,7 @@ def fetch_subscription_nodes(targets: List[str], config: Optional[Dict[str, Any]
         "User-Agent": SUBSCRIPTION_UA,
         "Accept": "*/*"
     }
-    limit = max_nodes_per_sub if max_nodes_per_sub is not None else int(cfg.get("max_nodes_per_subscription") or 200)
+    limit = max_nodes_per_sub if max_nodes_per_sub is not None else int(cfg.get("max_nodes_per_subscription") or 300)
 
     collected_proxies: List[Dict[str, Any]] = []
     crawl_list = targets[:max_targets] if max_targets else targets

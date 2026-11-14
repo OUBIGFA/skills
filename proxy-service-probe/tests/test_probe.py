@@ -1016,6 +1016,383 @@ class TestProxyServiceProbe(unittest.TestCase):
         self.assertIn("🏠", r4["final_name"])
         self.assertNotIn("_ISP", r4["final_name"])
 
+    def test_inconsistent_ip_region_ranks_lower_than_uniform_region_nodes(self):
+        """
+        所有IP地区判定中出现不一致性的，排序权重都要低一些：
+        比如谷歌的IP区域跟其他的不一样是以谷歌为准的，但该节点的排序权重要在获得统一IP区域认定的节点之后
+        （不论其服务测试能力如何，统一认定节点严格优先于存在分歧的节点）。
+        """
+        from core.egress_geo import is_ip_region_inconsistent
+        from core.renderer import sort_nodes_by_region_and_landing
+        from core.tagger import tag_and_rename_nodes
+
+        # 1. 基础判断逻辑校验
+        consistent_row = {
+            "geo_decision": {
+                "cc": "US", "google_cc": "US", "geoip_cc": "US", "conflict": False, "basis": "gemini_page"
+            }
+        }
+        self.assertFalse(is_ip_region_inconsistent(consistent_row))
+
+        # 谷歌判定为 US，但 GeoIP 判定为 JP（以谷歌为准兜底定国为 US）
+        inconsistent_google_fallback = {
+            "geo_decision": {
+                "cc": "US", "google_cc": "US", "geoip_cc": "JP", "conflict": True,
+                "basis": "google_fallback_gemini", "unknown_basis": "google_geoip_conflict",
+                "is_inconsistent": True
+            }
+        }
+        self.assertTrue(is_ip_region_inconsistent(inconsistent_google_fallback))
+
+        # 2. 排序权重校验（resort=True 下不论服务测试能力如何，统一认定优先）
+        # 节点 A: 获得统一认定，但能力较弱（仅 Fast，无全通，无 Key）
+        node_uniform_fast = {
+            "name": "🇺🇸 Fast美国_1",
+            "server": "node_uniform_fast",
+            "type": "vless",
+            "is_fast": True,
+            "geo_decision": {
+                "cc": "US", "google_cc": "US", "geoip_cc": "US", "conflict": False
+            }
+        }
+        # 节点 B: 谷歌与数据库冲突（以谷歌为准），但服务测试能力极强（✨️ 综合全通 + Key 优质跳板 + ❇️ AI）
+        node_inconsistent_sparkle_key = {
+            "name": "🇺🇸 ✨️❇️Key美国_2",
+            "server": "node_inconsistent_sparkle_key",
+            "type": "vless",
+            "_is_key": True,
+            "geo_decision": {
+                "cc": "US", "google_cc": "US", "geoip_cc": "JP", "conflict": True,
+                "basis": "google_fallback_gemini", "unknown_basis": "google_geoip_conflict"
+            }
+        }
+        # 节点 C: 谷歌与数据库冲突（以谷歌为准），家宽 🏠 节点
+        node_inconsistent_home = {
+            "name": "🇺🇸 🏠美国_3",
+            "server": "node_inconsistent_home",
+            "type": "vless",
+            "is_residential": True,
+            "geo_decision": {
+                "cc": "US", "google_cc": "US", "geoip_cc": "KR", "conflict": True,
+                "basis": "google_fallback_gemini", "unknown_basis": "google_geoip_conflict"
+            }
+        }
+        # 节点 D: 获得统一认定，普通机房节点无任何能力标签
+        node_uniform_plain = {
+            "name": "🇺🇸 美国_4",
+            "server": "node_uniform_plain",
+            "type": "vless",
+            "geo_decision": {
+                "cc": "US", "google_cc": "US", "geoip_cc": "US", "conflict": False
+            }
+        }
+        # 节点 E: 谷歌与数据库冲突（以谷歌为准），普通 Fast 节点
+        node_inconsistent_fast = {
+            "name": "🇺🇸 Fast美国_5",
+            "server": "node_inconsistent_fast",
+            "type": "vless",
+            "is_fast": True,
+            "geo_decision": {
+                "cc": "US", "google_cc": "US", "geoip_cc": "TW", "conflict": True,
+                "basis": "google_fallback_gemini", "unknown_basis": "google_geoip_conflict"
+            }
+        }
+
+        # 混合输入，检验重排序结果
+        batch = [node_inconsistent_sparkle_key, node_inconsistent_home, node_uniform_plain, node_inconsistent_fast, node_uniform_fast]
+        rendered = sort_nodes_by_region_and_landing(batch, resort=True)
+
+        # 统一认定组：node_uniform_fast (Fast 优于 plain) > node_uniform_plain
+        # 不一致组：node_inconsistent_sparkle_key (✨️Key 优于 🏠 优于 Fast) > node_inconsistent_home > node_inconsistent_fast
+        # 统一认定组的所有节点必须排在不一致组的所有节点之前！
+        server_order = [p["server"] for p in rendered]
+        self.assertEqual(server_order, [
+            "node_uniform_fast",
+            "node_uniform_plain",
+            "node_inconsistent_sparkle_key",
+            "node_inconsistent_home",
+            "node_inconsistent_fast"
+        ])
+        names = [p["name"] for p in rendered]
+        self.assertEqual(names, [
+            "🇺🇸 Fast美国_1",
+            "🇺🇸 美国_2",
+            "🇺🇸 ✨️❇️Key美国_3_GOAI",
+            "🇺🇸 🏠美国_4",
+            "🇺🇸 Fast美国_5"
+        ])
+
+        # 3. 在 tag_and_rename_nodes 补空号场景下：统一认定的新节点优先分配较小空号
+        r_inc = {
+            "proxy": {"name": "raw_inc", "type": "vless", "server": "inc", "port": 443},
+            "cc": "US",
+            "ai_supported": True,
+            "geo_decision": {
+                "cc": "US", "google_cc": "US", "geoip_cc": "HK", "conflict": True,
+                "basis": "google_fallback_gemini", "unknown_basis": "google_geoip_conflict"
+            }
+        }
+        r_uni = {
+            "proxy": {"name": "raw_uni", "type": "vless", "server": "uni", "port": 443},
+            "cc": "US",
+            "ai_supported": False,
+            "geo_decision": {
+                "cc": "US", "google_cc": "US", "geoip_cc": "US", "conflict": False
+            }
+        }
+        # 将不一致节点放在前面输入，验证是否仍能正确把较小编号分配给统一认定节点
+        results = [r_inc, r_uni]
+        tag_and_rename_nodes(results, resort=False)
+        self.assertEqual(r_uni["assigned_slot"], 1)
+        self.assertEqual(r_inc["assigned_slot"], 2)
+        self.assertIn("美国_1", r_uni["final_name"])
+        self.assertIn("美国_2", r_inc["final_name"])
+        # 且不一致节点不能授予 USAI，必须授予 GOAI
+        self.assertNotIn("_USAI", r_inc["final_name"])
+        self.assertIn("_GOAI", r_inc["final_name"])
+        self.assertFalse(r_inc["is_usai"])
+        self.assertTrue(r_inc["is_goai"])
+
+    def test_usai_denied_and_goai_granted_for_inconsistent_google_us_nodes(self):
+        """
+        验证用户准则：
+        1. IP 属地没有统一认定的都不能授予“USAI”后缀；
+        2. 只有谷歌认定的美国 IP 一律授予“GOAI”后缀（替换之前的“USAI”）；
+        3. 属地统一认定的美国 AI 节点正常授予“USAI”；
+        4. 配置渲染时，GOAI 节点进【✅ 解锁 AI】策略组，不进【✅ 解锁USAI】策略组；
+        5. 直连 GOAI 节点不沉底且不注入 dialer-proxy，落地 GOAI 节点沉底并注入 dialer-proxy。
+        """
+        from core.tagger import format_node_name, tag_and_rename_nodes
+        from core.renderer import sort_nodes_by_region_and_landing, render_clash_config
+
+        # 1. 命名格式函数 format_node_name 单元验证
+        name_uniform = format_node_name(cc="US", slot=1, ai_supported=True, is_usai=True, is_goai=False)
+        self.assertEqual(name_uniform, "🇺🇸 ❇️美国_1_USAI")
+
+        name_goai_direct = format_node_name(cc="US", slot=2, ai_supported=True, is_usai=False, is_goai=True, is_landing=False)
+        self.assertEqual(name_goai_direct, "🇺🇸 ❇️美国_2_GOAI")
+
+        name_goai_landing = format_node_name(cc="US", slot=3, ai_supported=True, is_usai=False, is_goai=True, is_landing=True)
+        self.assertEqual(name_goai_landing, "🇺🇸 ❇️美国_3_GOAI")
+
+        name_non_ai_landing = format_node_name(cc="US", slot=4, ai_supported=False, is_usai=False, is_goai=False, is_landing=True)
+        self.assertEqual(name_non_ai_landing, "🇺🇸 美国_4_Lnd")
+
+        # 2. 批量流水线打标 tag_and_rename_nodes 验证
+        batch = [
+            # 统一认定美国 AI 节点
+            {
+                "proxy": {"name": "old_uniform_usai", "type": "vmess", "server": "1.1.1.1", "port": 443},
+                "cc": "US",
+                "ai_supported": True,
+                "geo_decision": {"cc": "US", "google_cc": "US", "geoip_cc": "US", "conflict": False}
+            },
+            # 仅谷歌认定美国 AI 节点（存在属地分歧） -> 必须授予 GOAI，严禁授予 USAI
+            {
+                "proxy": {"name": "old_inconsistent_us", "type": "vmess", "server": "2.2.2.2", "port": 443},
+                "cc": "US",
+                "ai_supported": True,
+                "geo_decision": {
+                    "cc": "US", "google_cc": "US", "geoip_cc": "HK", "conflict": True,
+                    "basis": "google_fallback_gemini", "unknown_basis": "google_geoip_conflict"
+                }
+            },
+            # 原名字带有 _USAI 的旧节点，但本次实测发现属地不一致 -> 必须替换为 _GOAI
+            {
+                "proxy": {"name": "🇺🇸 ❇️美国_9_USAI_NF", "type": "vmess", "server": "3.3.3.3", "port": 443},
+                "cc": "US",
+                "ai_supported": True,
+                "media_details": {"nf": True},
+                "is_geo_inconsistent": True
+            },
+            # 误标 _GUI 的旧节点 -> 自动纠错规范化为 _GOAI
+            {
+                "proxy": {"name": "🇺🇸 ❇️美国_10_GUI", "type": "vmess", "server": "4.4.4.4", "port": 443},
+                "cc": "US",
+                "ai_supported": True,
+                "is_geo_inconsistent": True
+            },
+            # 属地不一致且 Google 认为美国，但无 AI 能力 -> 绝不给予 GOAI 亦不给予 USAI
+            {
+                "proxy": {"name": "old_inconsistent_no_ai", "type": "vmess", "server": "5.5.5.5", "port": 443},
+                "cc": "US",
+                "ai_supported": False,
+                "geo_decision": {
+                    "cc": "US", "google_cc": "US", "geoip_cc": "HK", "conflict": True
+                }
+            },
+            # 属地不一致且有 AI 能力，但 Google 认定的不是美国 (Google=HK, GeoIP=US) -> 绝不给予 GOAI 亦不给予 USAI
+            {
+                "proxy": {"name": "old_inconsistent_google_hk", "type": "vmess", "server": "6.6.6.6", "port": 443},
+                "cc": "US",
+                "ai_supported": True,
+                "geo_decision": {
+                    "cc": "US", "google_cc": "HK", "geoip_cc": "US", "conflict": True
+                }
+            }
+        ]
+
+        tag_and_rename_nodes(batch, resort=False)
+        by_srv = {r["proxy"]["server"]: r for r in batch}
+        uniform_node = by_srv["1.1.1.1"]
+        inconsistent_node = by_srv["2.2.2.2"]
+        replaced_node = by_srv["3.3.3.3"]
+        gui_fixed_node = by_srv["4.4.4.4"]
+        no_ai_node = by_srv["5.5.5.5"]
+        google_hk_node = by_srv["6.6.6.6"]
+
+        # 统一认定节点验证
+        self.assertTrue(uniform_node["is_usai"])
+        self.assertFalse(uniform_node["is_goai"])
+        self.assertIn("_USAI", uniform_node["final_name"])
+        self.assertNotIn("_GOAI", uniform_node["final_name"])
+
+        # 仅谷歌认定节点验证
+        self.assertFalse(inconsistent_node["is_usai"])
+        self.assertTrue(inconsistent_node["is_goai"])
+        self.assertNotIn("_USAI", inconsistent_node["final_name"])
+        self.assertIn("_GOAI", inconsistent_node["final_name"])
+
+        # 旧 _USAI 节点降级替换验证
+        self.assertFalse(replaced_node["is_usai"])
+        self.assertTrue(replaced_node["is_goai"])
+        self.assertNotIn("_USAI", replaced_node["final_name"])
+        self.assertIn("_GOAI", replaced_node["final_name"])
+        self.assertIn("_NF", replaced_node["final_name"])
+
+        # 旧 _GUI 纠错验证
+        self.assertFalse(gui_fixed_node["is_usai"])
+        self.assertTrue(gui_fixed_node["is_goai"])
+        self.assertNotIn("_GUI", gui_fixed_node["final_name"])
+        self.assertIn("_GOAI", gui_fixed_node["final_name"])
+
+        # 无 AI 能力节点验证：不具备原 USAI 能力，绝不授予 GOAI，也不授予 USAI
+        self.assertFalse(no_ai_node["is_usai"])
+        self.assertFalse(no_ai_node["is_goai"])
+        self.assertNotIn("_USAI", no_ai_node["final_name"])
+        self.assertNotIn("_GOAI", no_ai_node["final_name"])
+
+        # 非 Google 认定美国节点验证：Google=HK，非谷歌认定美国 IP，绝不授予 GOAI，也不授予 USAI
+        self.assertFalse(google_hk_node["is_usai"])
+        self.assertFalse(google_hk_node["is_goai"])
+        self.assertNotIn("_USAI", google_hk_node["final_name"])
+        self.assertNotIn("_GOAI", google_hk_node["final_name"])
+
+        # 3. 排序与策略组渲染验证
+        render_batch = [
+            {"name": "🇺🇸 ❇️美国_1_USAI", "type": "vmess", "server": "1.1.1.1", "port": 443, "path": "direct", "is_landing": False},
+            {"name": "🇺🇸 ❇️美国_2_GOAI", "type": "vmess", "server": "2.2.2.2", "port": 443, "path": "direct", "is_landing": False, "is_geo_inconsistent": True},
+            {"name": "🇺🇸 ❇️美国_3_GOAI", "type": "vmess", "server": "3.3.3.3", "port": 443, "path": "front", "is_landing": True, "is_geo_inconsistent": True},
+        ]
+
+        sorted_nodes = sort_nodes_by_region_and_landing(render_batch, resort=True)
+        sorted_names = [n["name"] for n in sorted_nodes]
+
+        # 统一认定直连 (USAI) > 判定不一致直连 (GOAI) > 判定不一致落地 (GOAI 沉底)
+        self.assertEqual(sorted_names[0], "🇺🇸 ❇️美国_1_USAI")
+        self.assertEqual(sorted_names[1], "🇺🇸 ❇️美国_2_GOAI")
+        self.assertEqual(sorted_names[2], "🇺🇸 ❇️美国_3_GOAI")
+
+        cfg = render_clash_config(sorted_nodes)
+        p_by_name = {p["name"]: p for p in cfg["proxies"]}
+
+        # 直连 GOAI 不注入 dialer-proxy，落地 GOAI 注入 dialer-proxy
+        self.assertNotIn("dialer-proxy", p_by_name["🇺🇸 ❇️美国_1_USAI"])
+        self.assertNotIn("dialer-proxy", p_by_name["🇺🇸 ❇️美国_2_GOAI"])
+        self.assertEqual(p_by_name["🇺🇸 ❇️美国_3_GOAI"].get("dialer-proxy"), "🛡️ Front前置")
+
+        # 策略组校验:
+        # 【✅ 解锁 AI】包含 USAI 和 GOAI 节点 (均有 ❇️)
+        # 【✅ 解锁USAI】仅包含真正的 USAI 节点，不包含 GOAI 节点
+        groups = {g["name"]: g for g in cfg["proxy-groups"]}
+        ai_proxies = groups["✅ 解锁 AI"]["proxies"]
+        usai_proxies = groups["✅ 解锁USAI"]["proxies"]
+        us_proxies = groups["🇺🇸 美国节点"]["proxies"]
+
+        self.assertIn("🇺🇸 ❇️美国_1_USAI", ai_proxies)
+        self.assertIn("🇺🇸 ❇️美国_2_GOAI", ai_proxies)
+        self.assertIn("🇺🇸 ❇️美国_3_GOAI", ai_proxies)
+
+        self.assertIn("🇺🇸 ❇️美国_1_USAI", usai_proxies)
+        self.assertNotIn("🇺🇸 ❇️美国_2_GOAI", usai_proxies)
+        self.assertNotIn("🇺🇸 ❇️美国_3_GOAI", usai_proxies)
+
+        self.assertIn("🇺🇸 ❇️美国_1_USAI", us_proxies)
+        self.assertIn("🇺🇸 ❇️美国_2_GOAI", us_proxies)
+        self.assertIn("🇺🇸 ❇️美国_3_GOAI", us_proxies)
+
+    def test_us_nodes_use_free_prefix_and_inherit_key_weights(self):
+        """测试准则升级：只有具备 USAI 后缀的美国节点才将 Key 改为 Free 前缀，其他符合 key 标准的美国节点继续使用 Key 前缀。"""
+        from scripts.core.tagger import format_node_name, tag_and_rename_nodes, parse_canonical_node
+        from scripts.core.renderer import _is_key, renumber_node_tag, sort_nodes_by_region_and_landing, render_clash_config
+
+        # 1. format_node_name: 具备 USAI 后缀的美国节点写 Free，其余美国 Key 节点与非美 Key 节点写 Key
+        us_usai_key = format_node_name(cc="US", slot=1, is_key=True, is_usai=True)
+        us_plain_key = format_node_name(cc="US", slot=1, is_key=True, is_usai=False)
+        jp_key_name = format_node_name(cc="JP", slot=1, is_key=True, is_usai=False)
+        self.assertIn("Free美国", us_usai_key)
+        self.assertNotIn("Key美国", us_usai_key)
+        self.assertIn("Key美国", us_plain_key)
+        self.assertNotIn("Free美国", us_plain_key)
+        self.assertIn("Key日本", jp_key_name)
+        self.assertNotIn("Free日本", jp_key_name)
+
+        # 2. parse_canonical_node 能够正确识别 Free 前缀
+        canon = parse_canonical_node(us_usai_key)
+        self.assertIsNotNone(canon)
+        self.assertEqual(canon["cc"], "US")
+        self.assertEqual(canon["slot"], 1)
+
+        # 3. renumber_node_tag: 只有带有 USAI 的美国节点 Key 改 Free，其余保留 Key
+        renamed_usai = renumber_node_tag("🇺🇸 ✨️♥️❇️Key美国_1_USAI_NF_D+", slot=1)
+        self.assertEqual(renamed_usai, "🇺🇸 ✨️♥️❇️Free美国_1_USAI_NF_D+")
+
+        renamed_non_usai = renumber_node_tag("🇺🇸 ❇️Key美国_2_GOAI", slot=2, is_inconsistent=True, is_google_us=True)
+        self.assertEqual(renamed_non_usai, "🇺🇸 ❇️Key美国_2_GOAI")
+
+        renamed_plain = renumber_node_tag("🇺🇸 Key美国_3_NF", slot=3)
+        self.assertEqual(renamed_plain, "🇺🇸 Key美国_3_NF")
+
+        # 4. _is_key 判定继承
+        us_free_proxy = {"name": "🇺🇸 ❇️Free美国_1", "type": "vmess", "server": "1.1.1.1", "port": 443, "path": "direct"}
+        us_free_lnd = {"name": "🇺🇸 ❇️Free美国_2_Lnd", "type": "vmess", "server": "2.2.2.2", "port": 443, "path": "front", "is_landing": True}
+        self.assertTrue(_is_key(us_free_proxy))
+        self.assertFalse(_is_key(us_free_lnd))  # 落地节点绝不作前置
+
+        # 5. 排序权重继承：Free 优先于 Fast
+        batch = [
+            {"name": "🇺🇸 Fast美国_1", "type": "vmess", "server": "10.0.0.1", "port": 443, "path": "direct"},
+            {"name": "🇺🇸 Free美国_2_USAI", "type": "vmess", "server": "10.0.0.2", "port": 443, "path": "direct"},
+            {"name": "🇺🇸 美国_3", "type": "vmess", "server": "10.0.0.3", "port": 443, "path": "direct"}
+        ]
+        sorted_nodes = sort_nodes_by_region_and_landing(batch, resort=True)
+        sorted_names = [n["name"] for n in sorted_nodes]
+        self.assertEqual(sorted_names[0], "🇺🇸 Free美国_1_USAI")
+        self.assertEqual(sorted_names[1], "🇺🇸 Fast美国_2")
+        self.assertEqual(sorted_names[2], "🇺🇸 美国_3")
+
+        # 6. 策略组渲染：Free 美国节点正常进入 Front前置 和 Fast自动选择
+        cfg = render_clash_config(sorted_nodes)
+        groups = {g["name"]: g for g in cfg["proxy-groups"]}
+        self.assertIn("🇺🇸 Free美国_1_USAI", groups["🛡️ Front前置"]["proxies"])
+        self.assertIn("🇺🇸 Free美国_1_USAI", groups["⚡ Fast自动选择"]["proxies"])
+
+    def test_non_us_node_with_google_us_and_ai_gets_goai_suffix(self):
+        """测试原美国节点被多数决裁定为墨西哥（或其它非美地区），若谷歌判定为美国且具备 AI 解锁能力，必须授予 _GOAI 后缀。"""
+        node_mx_google_us = {
+            "name": "🇲🇽 Fast墨西哥_1",
+            "server": "mx_node",
+            "type": "vless",
+            "is_fast": True,
+            "ai_supported": True,
+            "geo_decision": {
+                "cc": "MX", "google_cc": "US", "geoip_cc": "MX", "conflict": True,
+                "is_inconsistent": True, "basis": "majority_vote"
+            }
+        }
+        res = tag_and_rename_nodes([{"proxy": node_mx_google_us, "cc": "MX", "is_fast": True, "ai_supported": True, "geo_decision": node_mx_google_us["geo_decision"]}], resort=True)
+        self.assertEqual(res[0]["final_name"], "🇲🇽 ❇️Fast墨西哥_1_GOAI")
+
 
 if __name__ == "__main__":
     unittest.main()

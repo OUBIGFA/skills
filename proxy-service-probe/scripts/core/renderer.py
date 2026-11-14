@@ -144,27 +144,33 @@ def _is_landing(p):
         return True
     if "_Lnd" in name:
         return True
-    # 规则升级：有 USAI 后缀但不是落地节点而是直连节点的不作为落地，不注入 dialer-proxy，也不沉底
-    if "_USAI" in name:
+    # 规则升级：有 USAI / GOAI / GUI 后缀但不是落地节点而是直连节点的不作为落地，不注入 dialer-proxy，也不沉底
+    if "_USAI" in name or "_GOAI" in name or "_GUI" in name:
         if p.get("path") == "direct" or p.get("is_landing") is False or p.get("_is_landing") is False:
             return False
         return True
-    # 旧 detour 可能残留在 Key 直连节点上，不能借此将前置节点链回自身。
-    if p.get("_is_key") is True or re.search(r'(?i)\bkey(?![a-z])', name):
+    # 旧 detour 可能残留在 Key / Free 直连节点上，不能借此将前置节点链回自身。
+    is_us = bool(re.search(r"🇺🇸|美国|USA|\bUS\b", name))
+    if p.get("_is_key") is True or re.search(r'(?i)\bkey(?![a-z])', name) or (is_us and re.search(r'(?i)\bfree(?![a-z])', name)):
         return False
     return bool(p.get("dialer-proxy") or p.get("detour"))
 
 
 def _is_key(p):
-    """判定是否为 Key 优质前置跳板节点 (直连强加密且测速达标)；落地节点即使带 Key 标记也不作前置，杜绝前置组自环。"""
+    """判定是否为 Key / Free 优质前置跳板节点 (直连强加密且测速达标)；落地节点即使带 Key/Free 标记也不作前置，杜绝前置组自环。"""
     if _is_landing(p):
         return False
     name = p.get("name") or p.get("tag") or ""
-    return p.get("_is_key") is True or "Key" in name
+    if p.get("_is_key") is True or "Key" in name:
+        return True
+    # 美国节点以 Free 替换 Key，继承 Key 前缀的所有权重与地位
+    if re.search(r"🇺🇸|美国|USA|\bUS\b", name) and re.search(r"(?i)\bfree(?![a-z])", name):
+        return True
+    return False
 
 
-def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential=None, has_res_suffix=None):
-    """根据目标编号重构节点名称（保留已有能力徽章、前缀与后缀，且 IPLC 后缀排在第一梯队，家宽高分使用 🏠 前缀徽章，低分使用 _ISP 后缀，若是专线则只保留专线）。"""
+def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential=None, has_res_suffix=None, is_inconsistent=False, is_google_us=None):
+    """根据目标编号重构节点名称（保留已有能力徽章、前缀与后缀，且 IPLC 后缀排在第一梯队，家宽高分使用 🏠 前缀徽章，低分使用 _ISP 后缀，若是专线则只保留专线；属地不一致的美国节点严禁 USAI 并替换为 GUI）。"""
     flag_match = re.search(r'^([\U0001F1E6-\U0001F1FF]{2}|🏳️|\U0001F3F3\uFE0F?)\s*', old_name)
     flag = flag_match.group(0) if flag_match else ""
     rest = old_name[len(flag):]
@@ -172,7 +178,7 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
     sparkle = bool("✨️" in rest or "✨" in rest)
     ai = bool("❇️" in rest or "❇" in rest)
     is_polluted = bool("_⚠️" in rest)
-    hq = bool(is_hq and not is_polluted)
+    hq = bool((is_hq or "♥️" in rest or "♥" in rest) and not is_polluted)
     has_iplc = bool(is_iplc or re.search(r'(?i)iplc|专线', old_name))
     res_candidate = bool("🏠" in rest or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', old_name))
 
@@ -205,8 +211,10 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
                 has_res = res_candidate
                 has_res_suf = False
 
-    key = bool(re.search(r'(?i)\bkey(?![a-z])', rest))
+    is_us = bool(re.search(r'🇺🇸|美国|USA|\bUS\b', old_name))
+    key = bool(re.search(r'(?i)\bkey(?![a-z])', rest) or (is_us and re.search(r'(?i)\bfree(?![a-z])', rest)))
     fast = bool(re.search(r'(?i)\bfast(?![a-z])', rest))
+    has_usai = bool(re.search(r'(?i)(?:^|_)usai(?=_|$)', old_name)) and not is_inconsistent
 
     prefix = ""
     if sparkle:
@@ -218,11 +226,12 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
     if ai:
         prefix += "❇️"
     if key:
-        prefix += "Key"
+        # 准则升级：只有带有 USAI 后缀的美国节点才改成 Free 前缀，其他符合 key 标准的美国节点继续用 Key 前缀
+        prefix += "Free" if (is_us and has_usai) else "Key"
     elif fast:
         prefix += "Fast"
 
-    cleaned_rest = re.sub(r'^(?:[✨❇️♥️♥🏠]️?|\s+|Key|Fast)+', '', rest, flags=re.I)
+    cleaned_rest = re.sub(r'^(?:[✨❇️♥️♥🏠]️?|\s+|Key|Fast|Free)+', '', rest, flags=re.I)
     m = re.search(r'^(.*?)_(\d+)(.*)$', cleaned_rest)
     if m:
         country = m.group(1)
@@ -230,12 +239,18 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
         country = re.sub(r'(?i)(?:^|_)?(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)*(?:双isp|家宽|住宅|residential)+(?=_|$)?', '', country).strip('_')
         country = re.sub(r'(?i)(?:^|_)?(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)(?=_|$)', '', country).strip('_')
         raw_suffix = m.group(3)
-        clean_suffix = re.sub(r'(?:✨\uFE0F?|❇\uFE0F?|♥\uFE0F?|🏠\uFE0F?|\bKey\b|\bFast\b)', '', raw_suffix, flags=re.I).strip()
+        clean_suffix = re.sub(r'(?:✨\uFE0F?|❇\uFE0F?|♥\uFE0F?|🏠\uFE0F?|\bKey\b|\bFast\b|\bFree\b)', '', raw_suffix, flags=re.I).strip()
         clean_suffix = re.sub(r'(?i)(?:^|_)iplc(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'(?:^|_)专线\d*(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:isp|res|家宽)(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)*(?:双isp|家宽|住宅|residential)+(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)(?=_|$)', '', clean_suffix)
+        if is_inconsistent:
+            if is_google_us is not False:
+                clean_suffix = re.sub(r'(?i)(?:^|_)usai(?=_|$)', '_GOAI', clean_suffix)
+                clean_suffix = re.sub(r'(?i)(?:^|_)gui(?=_|$)', '_GOAI', clean_suffix)
+            else:
+                clean_suffix = re.sub(r'(?i)(?:^|_)(?:usai|goai|gui)(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'_+', '_', clean_suffix).strip('_')
         prefix_suf = "_IPLC" if has_iplc else ("_ISP" if has_res_suf else "")
         final_suf = f"{prefix_suf}_{clean_suffix}" if (prefix_suf and clean_suffix) else (prefix_suf or (f"_{clean_suffix}" if clean_suffix else ""))
@@ -252,6 +267,12 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:isp|res|家宽)(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)*(?:双isp|家宽|住宅|residential)+(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)(?=_|$)', '', clean_suffix)
+        if is_inconsistent:
+            if is_google_us is not False:
+                clean_suffix = re.sub(r'(?i)(?:^|_)usai(?=_|$)', '_GOAI', clean_suffix)
+                clean_suffix = re.sub(r'(?i)(?:^|_)gui(?=_|$)', '_GOAI', clean_suffix)
+            else:
+                clean_suffix = re.sub(r'(?i)(?:^|_)(?:usai|goai|gui)(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'_+', '_', clean_suffix).strip('_')
         prefix_suf = "_IPLC" if has_iplc else ("_ISP" if has_res_suf else "")
         final_suf = f"{prefix_suf}_{clean_suffix}" if (prefix_suf and clean_suffix) else (prefix_suf or (f"_{clean_suffix}" if clean_suffix else ""))
@@ -275,7 +296,7 @@ def sort_nodes_by_region_and_landing(items, resort=False):
     if not items:
         return []
 
-    from .egress_geo import CATEGORY_ORDER, valid_reputation_score
+    from .egress_geo import CATEGORY_ORDER, valid_reputation_score, is_ip_region_inconsistent, is_google_recognized_us
 
     def _get_name(item):
         if isinstance(item, dict):
@@ -305,7 +326,7 @@ def sort_nodes_by_region_and_landing(items, resort=False):
             name = _get_name(item)
             if '_Lnd' in name:
                 return True
-            if '_USAI' in name:
+            if '_USAI' in name or '_GOAI' in name or '_GUI' in name:
                 if item.get('path') == 'direct' or item.get('is_landing') is False or item.get('_is_landing') is False:
                     return False
                 if isinstance(proxy, dict) and (proxy.get('path') == 'direct' or proxy.get('is_landing') is False or proxy.get('_is_landing') is False):
@@ -404,8 +425,8 @@ def sort_nodes_by_region_and_landing(items, resort=False):
         name = _get_name(item)
         if _is_res(item, name) or _has_res_suffix(item, name):
             return False
-        # 规则升级：有 USAI 后缀但不是落地节点而是直连节点的不进行沉底，在地区主排序池中正常排位
-        if '_USAI' in name and not ('_Lnd' in name):
+        # 规则升级：有 USAI / GOAI / GUI 后缀但不是落地节点而是直连节点的不进行沉底，在地区主排序池中正常排位
+        if ('_USAI' in name or '_GOAI' in name or '_GUI' in name) and not ('_Lnd' in name):
             if isinstance(item, dict):
                 if item.get('path') == 'direct' or item.get('is_landing') is False or item.get('_is_landing') is False:
                     return False
@@ -417,23 +438,29 @@ def sort_nodes_by_region_and_landing(items, resort=False):
     def _reputation(item):
         if not isinstance(item, dict):
             return {}
+        p_obj = item.get('proxy')
+        p_dict = p_obj if isinstance(p_obj, dict) else {}
+        r_obj = item.get('raw_node')
+        r_dict = r_obj if isinstance(r_obj, dict) else {}
         return (item.get('ip_reputation') or item.get('_ip_reputation') or
-                (item.get('proxy') or {}).get('_ip_reputation') or
-                (item.get('raw_node') or {}).get('_ip_reputation') or {})
+                p_dict.get('_ip_reputation') or
+                r_dict.get('_ip_reputation') or {})
 
     def _is_hq(item, name):
         # 送中/受限地区污染节点不授予 ♥️，与打标层 format_node_name 保持一致
         if '_⚠️' in name:
             return False
         if isinstance(item, dict):
-            shield_det = item.get("shield_details") or (item.get("proxy") or {}).get("_shield_details") or {}
+            p_obj = item.get("proxy")
+            p_dict = p_obj if isinstance(p_obj, dict) else {}
+            shield_det = item.get("shield_details") or p_dict.get("_shield_details") or {}
             waf_eval = shield_det.get("waf_evaluation") or {}
             if (
                 shield_det.get("any_cf_mitigated")
                 or waf_eval.get("any_cf_mitigated")
                 or any(p.get("cf_mitigated") for p in (waf_eval.get("probes") or {}).values())
                 or item.get("any_cf_mitigated")
-                or (item.get("proxy") or {}).get("_any_cf_mitigated")
+                or p_dict.get("_any_cf_mitigated")
             ):
                 return False
         # 打标层已给出结论（含浏览器复测沿用已有 ♥️）时以其为准，排位与命名不再各算一套
@@ -455,31 +482,37 @@ def sort_nodes_by_region_and_landing(items, resort=False):
                 return cc
         return 'UNK'
 
+    def _is_geo_inconsistent(item):
+        return is_ip_region_inconsistent(item)
+
     def _node_internal_key(item):
         name = _get_name(item)
         sparkle = 0 if ('✨' in name) else 1
         home = 0 if _is_res(item, name) else 1
         ai = 0 if ('❇️' in name or '❇' in name) else 1
-        key = 0 if re.search(r'(?i)\bkey(?![a-z])', name) else 1
+        is_us = bool(re.search(r"🇺🇸|美国|USA|\bUS\b", name))
+        key = 0 if (re.search(r'(?i)\bkey(?![a-z])', name) or (is_us and re.search(r'(?i)\bfree(?![a-z])', name))) else 1
         fast = 0 if re.search(r'(?i)\bfast(?![a-z])', name) else 1
         is_residential = bool(_is_res(item, name) or _has_res_suffix(item, name))
         iplc = 0 if _is_iplc(item, name) else 1
         line_prio = 0 if (_is_iplc(item, name) or is_residential) else 1
+        geo_inconsistent = 1 if _is_geo_inconsistent(item) else 0
 
         m = re.search(r'_(\d+)', name)
         slot = int(m.group(1)) if m else 9999
         orig_idx = item.get("_orig_idx", slot) if isinstance(item, dict) else slot
 
         if not resort:
-            return (slot, name)
+            return (slot, geo_inconsistent, name)
 
         # 规则升级：
+        # 0. IP 地区判定一致性权重：获得统一认定的节点 (0) 严格优先于判定出现不一致性的节点 (1)（不论其服务测试能力如何）；
         # 1. 前置标识排序位阶严格为: ✨️ > 🏠 > ❇️ > Key > Fast
         # 2. 专线与家宽（🏠 及 _ISP）共享线路优先权 (line_prio = 0)，在同级前缀内优先；
         # 3. 🏠 和 ISP 节点内部按照原顺序进行排列 (以 orig_idx 排位，不被延迟、测速或流媒体标签打乱)；
         # 4. 普通机房节点继续遵循: _NF > _D+ > 纯净优于污染 > ♥️ > 信誉分。
         if is_residential:
-            return (sparkle, home, ai, key, fast, line_prio, iplc, orig_idx, 0, 0, 0, 0, 0, 0, orig_idx, name)
+            return (geo_inconsistent, sparkle, home, ai, key, fast, line_prio, iplc, orig_idx, 0, 0, 0, 0, 0, 0, orig_idx, name)
         else:
             is_polluted = 1 if ('_⚠️' in name) else 0
             reputation = _reputation(item)
@@ -489,7 +522,7 @@ def sort_nodes_by_region_and_landing(items, resort=False):
             reputation_rank = -score if score is not None and reputation.get('status') == 'observed' else 0
             nf = 0 if '_NF' in name else 1
             dp = 0 if '_D+' in name else 1
-            return (sparkle, home, ai, key, fast, line_prio, iplc, 0, nf, dp, is_polluted, hq, has_score, reputation_rank, orig_idx, name)
+            return (geo_inconsistent, sparkle, home, ai, key, fast, line_prio, iplc, 0, nf, dp, is_polluted, hq, has_score, reputation_rank, orig_idx, name)
 
     country_buckets = {}
     country_order = []
@@ -532,15 +565,42 @@ def sort_nodes_by_region_and_landing(items, resort=False):
             has_iplc_flag = _is_iplc(item, old_name)
             has_res_flag = _is_res(item, old_name)
             has_res_suf_flag = _has_res_suffix(item, old_name) if not has_iplc_flag else False
+            inconsistent_flag = _is_geo_inconsistent(item)
+            google_us_flag = is_google_recognized_us(item)
             new_name = _renumber_tag(
                 old_name, slot_idx,
                 is_hq=_is_hq(item, old_name),
                 is_iplc=has_iplc_flag,
                 is_residential=has_res_flag,
-                has_res_suffix=has_res_suf_flag
+                has_res_suffix=has_res_suf_flag,
+                is_inconsistent=inconsistent_flag,
+                is_google_us=google_us_flag
             )
+            if inconsistent_flag:
+                if google_us_flag:
+                    if "_USAI" in new_name:
+                        new_name = new_name.replace("_USAI", "_GOAI")
+                    new_name = new_name.replace("_GUI", "_GOAI")
+                    ai_cap = bool(
+                        (isinstance(item, dict) and (item.get("ai_supported") or (item.get("proxy") or {}).get("_ai_supported")))
+                        or "❇️" in new_name or "❇" in new_name
+                    )
+                    if ai_cap and not re.search(r'(?i)(?:^|_)goai(?=_|$)', new_name):
+                        m_media = re.search(r'((?:_(?:NF|D\+|ChromeGo|⚠️[A-Z0-9]+))+.*)$', new_name)
+                        if m_media:
+                            pos = m_media.start(1)
+                            new_name = new_name[:pos] + "_GOAI" + new_name[pos:]
+                        else:
+                            new_name = f"{new_name}_GOAI"
+                else:
+                    if "_USAI" in new_name:
+                        new_name = new_name.replace("_USAI", "_Lnd" if _is_lnd(item) else "")
+                    new_name = new_name.replace("_GOAI", "_Lnd" if _is_lnd(item) else "").replace("_GUI", "_Lnd" if _is_lnd(item) else "")
+                    new_name = re.sub(r'_+', '_', new_name).strip('_')
 
             if isinstance(item, dict):
+                if inconsistent_flag:
+                    item["is_geo_inconsistent"] = True
                 if has_iplc_flag:
                     item["is_iplc"] = True
                 if has_res_flag:
@@ -564,6 +624,8 @@ def sort_nodes_by_region_and_landing(items, resort=False):
                         item["proxy"]["_is_residential"] = True
                     if has_res_suf_flag:
                         item["proxy"]["_has_res_suffix"] = True
+                    if inconsistent_flag:
+                        item["proxy"]["_is_geo_inconsistent"] = True
                 if "raw_node" in item and isinstance(item["raw_node"], dict):
                     if "tag" in item["raw_node"]:
                         item["raw_node"]["tag"] = new_name
@@ -575,6 +637,8 @@ def sort_nodes_by_region_and_landing(items, resort=False):
                         item["raw_node"]["_is_residential"] = True
                     if has_res_suf_flag:
                         item["raw_node"]["_has_res_suffix"] = True
+                    if inconsistent_flag:
+                        item["raw_node"]["_is_geo_inconsistent"] = True
                 if "slot" in item:
                     item["slot"] = slot_idx
                 if "assigned_slot" in item:

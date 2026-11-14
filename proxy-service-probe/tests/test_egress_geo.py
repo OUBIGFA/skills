@@ -142,10 +142,13 @@ class GeoEvidenceTests(unittest.TestCase):
     def test_service_region_and_database_region_are_separate(self):
         google = {'country_code': 'JP', 'source': 'gemini_page'}
         result = geo.arbitrate_geo(google_region=google, ip_info=info('SG'), exit_ips=[IP])
-        self.assertEqual(result['cc'], 'UNK')
-        self.assertEqual(result['candidate_cc'], 'JP')
+        # 规则升级：属地认定分歧不再以谷歌兜底，不一致时以票数最多的为准 (GeoIP SG:2票 > Google JP:1票)
+        self.assertEqual(result['cc'], 'SG')
+        self.assertEqual(result['candidate_cc'], 'SG')
+        self.assertEqual(result['basis'], 'majority_vote')
         self.assertEqual(result['geoip_cc'], 'SG')
-        self.assertEqual(result['scope'], 'google_service_region')
+        self.assertEqual(result['google_cc'], 'JP')
+        self.assertTrue(result['is_inconsistent'])
         self.assertTrue(result['needs_review'])
         self.assertEqual(result['confidence'], 'low')
 
@@ -192,9 +195,10 @@ class GeoEvidenceTests(unittest.TestCase):
     def test_google_geoip_conflict_falls_back_to_gemini(self, probe, google, lookup):
         google.return_value = self.google_obs(gemini='JP', youtube='SG')
         decision = geo.probe_geolocation({})['geo_decision']
-        self.assertEqual((decision['cc'], decision['flag']), ('JP', geo.flag_emoji('JP')))
-        self.assertEqual(decision['basis'], 'google_fallback_gemini')
-        self.assertEqual(decision['unknown_basis'], 'google_geoip_conflict')
+        # 规则升级：属地认定分歧不再以谷歌兜底，不一致时以票数最多的为准 (若平票则纯 GeoIP 共识优选)
+        self.assertEqual((decision['cc'], decision['flag']), ('SG', geo.flag_emoji('SG')))
+        self.assertEqual(decision['basis'], 'geoip_cf_consensus')
+        self.assertTrue(decision['is_inconsistent'])
         self.assertTrue(decision['needs_review'])
 
     @patch.object(geo, 'query_ip_info', return_value=geo.empty_ip_info())
@@ -214,7 +218,8 @@ class GeoEvidenceTests(unittest.TestCase):
     def test_youtube_region_is_fallback_when_gemini_missing(self, probe, google, lookup):
         google.return_value = self.google_obs(youtube='DE')
         decision = geo.probe_geolocation({})['geo_decision']
-        self.assertEqual((decision['cc'], decision['basis']), ('DE', 'google_fallback_youtube'))
+        # 规则升级：属地认定分歧不再以谷歌兜底，不一致时以票数最多的为准 (GeoIP SG:2票 > Google DE:1票)
+        self.assertEqual((decision['cc'], decision['basis']), ('SG', 'majority_vote'))
 
     @patch.object(geo, 'query_ip_info', return_value=geo.empty_ip_info())
     @patch.object(geo, 'probe_google_region')

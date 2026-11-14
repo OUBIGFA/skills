@@ -17,6 +17,7 @@ Apply these principles to every UI decision — layout, typography, color, compo
 - **Minimize cards.** Prefer flat sections, subtle dividers, or whitespace separation. Cards are reserved for genuinely self-contained, interactive, or modal content — not for every content block.
 - **No card-in-card.** Never nest a card inside another card. If grouping is needed, use padding, borders, or background tonal shifts on the outer container.
 - **Reduce shadow usage.** Default to no shadow. If depth is needed, use a single, very subtle shadow at most. Never stack multiple shadow layers.
+- Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
 
 ## Website Restoration
 

@@ -49,6 +49,7 @@ var (
 	procGetWindow          = user32.NewProc("GetWindow")
 	procSetProcessDPIAware = user32.NewProc("SetProcessDPIAware")
 	procShowWindow         = user32.NewProc("ShowWindow")
+	procSetWindowPos       = user32.NewProc("SetWindowPos")
 	procSetForegroundWin   = user32.NewProc("SetForegroundWindow")
 	procBringWindowToTop   = user32.NewProc("BringWindowToTop")
 	procGetDC              = user32.NewProc("GetDC")
@@ -98,6 +99,10 @@ const (
 	wsCaption = 0x00C00000   // WS_CAPTION = WS_BORDER | WS_DLGFRAME
 
 	swRestore = 9
+
+	// SetWindowPos：调整窗口尺寸时不改 Z 序、不抢激活。
+	swpNoZOrder   = 0x0004
+	swpNoActivate = 0x0010
 
 	srcCopy    = 0x00CC0020
 	captureBlt = 0x40000000
@@ -280,6 +285,21 @@ func main() {
 		fmt.Fprintln(os.Stderr, "提示：无法把窗口切到前台，-mouse 点击可能落在其它窗口")
 	}
 
+	// 统一尺寸放在最前面：后面 -mouse 的坐标换算要按最终尺寸来量。
+	if opts.resize != "" {
+		vw, vh, _ := parseSize(opts.resize)
+		if err := resizeVisible(best.hwnd, vw, vh); err != nil {
+			fmt.Fprintf(os.Stderr, "调整窗口尺寸失败: %v\n", err)
+			os.Exit(8)
+		}
+		// 等界面按新尺寸重排完成。自绘界面重排较慢，这里用 -wait 的时长，别用固定小值。
+		time.Sleep(time.Duration(opts.waitMS) * time.Millisecond)
+		if vis, ok := visibleFrame(best.hwnd); ok {
+			fmt.Printf("已调整窗口为可见 %dx%d（目标 %dx%d）\n",
+				vis.R-vis.L, vis.B-vis.T, vw, vh)
+		}
+	}
+
 	// 需要切页时先操作，等界面重绘完再截图。
 	// -mouse 走真鼠标（自绘界面唯一可行），因此必须先把窗口放到前台，否则点到别处。
 	if opts.mouse != "" {
@@ -370,6 +390,7 @@ type options struct {
 	click      string
 	selectItem string // 列表里要选中的项（第 1 列文字）
 	mouse      string // 屏幕坐标 "X,Y"，用于自绘界面
+	resize     string // 目标可见尺寸 "WxH"，用于统一文档截图尺寸
 	waitMS     int
 }
 
@@ -401,6 +422,15 @@ func parseArgs(argv []string) (options, error) {
 				return opts, err
 			}
 			opts.mouse = argv[i]
+		case "-resize", "--resize":
+			if i+1 >= len(argv) {
+				return opts, fmt.Errorf("-resize 缺少尺寸")
+			}
+			i++
+			if _, _, err := parseSize(argv[i]); err != nil {
+				return opts, err
+			}
+			opts.resize = argv[i]
 		case "-wait", "--wait":
 			if i+1 >= len(argv) {
 				return opts, fmt.Errorf("-wait 缺少毫秒数")
@@ -434,6 +464,44 @@ func parseScreenPoint(s string) (int32, int32, error) {
 		return 0, 0, fmt.Errorf("-mouse 的坐标必须是整数，收到 %q", s)
 	}
 	return int32(x), int32(y), nil
+}
+
+// parseSize 解析 "WxH" 形式的目标可见尺寸（不是窗口矩形，不含不可见边框）。
+func parseSize(s string) (int32, int32, error) {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(s)), "x")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("-resize 需要 WxH 形式，收到 %q", s)
+	}
+	w, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	h, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err1 != nil || err2 != nil || w <= 0 || h <= 0 {
+		return 0, 0, fmt.Errorf("-resize 的宽高必须是正整数，收到 %q", s)
+	}
+	return int32(w), int32(h), nil
+}
+
+// resizeVisible 把窗口调整为「可见区域 = vw×vh」。
+//
+// 不能直接把 SetWindowPos 的宽高设成 vw×vh：Win10/11 的窗口矩形比可见区域每边多出
+// 7~8px 不可见边框，直接设会让截出来的图比目标尺寸小一圈。这里先量出当前的内缩量，
+// 再加回目标尺寸上。
+func resizeVisible(hwnd uintptr, vw, vh int32) error {
+	var r rect
+	if ok, _, _ := procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&r))); ok == 0 {
+		return fmt.Errorf("GetWindowRect 失败")
+	}
+	vis, ok := visibleFrame(hwnd)
+	if !ok {
+		return fmt.Errorf("取不到可见框，无法换算实际窗口尺寸")
+	}
+	insL, insT := vis.L-r.L, vis.T-r.T
+	insR, insB := r.R-vis.R, r.B-vis.B
+	newW, newH := vw+insL+insR, vh+insT+insB
+	if ok, _, _ := procSetWindowPos.Call(hwnd, 0, uintptr(r.L), uintptr(r.T),
+		uintptr(newW), uintptr(newH), swpNoZOrder|swpNoActivate); ok == 0 {
+		return fmt.Errorf("SetWindowPos 失败")
+	}
+	return nil
 }
 
 // forceForeground 把目标窗口切到前台，返回是否成功。

@@ -16,26 +16,45 @@ from typing import Dict, Optional, Tuple, Any
 
 # 导入同目录核心模块
 try:
-    from core.fofa import (
+    from .fofa import (
         get_default_config_path,
         load_fofa_config,
         inspect_jwt_token,
     )
-except ImportError:
-    # 兼容独立运行
-    CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-    PARENT_DIR = os.path.dirname(CURRENT_DIR)
-    if CURRENT_DIR not in sys.path:
-        sys.path.insert(0, CURRENT_DIR)
-    if PARENT_DIR not in sys.path:
-        sys.path.insert(0, PARENT_DIR)
-    from core.fofa import (
-        get_default_config_path,
-        load_fofa_config,
-        inspect_jwt_token,
-    )
+except (ImportError, ValueError):
+    try:
+        from scripts.core.fofa import (
+            get_default_config_path,
+            load_fofa_config,
+            inspect_jwt_token,
+        )
+    except ImportError:
+        CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+        PARENT_DIR = os.path.dirname(CURRENT_DIR)
+        for p in [CURRENT_DIR, PARENT_DIR]:
+            if p not in sys.path:
+                sys.path.insert(0, p)
+        try:
+            from core.fofa import (
+                get_default_config_path,
+                load_fofa_config,
+                inspect_jwt_token,
+            )
+        except ImportError:
+            from fofa import (
+                get_default_config_path,
+                load_fofa_config,
+                inspect_jwt_token,
+            )
 
 LOGIN_URL = "https://i.nosec.org/login?service=https://fofa.info/f_login"
+
+
+def get_default_profile_dir() -> str:
+    """返回默认的 FoFa 专用浏览器持久化数据目录 (scripts/core/data/fofa_profile)。"""
+    core_dir = os.path.dirname(os.path.abspath(__file__))
+    pdir = os.path.join(core_dir, "data", "fofa_profile")
+    return os.path.abspath(pdir)
 
 
 def update_fofa_config_token(new_token: str, email: Optional[str] = None,
@@ -79,6 +98,7 @@ def login_fofa_and_extract_token(
     email: Optional[str] = None,
     password: Optional[str] = None,
     config_path: Optional[str] = None,
+    user_data_dir: Optional[str] = None,
     proxy: Optional[str] = None,
     headless: bool = False,
     timeout: int = 60,
@@ -90,6 +110,7 @@ def login_fofa_and_extract_token(
     :param email: 登录邮箱或用户名。若未提供，优先读取配置文件或环境变量 FOFA_EMAIL/FOFA_USER。
     :param password: 登录密码。若未提供，优先读取配置文件或环境变量 FOFA_PASSWORD。
     :param config_path: fofa_config.json 绝对路径。
+    :param user_data_dir: 浏览器用户持久化配置目录。若未提供，优先读取配置或默认使用 data/fofa_profile。
     :param proxy: 代理服务器地址 (如 http://127.0.0.1:3067)。
     :param headless: 是否使用无头模式。默认 False (为确保 Cloudflare Turnstile 人机验证顺利通过)。
     :param timeout: 登录与验证总超时秒数 (默认 60s)。
@@ -111,6 +132,12 @@ def login_fofa_and_extract_token(
     final_email = email or cfg.get("email") or os.environ.get("FOFA_EMAIL") or os.environ.get("FOFA_USER") or ""
     final_pwd = password or cfg.get("password") or os.environ.get("FOFA_PASSWORD") or ""
     final_proxy = proxy or cfg.get("proxy") or os.environ.get("FOFA_PROXY") or ""
+    final_user_data_dir = os.path.abspath(user_data_dir or cfg.get("user_data_dir") or get_default_profile_dir())
+
+    try:
+        os.makedirs(final_user_data_dir, exist_ok=True)
+    except Exception as e:
+        print(f"[FoFa Login] 警告: 创建持久化目录失败: {e}")
 
     def _is_placeholder(val: str) -> bool:
         if not val or not isinstance(val, str):
@@ -123,7 +150,8 @@ def login_fofa_and_extract_token(
     if _is_placeholder(final_pwd):
         final_pwd = ""
 
-    print("[*] 正在启动浏览器执行 FoFa / NOSEC 登录与 Token 提取流程...")
+    print("[*] 正在启动持久化浏览器环境执行 FoFa / NOSEC 登录与 Token 提取流程...")
+    print(f"    - 持久化配置: {final_user_data_dir}")
     if final_email:
         print(f"    - 目标账号: {final_email}")
     else:
@@ -138,51 +166,65 @@ def login_fofa_and_extract_token(
     message = ""
 
     with sync_playwright() as p:
-        # 优先使用系统中已存在的 msedge 或 chromium
+        # 使用持久化上下文以保留 Cookies、LocalStorage、设备指纹与 Turnstile 信任状态
         launch_kwargs: Dict[str, Any] = {
+            "user_data_dir": final_user_data_dir,
             "headless": headless,
+            "viewport": {"width": 1280, "height": 850},
+            "user_agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
             "args": [
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
+                "--disable-infobars",
             ]
         }
         if final_proxy:
             launch_kwargs["proxy"] = {"server": final_proxy}
 
-        # 尝试选择合适的浏览器
-        browser = None
+        # 尝试选择合适的浏览器内核 (优先 Edge，其次内置 Chromium)
+        context = None
         for channel in ["msedge", None]:
             try:
                 if channel:
                     launch_kwargs["channel"] = channel
                 else:
                     launch_kwargs.pop("channel", None)
-                browser = p.chromium.launch(**launch_kwargs)
+                context = p.chromium.launch_persistent_context(**launch_kwargs)
                 break
             except Exception:
                 continue
 
-        if not browser:
+        if not context:
             return False, None, "无法启动 Chromium / Edge 浏览器，请检查 Playwright 运行环境。"
 
         try:
-            context = browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/130.0.0.0 Safari/537.36"
-                ),
-                viewport={"width": 1280, "height": 850}
-            )
-            # 去除自动化特征，防止 navigator.webdriver 干扰 Turnstile
+            # 增强反检测脚本注入
             context.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
                 if (!window.chrome) {
                     window.chrome = { runtime: {} };
                 }
+                const originalQuery = window.navigator.permissions ? window.navigator.permissions.query : null;
+                if (originalQuery) {
+                    window.navigator.permissions.query = (parameters) => (
+                        parameters.name === 'notifications' ?
+                            Promise.resolve({ state: Notification.permission }) :
+                            originalQuery(parameters)
+                    );
+                }
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5],
+                });
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en', 'zh-CN', 'zh'],
+                });
             """)
 
-            page = context.new_page()
+            page = context.pages[0] if context.pages else context.new_page()
 
             # 2. 导航至登录页面
             print("[*] 正在载入 NOSEC 认证中心登录页...")
@@ -193,19 +235,23 @@ def login_fofa_and_extract_token(
 
             page.wait_for_timeout(2000)
 
-            # 3. 自动填入账号密码
+            # 3. 自动填入账号密码 (若已有历史凭据则跳过或覆盖)
             if final_email:
                 try:
-                    page.fill('input[name="username"]', final_email)
+                    curr_val = page.locator('input[name="username"]').input_value()
+                    if not curr_val or curr_val != final_email:
+                        page.fill('input[name="username"]', final_email)
                 except Exception:
                     pass
             if final_pwd:
                 try:
-                    page.fill('input[name="password"]', final_pwd)
+                    curr_pwd = page.locator('input[name="password"]').input_value()
+                    if not curr_pwd:
+                        page.fill('input[name="password"]', final_pwd)
                 except Exception:
                     pass
 
-            # 自动勾选服务协议与保持登录复选框
+            # 自动勾选服务协议与保持登录复选框 (使持久化配置生效)
             try:
                 checks = page.locator('input[type="checkbox"]')
                 for i in range(checks.count()):
@@ -219,6 +265,7 @@ def login_fofa_and_extract_token(
             start_time = time.time()
             deadline = start_time + timeout
             auto_submitted = False
+            last_click_try = 0.0
 
             print("[*] 正在等待 Cloudflare Turnstile 验证及登录重定向...")
             if not headless:
@@ -230,7 +277,6 @@ def login_fofa_and_extract_token(
                     cookies = context.cookies()
                     for c in cookies:
                         if c.get("name") == "fofa_token" and c.get("value"):
-                            # 校验是否为合法有效 JWT
                             info = inspect_jwt_token(c["value"])
                             if info.get("valid"):
                                 extracted_token = c["value"]
@@ -253,6 +299,44 @@ def login_fofa_and_extract_token(
                         message = f"登录页面返回错误: {err_text}"
                 except Exception:
                     pass
+
+                # 若尚未通过验证，每隔 4 秒尝试穿透 iframe 并平滑模拟点击 Turnstile 勾选框
+                if not auto_submitted and (time.time() - last_click_try) >= 4.0:
+                    last_click_try = time.time()
+                    try:
+                        ts_input = page.locator('input[name="cf-turnstile-response"]')
+                        ts_val = ts_input.input_value() if ts_input.count() > 0 else ""
+                        if not ts_val:
+                            # 策略 1: 穿透定位 Cloudflare Turnstile iframe
+                            clicked_turnstile = False
+                            for fr in page.frames:
+                                if "challenges.cloudflare.com" in fr.url or "turnstile" in fr.url:
+                                    cb = fr.locator('input[type="checkbox"], body, span.mark')
+                                    if cb.count() > 0:
+                                        try:
+                                            cb.first.click(timeout=1500)
+                                            clicked_turnstile = True
+                                            break
+                                        except Exception:
+                                            pass
+
+                            # 策略 2: 若 iframe 内部元素无法直接穿透，采用外层坐标拟人化贝塞尔逼近点击
+                            if not clicked_turnstile:
+                                ts_elem = page.locator('div.cf-turnstile, iframe[src*="challenges.cloudflare.com"]')
+                                if ts_elem.count() > 0:
+                                    box = ts_elem.first.bounding_box()
+                                    if box and box.get("width", 0) > 30:
+                                        click_x = box["x"] + min(30, box["width"] / 4)
+                                        click_y = box["y"] + box["height"] / 2
+                                        page.mouse.move(click_x - 35, click_y - 20)
+                                        page.wait_for_timeout(50)
+                                        page.mouse.move(click_x, click_y, steps=12)
+                                        page.wait_for_timeout(60)
+                                        page.mouse.down()
+                                        page.wait_for_timeout(90)
+                                        page.mouse.up()
+                    except Exception:
+                        pass
 
                 # 若已填入账号密码且 Turnstile 验证码已生成但尚未提交，自动点击登录按钮
                 if final_email and final_pwd and not auto_submitted:
@@ -277,16 +361,16 @@ def login_fofa_and_extract_token(
 
         finally:
             try:
-                browser.close()
+                context.close()
             except Exception:
                 pass
 
     # 5. 持久化写回配置文件
     if success and extracted_token:
-        print(f"[✓] {message}")
+        print(f"[+] {message}")
         if save_to_config:
             if update_fofa_config_token(extracted_token, email=final_email, config_path=config_path):
-                print(f"[✓] 新 Token 已成功持久化写回配置文件: {config_path or get_default_config_path()}")
+                print(f"[+] 新 Token 已成功持久化写回配置文件: {config_path or get_default_config_path()}")
             else:
                 print(f"[!] 警告: Token 获取成功但未能写回配置文件")
         return True, extracted_token, message
@@ -302,6 +386,7 @@ if __name__ == "__main__":
     parser.add_argument("--password", "-p", default=None, help="FoFa / NOSEC 登录密码")
     parser.add_argument("--proxy", default=None, help="代理服务器 (如 http://127.0.0.1:3067)")
     parser.add_argument("--config", "-c", default=None, help="配置文件路径")
+    parser.add_argument("--user-data-dir", "-d", default=None, help="浏览器持久化用户数据目录 (默认 scripts/core/data/fofa_profile)")
     parser.add_argument("--headless", action="store_true", help="使用无头模式")
     parser.add_argument("--timeout", type=int, default=60, help="超时时间 (秒)")
     args = parser.parse_args()
@@ -310,6 +395,7 @@ if __name__ == "__main__":
         email=args.username,
         password=args.password,
         config_path=args.config,
+        user_data_dir=args.user_data_dir,
         proxy=args.proxy,
         headless=args.headless,
         timeout=args.timeout,

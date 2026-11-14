@@ -344,7 +344,7 @@ def query_ip_info(ip, timeout=(3.0, 6.0)):
 
 
 def arbitrate_geo(cf_trace=None, google_region=None, ip_info=None, exit_ips=None, orig_cc=None):
-    """命名沿用 Google 服务地区优先，但显式暴露数据库分歧和待复核状态。
+    """属地认定分歧不再以谷歌兜底，不一致时以票数最多的为准；_GOAI 后缀授予条件保持不变。
 
     orig_cc 只保留调用兼容性，绝不把旧名字作为检测证据。colo 不参与投票。
     """
@@ -352,39 +352,90 @@ def arbitrate_geo(cf_trace=None, google_region=None, ip_info=None, exit_ips=None
     ips = list(dict.fromkeys(ip for value in (exit_ips or []) if (ip := public_ip(value))))
     families = Counter(ipaddress.ip_address(ip).version for ip in ips)
     is_pool = any(count > 1 for count in families.values())
-    records = [r for r in info.get('records', []) if r.get('status') == 'ok']
+    geoip_records = [r for r in info.get('records', []) if r.get('status') == 'ok']
     cf_loc = normalize_country_code(cf.get('loc')) if cf.get('status') == 'ok' and cf.get('ip') in ips else None
+    records = list(geoip_records)
     if cf_loc and (not info.get('ip') or cf.get('ip') in ips):
         records.append({"provider": "cloudflare", "cc": cf_loc, "status": "ok"})
     consensus = geo_consensus(records)
     # 旧 google_multi_signals 缓存不能复用：只接收已校验的显式地区来源。
     g_cc = normalize_country_code(google.get('country_code')) if google.get('source') in ('gemini_page', 'youtube_premium') else None
-    candidate_cc = g_cc or consensus['country_code']
-    cc = candidate_cc
-    basis = google.get('source') if g_cc else 'geoip_cf_consensus' if cc != 'UNK' else 'insufficient_or_conflicting_evidence'
-    restricted = 'CN' if google.get('is_sent_to_china') else g_cc if g_cc in RESTRICTED_POISON_COUNTRIES else None
+
     geographic_cc = consensus['country_code']
+    restricted = 'CN' if google.get('is_sent_to_china') else g_cc if g_cc in RESTRICTED_POISON_COUNTRIES else None
     poisoned = bool(restricted and geographic_cc != 'UNK' and geographic_cc not in RESTRICTED_POISON_COUNTRIES)
-    if poisoned:
-        # 沿用已有送中/受限地区污染方案：保留实际属地，另行标记服务污染。
-        cc, basis = geographic_cc, 'geoip_with_google_poisoning'
-    elif g_cc and geographic_cc not in ('UNK', g_cc):
-        cc, basis = 'UNK', 'google_geoip_conflict'
+
     countries = {r['cc'] for r in records if normalize_country_code(r.get('cc'))}
     if g_cc:
         countries.add(g_cc)
     conflict = len(countries) > 1 or bool(google.get('conflict'))
-    confidence = consensus['confidence'] if not g_cc else 'high' if g_cc in consensus['votes'] and not conflict else 'medium'
-    if conflict or is_pool:
+    is_inconsistent = bool(
+        conflict
+        or (g_cc and geographic_cc not in ('UNK', g_cc))
+        or bool(google.get('conflict'))
+        or (len(countries) > 1)
+    )
+
+    if poisoned:
+        # 沿用送中/受限地区污染方案：保留实际属地，另行标记服务污染
+        cc, basis = geographic_cc, 'geoip_with_google_poisoning'
+    elif is_inconsistent and (geoip_records or g_cc):
+        # 规则核心升级：属地认定分歧不再以谷歌兜底，不一致时以票数最多的为准
+        voting_records = list(records)
+        if g_cc:
+            voting_records.append({"provider": "google", "family": "google", "cc": g_cc, "status": "ok"})
+
+        vote_families = defaultdict(set)
+        for item in voting_records:
+            item_cc = normalize_country_code(item.get('cc'))
+            if item_cc and item.get('status', 'ok') == 'ok':
+                vote_families[item.get('family') or item['provider']].add(item_cc)
+        votes = Counter(next(iter(codes)) for codes in vote_families.values() if len(codes) == 1)
+        ranked_votes = votes.most_common()
+
+        # 只要存在严格多数（票数最多且大于第二名），即以票数最多为准
+        if ranked_votes and (len(ranked_votes) == 1 or ranked_votes[0][1] > ranked_votes[1][1]):
+            cc = ranked_votes[0][0]
+            basis = 'majority_vote'
+        else:
+            # 出现平票 (Tie)
+            if geographic_cc != 'UNK':
+                cc = geographic_cc
+                basis = 'geoip_cf_consensus'
+            elif g_cc:
+                # 数据库各源平票僵持且无共识时，以 Google 观测实测服务地区定国
+                cc = g_cc
+                basis = f'google_fallback_{google.get("source")}'
+            else:
+                cc = 'UNK'
+                basis = 'google_geoip_conflict' if (g_cc and geographic_cc != 'UNK') else 'conflicting_evidence_tie'
+    else:
+        # 无分歧或无 GeoIP 数据：正常按共识或 Google 显式地区定国
+        if geographic_cc != 'UNK':
+            cc = geographic_cc
+            basis = 'geoip_cf_consensus'
+        elif g_cc:
+            cc = g_cc
+            basis = google.get('source')
+        else:
+            cc = 'UNK'
+            basis = 'insufficient_or_conflicting_evidence'
+
+    candidate_cc = cc if cc != 'UNK' else (g_cc or geographic_cc)
+    confidence = 'high' if (not is_inconsistent and not is_pool and cc != 'UNK') else 'medium' if (cc != 'UNK' and not is_pool) else 'low'
+    if conflict or is_pool or is_inconsistent:
         confidence = 'low'
     if poisoned and not is_pool and google.get('status') != 'unstable':
         confidence = consensus['confidence']
-    needs_review = cc == 'UNK' or confidence != 'high'
+    needs_review = cc == 'UNK' or confidence != 'high' or is_inconsistent
     geo_cc = info.get('country_code', 'UNK')
+
     return {"cc": cc, "country_zh": country_name_zh(cc), "flag": flag_emoji(cc),
             "basis": basis, "candidate_cc": candidate_cc,
-            "scope": 'google_service_region' if g_cc and not poisoned else 'ip_geolocation', "confidence": confidence,
-            "needs_review": needs_review, "conflict": conflict, "is_pool": is_pool, "observed_ips": ips,
+            "scope": 'google_service_region' if (g_cc and cc == g_cc and not poisoned) else 'ip_geolocation',
+            "confidence": confidence,
+            "needs_review": needs_review, "conflict": conflict, "is_inconsistent": is_inconsistent,
+            "is_pool": is_pool, "observed_ips": ips,
             "cf_loc": cf_loc, "cf_colo": cf.get('colo'), "google_cc": g_cc, "geoip_cc": geo_cc,
             "votes": consensus['votes'], "is_poisoned": poisoned, "poisoned_cc": restricted if poisoned else None,
             "poison_tag": f'_⚠️{restricted}' if poisoned else None}
@@ -423,8 +474,13 @@ def google_fallback_region(google):
 
 
 def apply_google_fallback(decision, google):
-    """所有判为未知的节点最终以 Google/Gemini 观测地区为准，保留原未知原因与待复核标志。"""
+    """所有判为未知的节点在无分歧时以 Google/Gemini 观测地区兜底。属地分歧节点严禁以谷歌兜底。"""
     if decision['cc'] != 'UNK':
+        return
+    # 属地认定分歧不再以谷歌兜底：若存在分歧/冲突（且有实际证据参与冲突），绝不以谷歌兜底
+    if decision.get('unknown_basis') in ('google_geoip_conflict', 'cross_ip_country_conflict') or decision.get('basis') in ('google_geoip_conflict', 'cross_ip_country_conflict'):
+        return
+    if decision.get('is_inconsistent') and decision.get('geoip_cc') != 'UNK':
         return
     cc, source = google_fallback_region(google)
     if not cc:
@@ -478,6 +534,7 @@ def probe_geolocation(proxies, *, egress=None, timeout=(3.0, 6.0)):
         decision.update(confidence='low', needs_review=True)
         if len(per_ip_countries) > 1:
             decision['conflict'] = True
+            decision['is_inconsistent'] = True
             if not decision['google_cc']:
                 decision.update(cc='UNK', country_zh='未知', flag='🏳️', basis='cross_ip_country_conflict')
     apply_google_fallback(decision, google)
@@ -487,4 +544,172 @@ def probe_geolocation(proxies, *, egress=None, timeout=(3.0, 6.0)):
         reputation.update(score=None, status='unknown', reason='egress_unstable')
     return {"cc": decision['cc'], "exit_ip": primary, "egress": before, "egress_after": after,
             "google_region": google, "ip_info": info, "ip_info_by_ip": info_by_ip,
-            "ip_reputation": reputation, "geo_decision": decision}
+            "ip_reputation": reputation, "geo_decision": decision,
+            "is_geo_inconsistent": decision.get('is_inconsistent', False)}
+
+
+def is_ip_region_inconsistent(item):
+    """判定节点在 IP 地区判定中是否出现不一致性（例如 Google 区域与 GeoIP 区域不一致、多数据源冲突、跨出口冲突等）。
+
+    返回 True 表示存在不一致性（排序权重需降低），False 表示地区认定统一或无冲突证据。
+    """
+    if not item:
+        return False
+
+    # 0. 节点名称带有 _GOAI / _GUI 标识（专属于仅谷歌认定的美国 IP，IP 属地未统一认定）
+    name = ""
+    if isinstance(item, str):
+        name = item
+    elif isinstance(item, dict):
+        p_obj = item.get("proxy") if isinstance(item.get("proxy"), dict) else {}
+        raw_obj = item.get("raw_node") if isinstance(item.get("raw_node"), dict) else {}
+        name = item.get("name") or item.get("tag") or item.get("final_name") or p_obj.get("name") or raw_obj.get("name") or ""
+    if "_GOAI" in name or "_GUI" in name:
+        return True
+
+    # 1. 显式布尔字段优先
+    if isinstance(item, dict):
+        for k in ("is_geo_inconsistent", "_is_geo_inconsistent", "is_inconsistent", "_is_inconsistent", "geo_inconsistent", "_geo_inconsistent"):
+            if item.get(k) is True:
+                return True
+
+    # 2. 从关联的 proxy 或 raw_node 字典检查
+    p = item.get("proxy") if isinstance(item, dict) and isinstance(item.get("proxy"), dict) else {}
+    raw = item.get("raw_node") if isinstance(item, dict) and isinstance(item.get("raw_node"), dict) else {}
+
+    for obj in (p, raw):
+        for k in ("is_geo_inconsistent", "_is_geo_inconsistent", "is_inconsistent", "_is_inconsistent", "geo_inconsistent", "_geo_inconsistent"):
+            if obj.get(k) is True:
+                return True
+
+    # 3. 检查 geo_decision
+    dec = (
+        (item.get("geo_decision") if isinstance(item, dict) else None)
+        or (item.get("_geo_decision") if isinstance(item, dict) else None)
+        or p.get("_geo_decision")
+        or p.get("geo_decision")
+        or raw.get("_geo_decision")
+        or raw.get("geo_decision")
+    )
+    if isinstance(dec, dict):
+        if dec.get("is_inconsistent") is True or dec.get("conflict") is True:
+            return True
+        if dec.get("unknown_basis") in ("google_geoip_conflict", "cross_ip_country_conflict"):
+            return True
+        if dec.get("basis") in ("google_geoip_conflict", "cross_ip_country_conflict"):
+            return True
+        # 显式对比 Google CC 与 GeoIP CC
+        g_cc = dec.get("google_cc")
+        geo_cc = dec.get("geoip_cc")
+        if g_cc and geo_cc and geo_cc != "UNK" and g_cc != geo_cc:
+            return True
+        # 对比 Cloudflare loc 与 GeoIP / Google
+        cf_loc = dec.get("cf_loc")
+        if cf_loc and geo_cc and geo_cc != "UNK" and cf_loc != geo_cc:
+            return True
+        if cf_loc and g_cc and cf_loc != g_cc:
+            return True
+        # 检查多源投票
+        votes = dec.get("votes") or {}
+        active_codes = set(votes.keys()) - {"UNK", None}
+        if g_cc and g_cc != "UNK":
+            active_codes.add(g_cc)
+        if len(active_codes) > 1:
+            return True
+
+    # 4. 从 google_region 与 ip_info 对比
+    g_reg = (
+        (item.get("google_region") if isinstance(item, dict) else None)
+        or p.get("_google_region")
+        or p.get("google_region")
+        or {}
+    )
+    ip_inf = (
+        (item.get("ip_info") if isinstance(item, dict) else None)
+        or p.get("_ip_info")
+        or p.get("ip_info")
+        or {}
+    )
+    if isinstance(g_reg, dict) and g_reg.get("conflict"):
+        return True
+    if isinstance(ip_inf, dict) and ip_inf.get("status") == "conflict":
+        return True
+    g_cc = g_reg.get("country_code") if isinstance(g_reg, dict) else None
+    i_cc = ip_inf.get("country_code") if isinstance(ip_inf, dict) else None
+    if g_cc and i_cc and i_cc != "UNK" and g_cc != i_cc:
+        return True
+
+    return False
+
+
+def is_google_recognized_us(item):
+    """判定节点是否被谷歌认定为美国 IP（Google 观测地区为 US，或基于 Google 决策为 US）。"""
+    if not item:
+        return False
+    if isinstance(item, str):
+        # 若已有 _GOAI 标识，说明此前已被确认属于仅谷歌认定的美国 IP
+        return "_GOAI" in item or "_GUI" in item
+
+    if not isinstance(item, dict):
+        return False
+
+    # 1. 显式布尔字段优先
+    for k in ("is_google_us", "_is_google_us", "is_goai", "_is_goai", "is_gui", "_is_gui"):
+        if item.get(k) is True:
+            return True
+
+    # 2. 从关联的 proxy 或 raw_node 字典检查
+    p = item.get("proxy") if isinstance(item.get("proxy"), dict) else {}
+    raw = item.get("raw_node") if isinstance(item.get("raw_node"), dict) else {}
+
+    for obj in (p, raw):
+        for k in ("is_google_us", "_is_google_us", "is_goai", "_is_goai", "is_gui", "_is_gui"):
+            if obj.get(k) is True:
+                return True
+
+    # 3. 检查名称中是否带有 _GOAI / _GUI
+    name = item.get("name") or item.get("tag") or item.get("final_name") or p.get("name") or raw.get("name") or ""
+    if "_GOAI" in name or "_GUI" in name:
+        return True
+
+    # 4. 检查 geo_decision
+    dec = (
+        item.get("geo_decision")
+        or item.get("_geo_decision")
+        or p.get("_geo_decision")
+        or p.get("geo_decision")
+        or raw.get("_geo_decision")
+        or raw.get("geo_decision")
+    )
+    if isinstance(dec, dict):
+        if dec.get("google_cc") == "US":
+            return True
+        if dec.get("cc") == "US" and str(dec.get("basis", "")).startswith("google"):
+            return True
+        if dec.get("candidate_cc") == "US" and dec.get("scope") == "google_service_region":
+            return True
+        # 若有明确的非 US google_cc，坚决否定
+        if dec.get("google_cc") and dec.get("google_cc") != "US":
+            return False
+
+    # 5. 检查 google_region
+    g_reg = (
+        item.get("google_region")
+        or item.get("_google_region")
+        or p.get("_google_region")
+        or p.get("google_region")
+        or raw.get("_google_region")
+        or raw.get("google_region")
+    )
+    if isinstance(g_reg, dict):
+        if g_reg.get("country_code") == "US":
+            return True
+        if g_reg.get("country_code") and g_reg.get("country_code") != "US":
+            return False
+
+    # 6. 保底兼容：若节点 cc=="US"，且无任何相反证据（例如单测或极简构造）
+    cc = item.get("cc") or item.get("_cc") or p.get("cc") or p.get("_cc")
+    if cc == "US" and not dec and not g_reg:
+        return True
+
+    return False

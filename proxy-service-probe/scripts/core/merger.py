@@ -23,7 +23,7 @@ import re
 import sys
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from .egress_geo import country_name_zh, flag_emoji
+from .egress_geo import country_name_zh, flag_emoji, is_ip_region_inconsistent, is_google_recognized_us
 from .parsers import load_proxies
 from .renderer import (
     build_proxy_groups,
@@ -155,6 +155,9 @@ def merge_clash_proxies(base_proxies: List[Dict[str, Any]],
 
         seen_names = set(p.get("name") for p in base_proxies if p.get("name"))
 
+        # 优先让统一认定的新节点排在前面分配较小空号
+        added.sort(key=lambda p: (1 if is_ip_region_inconsistent(p) else 0))
+
         for p in added:
             orig_name = p.get("name") or p.get("tag") or ""
             canon = parse_canonical_node(orig_name)
@@ -163,11 +166,13 @@ def merge_clash_proxies(base_proxies: List[Dict[str, Any]],
                 allocators[cc] = SlotAllocator()
 
             # 分配最小空号
+            inconsistent_flag = is_ip_region_inconsistent(p)
+            google_us_flag = is_google_recognized_us(p)
             slot = allocators[cc].next_slot()
-            new_name = renumber_node_tag(orig_name, slot)
+            new_name = renumber_node_tag(orig_name, slot, is_inconsistent=inconsistent_flag, is_google_us=google_us_flag)
             while new_name in seen_names:
                 slot = allocators[cc].next_slot()
-                new_name = renumber_node_tag(orig_name, slot)
+                new_name = renumber_node_tag(orig_name, slot, is_inconsistent=inconsistent_flag, is_google_us=google_us_flag)
 
             seen_names.add(new_name)
             p["name"] = new_name

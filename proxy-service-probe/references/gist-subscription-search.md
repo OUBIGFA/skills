@@ -37,7 +37,7 @@ GitHub Gist 与空间测绘引擎（FoFa / 360 Quake）在 `proxy-service-probe`
 各 Gist 卡片 -> 提取页面内全部 Raw 文件直链 (gist.githubusercontent.com)
             -> ThreadPoolExecutor 并发下载
             -> 识别多格式节点 (YAML / JSON / Base64) 与 二级机场订阅 (subscribes.txt)
-            -> 单源 > 200 节点自动熔断丢弃
+            -> 单源 > 300 节点自动熔断丢弃
             -> 统一指纹去重与协议顺位排序导出
 ```
 
@@ -66,8 +66,8 @@ GitHub Gist 与空间测绘引擎（FoFa / 360 Quake）在 `proxy-service-probe`
    - 检索时强制携带 `&s=updated&o=desc`；
    - 本地自动解析 `<relative-time datetime="...">`；
    - 超过 48 小时的 Gist 立即剔除，且自动触发后续分页提前截断，杜绝历史死节点。
-2. **单源超量垃圾源熔断 (`--max-nodes-per-sub`, 默认 200 个节点)**：
-   - 单个 Gist 文件或二级订阅内解析出的节点数若超过 200，系统判定为公网爬虫堆叠的低质死节点源，**直接丢弃**，不参与后续测活。
+2. **单源超量垃圾源熔断 (`--max-nodes-per-sub`, 默认 300 个节点)**：
+   - 单个 Gist 文件或二级订阅内解析出的节点数若超过 300，系统判定为公网爬虫堆叠的低质死节点源，**直接丢弃**，不参与后续测活。
 3. **嵌套二级订阅平滑防雪崩**：
    - 当遇到 `subscribes.txt` 等直链列表时，单 Gist 限制最多递归拉取前 5 条订阅直链，防止恶意循环嵌套或请求雪崩。
 
@@ -80,7 +80,7 @@ GitHub Gist 与空间测绘引擎（FoFa / 360 Quake）在 `proxy-service-probe`
 {
   "max_age_hours": 48,
   "default_targets": 20,
-  "max_nodes_per_subscription": 200,
+  "max_nodes_per_subscription": 300,
   "proxy": "http://127.0.0.1:3067",
   "timeout": 12,
   "default_query": "filename:yaml proxies"
@@ -121,3 +121,5 @@ python scripts/probe_services.py --input gist:subs --output final.yaml
 # 9. 通过通用搜索工具 fofa_search.py 指定 Gist 引擎
 python scripts/fofa_search.py --engine gist --preset residential -o gist_nodes.yaml
 ```
+
+

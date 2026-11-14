@@ -174,7 +174,7 @@ class TestGistFetchingAndNodeExtraction(unittest.TestCase):
 
     @patch("core.gist._make_http_request")
     def test_fetch_gist_nodes_with_limit_filter(self, mock_http):
-        # 构造节点数据: 正常源 2 个节点，超量源 205 个节点
+        # 构造节点数据: 正常源 2 个节点，超量源 305 个节点
         normal_yaml = """
 proxies:
   - name: "Node-1"
@@ -189,7 +189,7 @@ proxies:
     uuid: 12345678-1234-1234-1234-123456789012
         """
 
-        huge_nodes = [{"name": f"Huge-{i}", "type": "ss", "server": f"10.0.0.{i}", "port": 8388, "cipher": "aes-128-gcm", "password": "pass"} for i in range(205)]
+        huge_nodes = [{"name": f"Huge-{i}", "type": "ss", "server": f"10.0.0.{i}", "port": 8388, "cipher": "aes-128-gcm", "password": "pass"} for i in range(305)]
         import yaml
         huge_yaml = yaml.dump({"proxies": huge_nodes})
 
@@ -219,10 +219,10 @@ proxies:
             "gist_url": "https://gist.github.com/user/gist1234567890abcdef1234"
         }
 
-        # 限制单源最大 200 节点
-        proxies = fetch_gist_nodes([target], max_nodes_per_sub=200)
+        # 限制单源最大 300 节点
+        proxies = fetch_gist_nodes([target], max_nodes_per_sub=300)
 
-        # 应该只保留 normal.yaml 的 2 个节点，超量源 205 个节点被直接熔断丢弃
+        # 应该只保留 normal.yaml 的 2 个节点，超量源 305 个节点被直接熔断丢弃
         self.assertEqual(len(proxies), 2)
         names = [p["name"] for p in proxies]
         self.assertIn("Node-1", names)

@@ -342,6 +342,11 @@ rules:
 - DOMAIN-SUFFIX,org,🌏️ 节点选择
 
 # 屏蔽广告
+- DOMAIN-WILDCARD,*pcdn*.biliapi.net,REJECT
+- DOMAIN-SUFFIX,mcdn.bilivideo.cn,REJECT
+- DOMAIN-SUFFIX,mcdn.bilivideo.com,REJECT
+- DOMAIN-SUFFIX,szbdyd.com,REJECT
+- DOMAIN-SUFFIX,mountaintoys.cn,REJECT
 - RULE-SET,AdBlock,⛔️ 拦截广告
 - RULE-SET,reject,⛔️ 拦截广告
 - RULE-SET,BanAD,⛔️ 拦截广告

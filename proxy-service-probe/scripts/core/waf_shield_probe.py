@@ -38,7 +38,8 @@ def probe_openai_sentinel(proxy: Optional[Union[str, Dict[str, str]]] = None, ti
             proxy=proxy,
             json_data={},
             headers={"referer": "https://chatgpt.com/", "origin": "https://chatgpt.com"},
-            timeout=timeout
+            timeout=timeout,
+            mode="fetch"
         )
     except Exception as e:
         logger.debug("OpenAI Sentinel 请求异常: %s", e)
@@ -175,7 +176,7 @@ def probe_reddit_fastly(proxy: Optional[Union[str, Dict[str, str]]] = None, time
     """
     url = "https://www.reddit.com/r/all/top.json?limit=1"
     try:
-        resp = request_streaming("GET", url, proxy=proxy, timeout=timeout)
+        resp = request_streaming("GET", url, proxy=proxy, timeout=timeout, mode="fetch")
     except Exception as e:
         return {"level": "BLOCKED", "score": 0, "network_blocked": True, "login_wall": False, "reason": str(e)}
 
@@ -242,7 +243,7 @@ def probe_cf_strict_trace(proxy: Optional[Union[str, Dict[str, str]]] = None, ti
     warp_status = "off"
     trace_loc = None
     try:
-        trace_resp = request_streaming("GET", "https://1.1.1.1/cdn-cgi/trace", proxy=proxy, timeout=timeout)
+        trace_resp = request_streaming("GET", "https://1.1.1.1/cdn-cgi/trace", proxy=proxy, timeout=timeout, mode="fetch")
         if trace_resp.status_code == 200:
             for line in trace_resp.text.splitlines():
                 if line.startswith("warp="):
