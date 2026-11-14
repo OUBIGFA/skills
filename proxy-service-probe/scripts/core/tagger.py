@@ -299,16 +299,12 @@ def tag_and_rename_nodes(results, resort=False):
 
         # USAI 与 GOAI 判定规则:
         # 准则：
-        # 1. 属地统一认定的美国 AI 节点 -> 正常授予 _USAI；
-        # 2. 属地判定存在不一致、但由谷歌认定为美国 IP 且具备 AI 能力的节点（不论多数决归属到哪个国家，如墨西哥、印尼等） -> 授予 _GOAI 后缀；
-        # 3. 属地不一致且非谷歌认定的节点，或不具备 AI 能力的节点 -> 严禁授予 _GOAI，亦不得授予 _USAI。
+        # 1. 最终多数决归属美国且具备 AI 全通能力（❇️）的节点 -> 授予 _USAI 后缀（不论属地是否分歧，均不用 _GOAI 替代 _USAI）；
+        # 2. 最终多数决归属不是美国、但由谷歌认定为美国 IP 且具备 AI 能力的节点（如墨西哥、印尼等） -> 一律用 _GOAI 替代 _USAI；
+        # 3. 不具备 AI 能力，或既非最终归属美国又非谷歌认定美国的节点 -> 严禁授予 _GOAI，亦不得授予 _USAI。
         google_is_us = bool(is_google_recognized_us(r) or (orig_has_goai and not r.get("geo_decision")))
-        if not is_geo_inconsistent:
-            is_usai = bool(cc == "US" and ai_sup)
-            is_goai = False
-        else:
-            is_usai = False
-            is_goai = bool(google_is_us and ai_sup)
+        is_usai = bool(cc == "US" and ai_sup)
+        is_goai = bool(cc != "US" and google_is_us and ai_sup)
         is_gui = is_goai
 
         is_cg = "_ChromeGo" in orig or "_ChromeGo" in pname

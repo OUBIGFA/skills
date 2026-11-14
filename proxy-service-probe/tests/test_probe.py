@@ -1121,7 +1121,7 @@ class TestProxyServiceProbe(unittest.TestCase):
         self.assertEqual(names, [
             "🇺🇸 Fast美国_1",
             "🇺🇸 美国_2",
-            "🇺🇸 ✨️❇️Key美国_3_GOAI",
+            "🇺🇸 ✨️❇️Key美国_3",
             "🇺🇸 🏠美国_4",
             "🇺🇸 Fast美国_5"
         ])
@@ -1151,11 +1151,11 @@ class TestProxyServiceProbe(unittest.TestCase):
         self.assertEqual(r_inc["assigned_slot"], 2)
         self.assertIn("美国_1", r_uni["final_name"])
         self.assertIn("美国_2", r_inc["final_name"])
-        # 且不一致节点不能授予 USAI，必须授予 GOAI
-        self.assertNotIn("_USAI", r_inc["final_name"])
-        self.assertIn("_GOAI", r_inc["final_name"])
-        self.assertFalse(r_inc["is_usai"])
-        self.assertTrue(r_inc["is_goai"])
+        # 最终归属美国且具备 AI 能力的分歧节点仍授予 _USAI（不替换为 _GOAI）
+        self.assertIn("_USAI", r_inc["final_name"])
+        self.assertNotIn("_GOAI", r_inc["final_name"])
+        self.assertTrue(r_inc["is_usai"])
+        self.assertFalse(r_inc["is_goai"])
 
     def test_usai_denied_and_goai_granted_for_inconsistent_google_us_nodes(self):
         """
@@ -1251,24 +1251,24 @@ class TestProxyServiceProbe(unittest.TestCase):
         self.assertIn("_USAI", uniform_node["final_name"])
         self.assertNotIn("_GOAI", uniform_node["final_name"])
 
-        # 仅谷歌认定节点验证
-        self.assertFalse(inconsistent_node["is_usai"])
-        self.assertTrue(inconsistent_node["is_goai"])
-        self.assertNotIn("_USAI", inconsistent_node["final_name"])
-        self.assertIn("_GOAI", inconsistent_node["final_name"])
+        # 最终归属美国且具备 AI 能力的分歧节点 -> 仍授予 _USAI，不用 _GOAI 替代
+        self.assertTrue(inconsistent_node["is_usai"])
+        self.assertFalse(inconsistent_node["is_goai"])
+        self.assertIn("_USAI", inconsistent_node["final_name"])
+        self.assertNotIn("_GOAI", inconsistent_node["final_name"])
 
-        # 旧 _USAI 节点降级替换验证
-        self.assertFalse(replaced_node["is_usai"])
-        self.assertTrue(replaced_node["is_goai"])
-        self.assertNotIn("_USAI", replaced_node["final_name"])
-        self.assertIn("_GOAI", replaced_node["final_name"])
+        # 旧 _USAI 节点且最终归属美国 -> 保留 _USAI
+        self.assertTrue(replaced_node["is_usai"])
+        self.assertFalse(replaced_node["is_goai"])
+        self.assertIn("_USAI", replaced_node["final_name"])
+        self.assertNotIn("_GOAI", replaced_node["final_name"])
         self.assertIn("_NF", replaced_node["final_name"])
 
-        # 旧 _GUI 纠错验证
-        self.assertFalse(gui_fixed_node["is_usai"])
-        self.assertTrue(gui_fixed_node["is_goai"])
+        # 旧 _GUI 节点且最终归属美国 -> 规范化为 _USAI
+        self.assertTrue(gui_fixed_node["is_usai"])
+        self.assertFalse(gui_fixed_node["is_goai"])
         self.assertNotIn("_GUI", gui_fixed_node["final_name"])
-        self.assertIn("_GOAI", gui_fixed_node["final_name"])
+        self.assertIn("_USAI", gui_fixed_node["final_name"])
 
         # 无 AI 能力节点验证：不具备原 USAI 能力，绝不授予 GOAI，也不授予 USAI
         self.assertFalse(no_ai_node["is_usai"])
@@ -1276,10 +1276,10 @@ class TestProxyServiceProbe(unittest.TestCase):
         self.assertNotIn("_USAI", no_ai_node["final_name"])
         self.assertNotIn("_GOAI", no_ai_node["final_name"])
 
-        # 非 Google 认定美国节点验证：Google=HK，非谷歌认定美国 IP，绝不授予 GOAI，也不授予 USAI
-        self.assertFalse(google_hk_node["is_usai"])
+        # 非 Google 认定美国节点但最终归属美国且有 AI 能力 -> 授予 _USAI
+        self.assertTrue(google_hk_node["is_usai"])
         self.assertFalse(google_hk_node["is_goai"])
-        self.assertNotIn("_USAI", google_hk_node["final_name"])
+        self.assertIn("_USAI", google_hk_node["final_name"])
         self.assertNotIn("_GOAI", google_hk_node["final_name"])
 
         # 3. 排序与策略组渲染验证
@@ -1287,43 +1287,48 @@ class TestProxyServiceProbe(unittest.TestCase):
             {"name": "🇺🇸 ❇️美国_1_USAI", "type": "vmess", "server": "1.1.1.1", "port": 443, "path": "direct", "is_landing": False},
             {"name": "🇺🇸 ❇️美国_2_GOAI", "type": "vmess", "server": "2.2.2.2", "port": 443, "path": "direct", "is_landing": False, "is_geo_inconsistent": True},
             {"name": "🇺🇸 ❇️美国_3_GOAI", "type": "vmess", "server": "3.3.3.3", "port": 443, "path": "front", "is_landing": True, "is_geo_inconsistent": True},
+            {"name": "🇲🇽 ❇️墨西哥_1_GOAI", "type": "vmess", "server": "4.4.4.4", "port": 443, "path": "direct", "is_landing": False, "is_geo_inconsistent": True},
         ]
 
         sorted_nodes = sort_nodes_by_region_and_landing(render_batch, resort=True)
         sorted_names = [n["name"] for n in sorted_nodes]
 
-        # 统一认定直连 (USAI) > 判定不一致直连 (GOAI) > 判定不一致落地 (GOAI 沉底)
+        # 最终归属美国的 _GOAI 规范化为 _USAI；非美 _GOAI 保持 _GOAI
         self.assertEqual(sorted_names[0], "🇺🇸 ❇️美国_1_USAI")
-        self.assertEqual(sorted_names[1], "🇺🇸 ❇️美国_2_GOAI")
-        self.assertEqual(sorted_names[2], "🇺🇸 ❇️美国_3_GOAI")
+        self.assertEqual(sorted_names[1], "🇺🇸 ❇️美国_2_USAI")
+        self.assertEqual(sorted_names[2], "🇺🇸 ❇️美国_3_USAI")
+        self.assertEqual(sorted_names[3], "🇲🇽 ❇️墨西哥_1_GOAI")
 
         cfg = render_clash_config(sorted_nodes)
         p_by_name = {p["name"]: p for p in cfg["proxies"]}
 
-        # 直连 GOAI 不注入 dialer-proxy，落地 GOAI 注入 dialer-proxy
+        # 直连 USAI/GOAI 不注入 dialer-proxy，落地 USAI 注入 dialer-proxy
         self.assertNotIn("dialer-proxy", p_by_name["🇺🇸 ❇️美国_1_USAI"])
-        self.assertNotIn("dialer-proxy", p_by_name["🇺🇸 ❇️美国_2_GOAI"])
-        self.assertEqual(p_by_name["🇺🇸 ❇️美国_3_GOAI"].get("dialer-proxy"), "🛡️ Front前置")
+        self.assertNotIn("dialer-proxy", p_by_name["🇺🇸 ❇️美国_2_USAI"])
+        self.assertEqual(p_by_name["🇺🇸 ❇️美国_3_USAI"].get("dialer-proxy"), "🛡️ Front前置")
+        self.assertNotIn("dialer-proxy", p_by_name["🇲🇽 ❇️墨西哥_1_GOAI"])
 
         # 策略组校验:
         # 【✅ 解锁 AI】包含 USAI 和 GOAI 节点 (均有 ❇️)
-        # 【✅ 解锁USAI】仅包含真正的 USAI 节点，不包含 GOAI 节点
+        # 【✅ 解锁USAI】包含最终归属美国的 _USAI 节点，不包含非美 _GOAI 节点
         groups = {g["name"]: g for g in cfg["proxy-groups"]}
         ai_proxies = groups["✅ 解锁 AI"]["proxies"]
         usai_proxies = groups["✅ 解锁USAI"]["proxies"]
         us_proxies = groups["🇺🇸 美国节点"]["proxies"]
 
         self.assertIn("🇺🇸 ❇️美国_1_USAI", ai_proxies)
-        self.assertIn("🇺🇸 ❇️美国_2_GOAI", ai_proxies)
-        self.assertIn("🇺🇸 ❇️美国_3_GOAI", ai_proxies)
+        self.assertIn("🇺🇸 ❇️美国_2_USAI", ai_proxies)
+        self.assertIn("🇺🇸 ❇️美国_3_USAI", ai_proxies)
+        self.assertIn("🇲🇽 ❇️墨西哥_1_GOAI", ai_proxies)
 
         self.assertIn("🇺🇸 ❇️美国_1_USAI", usai_proxies)
-        self.assertNotIn("🇺🇸 ❇️美国_2_GOAI", usai_proxies)
-        self.assertNotIn("🇺🇸 ❇️美国_3_GOAI", usai_proxies)
+        self.assertIn("🇺🇸 ❇️美国_2_USAI", usai_proxies)
+        self.assertIn("🇺🇸 ❇️美国_3_USAI", usai_proxies)
+        self.assertNotIn("🇲🇽 ❇️墨西哥_1_GOAI", usai_proxies)
 
         self.assertIn("🇺🇸 ❇️美国_1_USAI", us_proxies)
-        self.assertIn("🇺🇸 ❇️美国_2_GOAI", us_proxies)
-        self.assertIn("🇺🇸 ❇️美国_3_GOAI", us_proxies)
+        self.assertIn("🇺🇸 ❇️美国_2_USAI", us_proxies)
+        self.assertIn("🇺🇸 ❇️美国_3_USAI", us_proxies)
 
     def test_us_nodes_use_free_prefix_and_inherit_key_weights(self):
         """测试准则升级：只有具备 USAI 后缀的美国节点才将 Key 改为 Free 前缀，其他符合 key 标准的美国节点继续使用 Key 前缀。"""
@@ -1351,8 +1356,11 @@ class TestProxyServiceProbe(unittest.TestCase):
         renamed_usai = renumber_node_tag("🇺🇸 ✨️♥️❇️Key美国_1_USAI_NF_D+", slot=1)
         self.assertEqual(renamed_usai, "🇺🇸 ✨️♥️❇️Free美国_1_USAI_NF_D+")
 
-        renamed_non_usai = renumber_node_tag("🇺🇸 ❇️Key美国_2_GOAI", slot=2, is_inconsistent=True, is_google_us=True)
-        self.assertEqual(renamed_non_usai, "🇺🇸 ❇️Key美国_2_GOAI")
+        renamed_us_goai = renumber_node_tag("🇺🇸 ❇️Key美国_2_GOAI", slot=2, is_inconsistent=True, is_google_us=True)
+        self.assertEqual(renamed_us_goai, "🇺🇸 ❇️Free美国_2_USAI")
+
+        renamed_mx_goai = renumber_node_tag("🇲🇽 ❇️Key墨西哥_2_GOAI", slot=2, is_inconsistent=True, is_google_us=True)
+        self.assertEqual(renamed_mx_goai, "🇲🇽 ❇️Key墨西哥_2_GOAI")
 
         renamed_plain = renumber_node_tag("🇺🇸 Key美国_3_NF", slot=3)
         self.assertEqual(renamed_plain, "🇺🇸 Key美国_3_NF")

@@ -497,6 +497,31 @@ proxies:
         self.assertEqual(args.password, "test_pass")
         self.assertTrue(args.headless)
 
+    @patch("core.fofa._search_fofa_signed_web_api")
+    @patch("core.fofa_login.login_fofa_and_extract_token")
+    def test_search_fofa_targets_auto_refreshes_expired_token(self, mock_login, mock_web_api):
+        expired_payload = {"username": "expired_user", "exp": 1000}
+        p_exp = base64.urlsafe_b64encode(json.dumps(expired_payload).encode()).decode().rstrip("=")
+        expired_jwt = f"eyJhbGciOiJIUzI1NiJ9.{p_exp}.sig"
+
+        future_payload = {"username": "refreshed_user", "exp": 2500000000}
+        p_new = base64.urlsafe_b64encode(json.dumps(future_payload).encode()).decode().rstrip("=")
+        new_jwt = f"eyJhbGciOiJIUzI1NiJ9.{p_new}.sig"
+
+        mock_login.return_value = (True, new_jwt, "自动续期成功")
+        mock_web_api.return_value = (["https://refreshed-node.example.com/sub"], None)
+
+        cfg = {
+            "token": expired_jwt,
+            "tokens_list": [expired_jwt],
+            "account": {"username": "user@example.com", "password": "secret"},
+        }
+        targets = search_fofa_targets("recommended", config=cfg)
+        self.assertEqual(targets, ["https://refreshed-node.example.com/sub"])
+        mock_login.assert_called_once()
+        mock_web_api.assert_called_once()
+        self.assertEqual(mock_web_api.call_args.kwargs.get("token"), new_jwt)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -178,7 +178,7 @@ def _is_key(p):
 
 
 def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential=None, has_res_suffix=None, is_inconsistent=False, is_google_us=None):
-    """根据目标编号重构节点名称（保留已有能力徽章、前缀与后缀，且 IPLC 后缀排在第一梯队，家宽高分使用 🏠 前缀徽章，低分使用 _ISP 后缀，若是专线则只保留专线；属地不一致的美国节点严禁 USAI 并替换为 GOAI）。"""
+    """根据目标编号重构节点名称（保留已有能力徽章、前缀与后缀，且 IPLC 后缀排在第一梯队，家宽高分使用 🏠 前缀徽章，低分使用 _ISP 后缀，若是专线则只保留专线；最终归属美国且具 AI 能力的节点用 _USAI，仅非美且谷歌认定美国且具 AI 能力的节点用 _GOAI）。"""
     has_warp = "[⚡WARP]" in old_name
     warp_suffix = "[⚡WARP]" if has_warp else ""
     base_old_name = old_name.replace("[⚡WARP]", "")
@@ -230,7 +230,7 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
     is_us = bool(re.search(r'🇺🇸|美国|USA|\bUS\b', base_old_name))
     key = bool(re.search(r'(?i)\bkey(?![a-z])', rest) or (is_us and re.search(r'(?i)\bfree(?![a-z])', rest)))
     fast = bool(re.search(r'(?i)\bfast(?![a-z])', rest))
-    has_usai = bool(re.search(r'(?i)(?:^|_)usai(?=_|$)', base_old_name)) and not is_inconsistent
+    has_usai = bool(is_us and (re.search(r'(?i)(?:^|_)usai(?=_|$)', base_old_name) or (ai and re.search(r'(?i)(?:^|_)(?:goai|gui)(?=_|$)', base_old_name))))
 
     prefix = ""
     if sparkle:
@@ -261,7 +261,12 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:isp|res|家宽)(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)*(?:双isp|家宽|住宅|residential)+(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)(?=_|$)', '', clean_suffix)
-        if is_inconsistent:
+        if is_us:
+            if ai:
+                clean_suffix = re.sub(r'(?i)(?:^|_)(?:goai|gui)(?=_|$)', '_USAI', clean_suffix)
+            elif is_inconsistent:
+                clean_suffix = re.sub(r'(?i)(?:^|_)(?:usai|goai|gui)(?=_|$)', '', clean_suffix)
+        elif is_inconsistent:
             if is_google_us is not False:
                 clean_suffix = re.sub(r'(?i)(?:^|_)usai(?=_|$)', '_GOAI', clean_suffix)
                 clean_suffix = re.sub(r'(?i)(?:^|_)gui(?=_|$)', '_GOAI', clean_suffix)
@@ -283,7 +288,12 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:isp|res|家宽)(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)*(?:双isp|家宽|住宅|residential)+(?=_|$)', '', clean_suffix)
         clean_suffix = re.sub(r'(?i)(?:^|_)(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)(?=_|$)', '', clean_suffix)
-        if is_inconsistent:
+        if is_us:
+            if ai:
+                clean_suffix = re.sub(r'(?i)(?:^|_)(?:goai|gui)(?=_|$)', '_USAI', clean_suffix)
+            elif is_inconsistent:
+                clean_suffix = re.sub(r'(?i)(?:^|_)(?:usai|goai|gui)(?=_|$)', '', clean_suffix)
+        elif is_inconsistent:
             if is_google_us is not False:
                 clean_suffix = re.sub(r'(?i)(?:^|_)usai(?=_|$)', '_GOAI', clean_suffix)
                 clean_suffix = re.sub(r'(?i)(?:^|_)gui(?=_|$)', '_GOAI', clean_suffix)
@@ -596,16 +606,23 @@ def sort_nodes_by_region_and_landing(items, resort=False):
                 is_inconsistent=inconsistent_flag,
                 is_google_us=google_us_flag
             )
-            if inconsistent_flag:
-                if google_us_flag:
+            ai_cap = bool(
+                (isinstance(item, dict) and (item.get("ai_supported") or (item.get("proxy") or {}).get("_ai_supported")))
+                or "❇️" in new_name or "❇" in new_name
+            )
+            if c == "US":
+                if ai_cap:
+                    new_name = new_name.replace("_GOAI", "_USAI").replace("_GUI", "_USAI")
+                elif inconsistent_flag:
+                    lnd_rep = "_Lnd" if _is_lnd(item) else ""
+                    new_name = new_name.replace("_USAI", lnd_rep).replace("_GOAI", lnd_rep).replace("_GUI", lnd_rep)
+                    new_name = re.sub(r'_+', '_', new_name).strip('_')
+            elif inconsistent_flag:
+                if google_us_flag and ai_cap:
                     if "_USAI" in new_name:
                         new_name = new_name.replace("_USAI", "_GOAI")
                     new_name = new_name.replace("_GUI", "_GOAI")
-                    ai_cap = bool(
-                        (isinstance(item, dict) and (item.get("ai_supported") or (item.get("proxy") or {}).get("_ai_supported")))
-                        or "❇️" in new_name or "❇" in new_name
-                    )
-                    if ai_cap and not re.search(r'(?i)(?:^|_)goai(?=_|\[|$)', new_name):
+                    if not re.search(r'(?i)(?:^|_)goai(?=_|\[|$)', new_name):
                         m_media = re.search(r'((?:_(?:NF|D\+|ChromeGo|⚠️[A-Z0-9]+)|\[⚡WARP\])+.*)$', new_name)
                         if m_media:
                             pos = m_media.start(1)

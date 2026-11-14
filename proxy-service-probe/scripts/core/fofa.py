@@ -547,12 +547,34 @@ def search_fofa_targets(query: str, config: Optional[Dict[str, Any]] = None,
         elif r and r.status_code != 200:
             print(f"      [FoFa API] 请求失败 (HTTP {r.status_code})")
 
-    # 2. 尝试 FoFa Web 内部签名 API (支持多 Token 轮询)
+    # 2. 尝试 FoFa Web 内部签名 API (支持多 Token 轮询与到期自动续期)
     tokens = cfg.get("tokens_list") or []
     if not tokens and cfg.get("token"):
         tokens = [cfg["token"]]
 
+    # 检查是否存在未过期的可用 Token；若全部过期或缺失，自动尝试通过配置的账号密码续期
+    has_valid_jwt = any(
+        inspect_jwt_token(t).get("valid") and not inspect_jwt_token(t).get("expired")
+        for t in tokens
+    )
+    if not has_valid_jwt and not cfg.get("key"):
+        raw_email = str(cfg.get("email") or (cfg.get("account") or {}).get("username") or "").strip()
+        raw_pwd = str(cfg.get("password") or (cfg.get("account") or {}).get("password") or "").strip()
+        if raw_email and raw_pwd:
+            ok_refresh, refresh_msg = ensure_fofa_token(
+                cfg,
+                auto_login=True,
+                headless=bool(cfg.get("headless", False)),
+                timeout=int(cfg.get("login_timeout") or 90),
+            )
+            if ok_refresh:
+                print(f"      [FoFa Auth] {refresh_msg}")
+                tokens = cfg.get("tokens_list") or ([cfg["token"]] if cfg.get("token") else [])
+            else:
+                print(f"      [FoFa Auth] 提示: {refresh_msg}")
+
     had_expired_token = False
+    need_force_refresh = False
     if tokens:
         for idx, tok in enumerate(tokens, 1):
             if len(tokens) > 1:
@@ -569,6 +591,34 @@ def search_fofa_targets(query: str, config: Optional[Dict[str, Any]] = None,
                 return targets
             if err and ("过期" in err or "失效" in err):
                 had_expired_token = True
+                if "失效" in err:
+                    need_force_refresh = True
+
+    # 若 Token 未过本地 exp 但被服务端判定失效 (-23)，且配置了账号密码，自动触发一次强制续期并重试
+    if need_force_refresh and not cfg.get("key"):
+        raw_email = str(cfg.get("email") or (cfg.get("account") or {}).get("username") or "").strip()
+        raw_pwd = str(cfg.get("password") or (cfg.get("account") or {}).get("password") or "").strip()
+        if raw_email and raw_pwd:
+            ok_refresh, refresh_msg = ensure_fofa_token(
+                cfg,
+                auto_login=True,
+                headless=bool(cfg.get("headless", False)),
+                timeout=int(cfg.get("login_timeout") or 90),
+                force_refresh=True,
+            )
+            if ok_refresh and cfg.get("token"):
+                print(f"      [FoFa Auth] {refresh_msg}，正在使用新 Token 重试检索...")
+                targets, err = _search_fofa_signed_web_api(
+                    qbase64=qbase64,
+                    token=cfg["token"],
+                    page=page,
+                    size=page_size,
+                    proxy=proxy,
+                    timeout=timeout
+                )
+                if targets:
+                    return targets
+                had_expired_token = bool(err and ("过期" in err or "失效" in err))
 
     if not tokens and not cfg.get("key"):
         print("      [FoFa] 提示: 未配置有效 key 或 token，跳过 FoFa 检索")
@@ -744,10 +794,11 @@ def check_fofa_auth(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
 
 
 def ensure_fofa_token(config: Dict[str, Any], auto_login: bool = True,
-                      headless: bool = False, timeout: int = 60) -> Tuple[bool, str]:
+                      headless: bool = False, timeout: int = 60,
+                      force_refresh: bool = False) -> Tuple[bool, str]:
     """
     检查配置中的 Token 是否仍然有效。
-    若已过期或缺失，且启用了 auto_login 并存在账号凭据（或可交互登录），
+    若已过期或缺失（或指定 force_refresh=True），且启用了 auto_login 并存在账号凭据（或可交互登录），
     自动调度 fofa_login 模块启动浏览器执行登录，刷新并回写最新有效 Token 到配置文件。
     返回: (是否拥有可用 Token, 状态描述消息)
     """
@@ -756,17 +807,19 @@ def ensure_fofa_token(config: Dict[str, Any], auto_login: bool = True,
         tokens = [config["token"]]
 
     # 1. 检查现有 Token 是否存在有效项
-    for tok in tokens:
-        info = inspect_jwt_token(tok)
-        if info.get("valid") and not info.get("expired"):
-            return True, f"Token 有效 (用户: {info.get('username') or '未知'}, 将于 {info.get('exp_dt')} 到期)"
+    if not force_refresh:
+        for tok in tokens:
+            info = inspect_jwt_token(tok)
+            if info.get("valid") and not info.get("expired"):
+                return True, f"Token 有效 (用户: {info.get('username') or '未知'}, 将于 {info.get('exp_dt')} 到期)"
 
     if not auto_login:
         return False, "FoFa Web Token 已过期或未配置，未启用自动续期"
 
-    # 2. 检查是否具备自动登录条件 (过滤占位符)
-    raw_email = str(config.get("email") or "").strip()
-    raw_pwd = str(config.get("password") or "").strip()
+    # 2. 检查是否具备自动登录条件 (兼容顶层 email/password 与 account 字典，过滤占位符)
+    acc = config.get("account") if isinstance(config.get("account"), dict) else {}
+    raw_email = str(config.get("email") or acc.get("username") or acc.get("email") or "").strip()
+    raw_pwd = str(config.get("password") or acc.get("password") or "").strip()
     is_ph = any(p in raw_email.lower() for p in ("your_", "example.com", "placeholder", "your-", "<your")) or \
             any(p in raw_pwd.lower() for p in ("your_", "placeholder", "your-", "<your"))
     has_creds = bool(raw_email and raw_pwd) and not is_ph
@@ -779,25 +832,30 @@ def ensure_fofa_token(config: Dict[str, Any], auto_login: bool = True,
     except Exception as e:
         return False, f"无法载入自动登录模块: {e}"
 
-    cfg_path = config.get("_config_source")
+    cfg_path = config.get("_config_source") or get_default_config_path()
     proxy = config.get("proxy")
-    email = config.get("email")
-    pwd = config.get("password")
 
     print("[FoFa Auth] 检测到当前 FoFa Web Token 已过期或未配置，正在尝试自动续期刷新...")
-    ok, new_token, msg = login_fofa_and_extract_token(
-        email=email,
-        password=pwd,
-        config_path=cfg_path,
-        proxy=proxy,
-        headless=headless,
-        timeout=timeout,
-        save_to_config=True
-    )
+    login_kwargs: Dict[str, Any] = {
+        "email": raw_email,
+        "password": raw_pwd,
+        "config_path": cfg_path,
+        "proxy": proxy,
+        "headless": headless,
+        "timeout": timeout,
+        "save_to_config": True,
+    }
+    if force_refresh:
+        login_kwargs["force_refresh"] = True
+    ok, new_token, msg = login_fofa_and_extract_token(**login_kwargs)
     if ok and new_token:
-        # 同步更新内存配置对象
+        # 同步更新内存配置对象，并剔除已过期的旧 Token
         config["token"] = new_token
-        config["tokens_list"] = [new_token] + [t for t in tokens if t != new_token]
+        valid_rest = [
+            t for t in tokens
+            if t != new_token and not inspect_jwt_token(t).get("expired")
+        ]
+        config["tokens_list"] = [new_token] + valid_rest
         return True, f"Token 自动续期成功: {msg}"
 
     return False, f"Token 自动续期失败: {msg}"

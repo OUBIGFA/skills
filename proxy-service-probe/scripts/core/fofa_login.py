@@ -76,10 +76,15 @@ def update_fofa_config_token(new_token: str, email: Optional[str] = None,
     cfg["token"] = new_token
     if email:
         cfg["email"] = email
+        if isinstance(cfg.get("account"), dict) and not cfg["account"].get("username"):
+            cfg["account"]["username"] = email
 
-    # 若存在 tokens 多 Token 列表配置，将新 Token 插入首位去重
+    # 若存在 tokens 多 Token 列表配置，将新 Token 插入首位并剔除已过期的旧 Token
     if "tokens" in cfg and isinstance(cfg["tokens"], list):
-        filtered = [t for t in cfg["tokens"] if t != new_token]
+        filtered = [
+            t for t in cfg["tokens"]
+            if t != new_token and not inspect_jwt_token(t).get("expired")
+        ]
         cfg["tokens"] = [new_token] + filtered
 
     try:
@@ -102,7 +107,8 @@ def login_fofa_and_extract_token(
     proxy: Optional[str] = None,
     headless: bool = False,
     timeout: int = 60,
-    save_to_config: bool = True
+    save_to_config: bool = True,
+    force_refresh: bool = False,
 ) -> Tuple[bool, Optional[str], str]:
     """
     执行自动化登录 FoFa 并获取有效 Web Token。
@@ -110,11 +116,12 @@ def login_fofa_and_extract_token(
     :param email: 登录邮箱或用户名。若未提供，优先读取配置文件或环境变量 FOFA_EMAIL/FOFA_USER。
     :param password: 登录密码。若未提供，优先读取配置文件或环境变量 FOFA_PASSWORD。
     :param config_path: fofa_config.json 绝对路径。
-    :param user_data_dir: 浏览器用户持久化配置目录。若未提供，优先读取配置或默认使用 data/fofa_profile。
+    :param user_data_dir: 浏览器用户持久化配置目录。若未提供，优先读取配置或默认使用 cache/fofa_profile。
     :param proxy: 代理服务器地址 (如 http://127.0.0.1:3067)。
-    :param headless: 是否使用无头模式。默认 False (为确保 Cloudflare Turnstile 人机验证顺利通过)。
+    :param headless: 是否使用无头模式。默认 False (为确保可视窗口交互顺利完成)。
     :param timeout: 登录与验证总超时秒数 (默认 60s)。
     :param save_to_config: 成功后是否自动更新写回 fofa_config.json。
+    :param force_refresh: 是否强制清除旧 fofa_token Cookie 重新获取。
     :return: (是否成功, token_string, 提示说明信息)
     """
     # 动态载入 playwright，避免在未安装环境报错
@@ -127,10 +134,25 @@ def login_fofa_and_extract_token(
             "未检测到 playwright 依赖库。请先安装: pip install playwright && playwright install chromium"
         )
 
-    # 1. 尝试从已有配置补全参数
+    # 1. 尝试从已有配置补全参数 (兼容顶层 email/password 与 account 字典)
     cfg = load_fofa_config(config_path)
-    final_email = email or cfg.get("email") or os.environ.get("FOFA_EMAIL") or os.environ.get("FOFA_USER") or ""
-    final_pwd = password or cfg.get("password") or os.environ.get("FOFA_PASSWORD") or ""
+    acc = cfg.get("account") if isinstance(cfg.get("account"), dict) else {}
+    final_email = (
+        email
+        or cfg.get("email")
+        or acc.get("username")
+        or acc.get("email")
+        or os.environ.get("FOFA_EMAIL")
+        or os.environ.get("FOFA_USER")
+        or ""
+    )
+    final_pwd = (
+        password
+        or cfg.get("password")
+        or acc.get("password")
+        or os.environ.get("FOFA_PASSWORD")
+        or ""
+    )
     final_proxy = proxy or cfg.get("proxy") or os.environ.get("FOFA_PROXY") or ""
     final_user_data_dir = os.path.abspath(user_data_dir or cfg.get("user_data_dir") or get_default_profile_dir())
 
@@ -226,6 +248,17 @@ def login_fofa_and_extract_token(
 
             page = context.pages[0] if context.pages else context.new_page()
 
+            # 若指定 force_refresh，先清理已有的 fofa_token Cookie，确保捕获新签发凭据
+            if force_refresh:
+                try:
+                    existing_cookies = context.cookies()
+                    kept = [c for c in existing_cookies if c.get("name") != "fofa_token"]
+                    context.clear_cookies()
+                    if kept:
+                        context.add_cookies(kept)
+                except Exception:
+                    pass
+
             # 2. 导航至登录页面
             print("[*] 正在载入 NOSEC 认证中心登录页...")
             try:
@@ -233,43 +266,54 @@ def login_fofa_and_extract_token(
             except Exception as e:
                 return False, None, f"打开登录页失败: {e}"
 
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(1500)
 
-            # 3. 自动填入账号密码 (若已有历史凭据则跳过或覆盖)
-            if final_email:
+            def _ensure_form_filled() -> None:
+                """确保账号、密码、保持登录与服务协议复选框在登录页就绪。"""
+                if final_email:
+                    try:
+                        loc = page.locator('input[name="username"]')
+                        if loc.count() > 0:
+                            curr_val = loc.input_value()
+                            if not curr_val or curr_val != final_email:
+                                loc.fill(final_email)
+                    except Exception:
+                        pass
+                if final_pwd:
+                    try:
+                        loc = page.locator('input[name="password"]')
+                        if loc.count() > 0:
+                            curr_pwd = loc.input_value()
+                            if not curr_pwd:
+                                loc.fill(final_pwd)
+                    except Exception:
+                        pass
                 try:
-                    curr_val = page.locator('input[name="username"]').input_value()
-                    if not curr_val or curr_val != final_email:
-                        page.fill('input[name="username"]', final_email)
+                    page.evaluate("""() => {
+                        const boxes = document.querySelectorAll('input[type="checkbox"]');
+                        boxes.forEach(b => {
+                            if (!b.checked) {
+                                b.checked = true;
+                                b.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        });
+                        if (typeof Cookies !== 'undefined') {
+                            Cookies.set('fofa_service', 1);
+                        }
+                    }""")
                 except Exception:
                     pass
-            if final_pwd:
-                try:
-                    curr_pwd = page.locator('input[name="password"]').input_value()
-                    if not curr_pwd:
-                        page.fill('input[name="password"]', final_pwd)
-                except Exception:
-                    pass
 
-            # 自动勾选服务协议与保持登录复选框 (使持久化配置生效)
-            try:
-                checks = page.locator('input[type="checkbox"]')
-                for i in range(checks.count()):
-                    box = checks.nth(i)
-                    if not box.is_checked():
-                        box.check()
-            except Exception:
-                pass
+            _ensure_form_filled()
 
-            # 4. 轮询检测 Turnstile 人机验证与登录成功状态
+            # 4. 轮询检测登录重定向与 fofa_token Cookie 状态
             start_time = time.time()
             deadline = start_time + timeout
-            auto_submitted = False
-            last_click_try = 0.0
+            last_submitted_ts_token = ""
 
-            print("[*] 正在等待 Cloudflare Turnstile 验证及登录重定向...")
+            print("[*] 正在等待认证完成及登录重定向...")
             if not headless:
-                print("    (若浏览器窗口弹出验证码勾选框，请在窗口中点击完成验证)")
+                print("    (若浏览器窗口中显示人机验证框，请在弹出窗口中手动点击完成后将自动提交并提取 Token)")
 
             while time.time() < deadline:
                 # 检查当前所有 Cookie 中是否已出现有效的 fofa_token
@@ -278,13 +322,33 @@ def login_fofa_and_extract_token(
                     for c in cookies:
                         if c.get("name") == "fofa_token" and c.get("value"):
                             info = inspect_jwt_token(c["value"])
-                            if info.get("valid"):
+                            if info.get("valid") and not info.get("expired"):
                                 extracted_token = c["value"]
                                 success = True
                                 message = f"成功捕获有效 Token (用户: {info.get('username')}, 到期: {info.get('exp_dt')})"
                                 break
                 except Exception:
                     pass
+
+                # 若已跳转至 fofa.info，同时检查 localStorage 中是否存有 fofa_token
+                if not success:
+                    try:
+                        if "fofa.info" in (page.url or ""):
+                            ls_tok = page.evaluate("""() => {
+                                try {
+                                    return localStorage.getItem('fofa_token') || '';
+                                } catch (e) {
+                                    return '';
+                                }
+                            }""")
+                            if ls_tok:
+                                info = inspect_jwt_token(ls_tok)
+                                if info.get("valid") and not info.get("expired"):
+                                    extracted_token = ls_tok
+                                    success = True
+                                    message = f"成功捕获有效 Token (用户: {info.get('username')}, 到期: {info.get('exp_dt')})"
+                    except Exception:
+                        pass
 
                 if success:
                     break
@@ -297,60 +361,42 @@ def login_fofa_and_extract_token(
                     }""")
                     if err_text and ("错误" in err_text or "失败" in err_text):
                         message = f"登录页面返回错误: {err_text}"
+                        break
                 except Exception:
                     pass
 
-                # 若尚未通过验证，每隔 4 秒尝试穿透 iframe 并平滑模拟点击 Turnstile 勾选框
-                if not auto_submitted and (time.time() - last_click_try) >= 4.0:
-                    last_click_try = time.time()
+                # 若仍在登录表单页，确保字段与复选框已填好，并在验证令牌就绪且提交按钮可用时自动点击登录
+                if final_email and final_pwd:
                     try:
-                        ts_input = page.locator('input[name="cf-turnstile-response"]')
-                        ts_val = ts_input.input_value() if ts_input.count() > 0 else ""
-                        if not ts_val:
-                            # 策略 1: 穿透定位 Cloudflare Turnstile iframe
-                            clicked_turnstile = False
-                            for fr in page.frames:
-                                if "challenges.cloudflare.com" in fr.url or "turnstile" in fr.url:
-                                    cb = fr.locator('input[type="checkbox"], body, span.mark')
-                                    if cb.count() > 0:
-                                        try:
-                                            cb.first.click(timeout=1500)
-                                            clicked_turnstile = True
-                                            break
-                                        except Exception:
-                                            pass
-
-                            # 策略 2: 若 iframe 内部元素无法直接穿透，采用外层坐标拟人化贝塞尔逼近点击
-                            if not clicked_turnstile:
-                                ts_elem = page.locator('div.cf-turnstile, iframe[src*="challenges.cloudflare.com"]')
-                                if ts_elem.count() > 0:
-                                    box = ts_elem.first.bounding_box()
-                                    if box and box.get("width", 0) > 30:
-                                        click_x = box["x"] + min(30, box["width"] / 4)
-                                        click_y = box["y"] + box["height"] / 2
-                                        page.mouse.move(click_x - 35, click_y - 20)
-                                        page.wait_for_timeout(50)
-                                        page.mouse.move(click_x, click_y, steps=12)
-                                        page.wait_for_timeout(60)
-                                        page.mouse.down()
-                                        page.wait_for_timeout(90)
-                                        page.mouse.up()
-                    except Exception:
-                        pass
-
-                # 若已填入账号密码且 Turnstile 验证码已生成但尚未提交，自动点击登录按钮
-                if final_email and final_pwd and not auto_submitted:
-                    try:
-                        ts_val = page.locator('input[name="cf-turnstile-response"]').input_value()
-                        if len(ts_val) > 20:
-                            print("[*] 检测到 Turnstile 验证已通过，正在自动提交登录...")
-                            page.evaluate("""() => {
-                                const btn = document.querySelector('button[type="submit"], input[type="submit"]');
-                                if (btn && !btn.disabled) {
-                                    btn.click();
+                        _ensure_form_filled()
+                        ts_loc = page.locator('input[name="cf-turnstile-response"]')
+                        ts_val = ts_loc.input_value() if ts_loc.count() > 0 else ""
+                        if len(ts_val) > 20 and ts_val != last_submitted_ts_token:
+                            clicked = page.evaluate("""() => {
+                                const srv = document.querySelector('#fofa_service');
+                                if (srv && !srv.checked) {
+                                    srv.checked = true;
                                 }
+                                const rem = document.querySelector('#rememberMe');
+                                if (rem && !rem.checked) {
+                                    rem.checked = true;
+                                }
+                                const btn = document.querySelector('button[type="submit"], input[type="submit"]');
+                                if (btn) {
+                                    btn.disabled = false;
+                                    btn.click();
+                                    return true;
+                                }
+                                const form = document.querySelector('#login-form');
+                                if (form) {
+                                    form.submit();
+                                    return true;
+                                }
+                                return false;
                             }""")
-                            auto_submitted = True
+                            if clicked:
+                                print("[*] 验证已就绪，正在自动提交登录表单...")
+                                last_submitted_ts_token = ts_val
                     except Exception:
                         pass
 

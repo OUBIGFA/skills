@@ -155,6 +155,7 @@ def main(argv=None):
         print("------------------------------------------------\n")
         return 0
 
+    login_timeout = max(int(args.timeout or 0), 90)
     if args.login:
         from core.fofa_login import login_fofa_and_extract_token
         ok, tok, msg = login_fofa_and_extract_token(
@@ -163,14 +164,20 @@ def main(argv=None):
             config_path=cfg.get("_config_source"),
             proxy=cfg.get("proxy"),
             headless=args.headless,
-            timeout=args.timeout or 60,
-            save_to_config=True
+            timeout=login_timeout,
+            save_to_config=True,
+            force_refresh=True,
         )
         return 0 if ok else 1
 
     # 自动续期检查：若指定了 --auto-login，或已配置账号密码且选用 fofa/all 引擎时，先调用 ensure_fofa_token 检查与续期
     if args.engine in ("all", "fofa") and (args.auto_login or (cfg.get("email") and cfg.get("password"))):
-        auth_ok, auth_msg = ensure_fofa_token(cfg, auto_login=True, headless=args.headless, timeout=args.timeout or 60)
+        auth_ok, auth_msg = ensure_fofa_token(
+            cfg,
+            auto_login=True,
+            headless=args.headless,
+            timeout=login_timeout,
+        )
         if not auth_ok:
             print(f"[FoFa Auth] 提示: {auth_msg}")
         else:
