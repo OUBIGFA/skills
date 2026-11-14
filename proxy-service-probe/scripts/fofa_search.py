@@ -307,6 +307,8 @@ def main(argv=None):
         probe_cmd = [sys.executable, probe_script, "--input", args.output]
         if args.merge_into:
             probe_cmd += ["--merge-into", args.merge_into]
+        else:
+            probe_cmd += ["--output", args.output]
         if args.insert_mode:
             probe_cmd += ["--insert"]
         print(f"    执行命令: {' '.join(probe_cmd)}")

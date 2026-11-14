@@ -233,7 +233,7 @@ def merge_into_clash_config(base_path: str,
             f.write(text)
 
     # 渲染 YAML
-    out_yaml = render_clash_yaml_text(target_data, template_path=base_path)
+    out_yaml = render_clash_yaml_text(target_data, template_path=template_path or base_path)
     os.makedirs(os.path.dirname(dest_path), exist_ok=True)
     with open(dest_path, "w", encoding="utf-8") as f:
         f.write(out_yaml)
@@ -248,7 +248,8 @@ def merge_into_target_file(target_path: str,
                            output_path: Optional[str] = None,
                            insert_mode: bool = False,
                            dedup: bool = True,
-                           template_path: Optional[str] = None) -> Tuple[str, Dict[str, Any]]:
+                           template_path: Optional[str] = None,
+                           apply: bool = True) -> Tuple[str, Dict[str, Any]]:
     """
     通用合流入口：根据目标文件类型 (Clash YAML / sing-box JSON) 自动分流并入。
     支持输入节点列表或文件路径。
@@ -273,6 +274,17 @@ def merge_into_target_file(target_path: str,
 
     if not is_json:
         # Clash YAML 格式
+        if not apply:
+            _, stats = merge_proxies_into_base(
+                base_path=target_abs,
+                additions=additions,
+                insert_mode=insert_mode,
+                dedup=dedup
+            )
+            dest_path = os.path.abspath(output_path or target_abs)
+            stats["backup_path"] = None
+            stats["dest_path"] = dest_path
+            return dest_path, stats
         return merge_into_clash_config(
             base_path=target_abs,
             additions=additions,
@@ -303,7 +315,10 @@ def merge_into_target_file(target_path: str,
         )
 
         dest_path = os.path.abspath(output_path or target_abs)
-        changed, backup = write_config(dest_path, base_data, backup=True, style_from=target_abs)
+        if apply:
+            changed, backup = write_config(dest_path, base_data, backup=True, style_from=target_abs)
+        else:
+            changed, backup = False, None
         stats = {
             "base_count": len(base_nodes),
             "new_input_count": len(additions),

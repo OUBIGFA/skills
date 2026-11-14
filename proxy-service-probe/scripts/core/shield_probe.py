@@ -223,8 +223,7 @@ def shield_passed(results):
         cf_pass = _passed(results.get("cloudflare"))
         claude_pass = _passed(results.get("claude")) or _passed(results.get("claude_ai")) or _passed(results.get("anthropic"))
         total_passed = sum(1 for t in SHIELD_TARGETS if _passed(results.get(t["name"])))
-        if (cf_pass or claude_pass) and total_passed >= SHIELD_MIN_PASSED:
-            return True
+        return bool((cf_pass or claude_pass) and total_passed >= SHIELD_MIN_PASSED)
 
     # 2. 纯 HTTP 模式下的 WAF 评分体系
     if "waf_shield_score" in results or "waf_evaluation" in results:

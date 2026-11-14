@@ -292,6 +292,15 @@ def start_kernel(singbox, config_path, workdir, logname, first_port):
             return proc
         except OSError:
             pass
+    try:
+        if proc.poll() is None:
+            proc.terminate()
+    except Exception:
+        pass
+    try:
+        log.close()
+    except Exception:
+        pass
     print(f'sing-box 内核启动失败，详见 {logname}')
     sys.exit(1)
 
@@ -334,9 +343,11 @@ def _socks5_ok(port, timeout=6):
 def _http_ok(port):
     try:
         import requests
-        r = requests.get('http://www.gstatic.com/generate_204',
-                         proxies={'http': f'http://127.0.0.1:{port}',
-                                  'https': f'http://127.0.0.1:{port}'}, timeout=6)
+        sess = requests.Session()
+        sess.trust_env = False
+        r = sess.get('http://www.gstatic.com/generate_204',
+                     proxies={'http': f'http://127.0.0.1:{port}',
+                              'https': f'http://127.0.0.1:{port}'}, timeout=6)
         return r.status_code == 204
     except Exception:
         return False

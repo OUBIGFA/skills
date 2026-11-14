@@ -47,9 +47,9 @@ def parse_node_uri(uri):
                 'name': data.get('ps') or f"vmess_{data.get('add')}:{data.get('port')}",
                 'type': 'vmess',
                 'server': data.get('add'),
-                'port': int(data.get('port', 443)),
+                'port': int(data.get('port') or 443),
                 'uuid': data.get('id'),
-                'alterId': int(data.get('aid', 0)),
+                'alterId': int(data.get('aid') or 0),
                 'cipher': data.get('scy', 'auto'),
                 'udp': True,
             }
@@ -329,6 +329,10 @@ def parse_singbox_outbound(outbound):
     o_type = outbound.get("type", "").lower()
     if o_type in ("direct", "block", "dns", "selector", "urltest"):
         return None
+    if o_type == "wireguard":
+        from .clash_to_singbox import migrate_legacy_wireguard
+        from .renderer import _singbox_wireguard_endpoint_to_clash
+        return _singbox_wireguard_endpoint_to_clash(migrate_legacy_wireguard(outbound))
     name = outbound.get("tag") or f"{o_type}_{outbound.get('server')}:{outbound.get('server_port')}"
     server = outbound.get("server")
     port = outbound.get("server_port")
@@ -358,7 +362,7 @@ def parse_singbox_outbound(outbound):
 
     if o_type == "vmess":
         p["uuid"] = outbound.get("uuid")
-        p["alterId"] = outbound.get("alter_id", 0)
+        p["alterId"] = int(outbound.get("alter_id") or 0)
         p["cipher"] = outbound.get("security", "auto")
         _copy_singbox_tls(outbound, p)
         _copy_singbox_transport(outbound, p)
@@ -481,7 +485,14 @@ def load_proxies(source):
 
     if isinstance(source, str):
         source = source.strip()
-        if "," in source and not os.path.isfile(source):
+        if (
+            "," in source
+            and "\n" not in source
+            and not source.lstrip().startswith("{")
+            and "proxies:" not in source
+            and not os.path.isfile(source)
+            and not parse_node_uri(source)
+        ):
             sources = [s.strip() for s in source.split(",") if s.strip()]
             if len(sources) > 1:
                 return load_proxies(sources)
@@ -508,7 +519,9 @@ def load_proxies(source):
                 query_or_preset = None
             proxies, _ = search_and_fetch_proxies(query_or_preset=query_or_preset, engine=engine)
             return proxies
-        elif source.startswith("http://") or source.startswith("https://"):
+        elif (source.startswith("http://") or source.startswith("https://")) and not (
+            "@" in urllib.parse.urlparse(source).netloc and parse_node_uri(source)
+        ):
             resp = requests.get(source, headers={"User-Agent": UA}, timeout=25)
             resp.raise_for_status()
             text = resp.text
@@ -547,8 +560,8 @@ def load_proxies(source):
     # 2. 尝试解析为 sing-box JSON
     try:
         jdata = json.loads(text)
-        if isinstance(jdata, dict) and "outbounds" in jdata:
-            for ob in jdata["outbounds"]:
+        if isinstance(jdata, dict) and ("outbounds" in jdata or "endpoints" in jdata):
+            for ob in (jdata.get("outbounds") or []) + (jdata.get("endpoints") or []):
                 cp = parse_singbox_outbound(ob)
                 if cp:
                     cp.setdefault("_orig_name", cp.get("name", ""))

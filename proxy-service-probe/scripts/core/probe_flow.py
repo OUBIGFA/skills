@@ -229,7 +229,12 @@ def run_services(row, proxy_url, dims, runner_ips):
         if dims["shield"]:
             http_shield = probe_sites_http(node_proxies)
             browser_res = probe_sites_browser(proxy_url) if dims["browser_shield"] else {}
-            combined_shield = {k: browser_res.get(k) or v for k, v in http_shield.items()}
+            combined_shield = dict(http_shield)
+            for k, v in (browser_res or {}).items():
+                if isinstance(v, dict) and isinstance(combined_shield.get(k), dict):
+                    combined_shield[k] = {**combined_shield[k], **v}
+                elif v:
+                    combined_shield[k] = v
             row["shield_passed"] = shield_passed(combined_shield)
             row["shield_details"] = combined_shield
         else:

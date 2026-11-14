@@ -241,6 +241,9 @@ def parse_gist_search_html(html: str, max_age_hours: float = 48.0,
         snippets = soup.find_all("div", class_=re.compile(r"gist-snippet"))
         if not snippets:
             snippets = soup.find_all("div", id=re.compile(r"gist-\d+"))
+    except ImportError:
+        print("      [警告] 缺少 beautifulsoup4 依赖，无法解析 Gist HTML 页面。请执行 pip install beautifulsoup4")
+        snippets = []
     except Exception:
         snippets = []
 

@@ -119,11 +119,19 @@ def check_template(template_path=None):
     return path
 
 
+INTERNAL_RUNTIME_KEYS = {
+    "is_residential", "is_iplc", "has_res_suffix", "is_landing", "is_key",
+    "is_fast", "is_geo_inconsistent", "is_usai", "is_goai", "is_gui",
+    "path", "slot", "assigned_slot", "final_name", "orig_name", "cc", "tag",
+    "geo_decision", "ip_reputation", "shield_details", "ai_supported"
+}
+
+
 def clean_proxy_dict(proxy):
     """清理内部私有字段（以 _ 开头及内部状态字段），仅保留合法字段，并规范化 flow 为多客户端通用标准 xtls-rprx-vision。"""
     clean = {}
     for k, v in proxy.items():
-        if not k.startswith("_") and k not in ("is_residential", "is_iplc", "has_res_suffix"):
+        if not k.startswith("_") and k not in INTERNAL_RUNTIME_KEYS:
             clean[k] = v
     flow = str(clean.get("flow") or "").strip()
     if flow.startswith("xtls-rprx-vision"):
@@ -170,19 +178,27 @@ def _is_key(p):
 
 
 def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential=None, has_res_suffix=None, is_inconsistent=False, is_google_us=None):
-    """根据目标编号重构节点名称（保留已有能力徽章、前缀与后缀，且 IPLC 后缀排在第一梯队，家宽高分使用 🏠 前缀徽章，低分使用 _ISP 后缀，若是专线则只保留专线；属地不一致的美国节点严禁 USAI 并替换为 GUI）。"""
-    flag_match = re.search(r'^([\U0001F1E6-\U0001F1FF]{2}|🏳️|\U0001F3F3\uFE0F?)\s*', old_name)
+    """根据目标编号重构节点名称（保留已有能力徽章、前缀与后缀，且 IPLC 后缀排在第一梯队，家宽高分使用 🏠 前缀徽章，低分使用 _ISP 后缀，若是专线则只保留专线；属地不一致的美国节点严禁 USAI 并替换为 GOAI）。"""
+    has_warp = "[⚡WARP]" in old_name
+    warp_suffix = "[⚡WARP]" if has_warp else ""
+    base_old_name = old_name.replace("[⚡WARP]", "")
+
+    flag_match = re.search(r'^([\U0001F1E6-\U0001F1FF]{2}|🏳️|\U0001F3F3\uFE0F?)\s*', base_old_name)
     flag = flag_match.group(0) if flag_match else ""
-    rest = old_name[len(flag):]
+    rest = base_old_name[len(flag):]
 
-    sparkle = bool("✨️" in rest or "✨" in rest)
-    ai = bool("❇️" in rest or "❇" in rest)
     is_polluted = bool("_⚠️" in rest)
-    hq = bool((is_hq or "♥️" in rest or "♥" in rest) and not is_polluted)
-    has_iplc = bool(is_iplc or re.search(r'(?i)iplc|专线', old_name))
-    res_candidate = bool("🏠" in rest or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', old_name))
+    sparkle = bool(("✨️" in rest or "✨" in rest) and not is_polluted and not has_warp)
+    ai = bool(("❇️" in rest or "❇" in rest) and not is_polluted)
+    hq = bool((is_hq or "♥️" in rest or "♥" in rest) and not is_polluted and not has_warp)
+    has_iplc = bool(is_iplc or re.search(r'(?i)iplc|专线', base_old_name))
+    # 严禁根据上游节点自标名称（如 HiNet家宽 / Seller双ISP）自动授予 🏠，仅认规范 🏠 徽章或显式参数
+    res_candidate = bool("🏠" in rest and not is_polluted and not has_warp)
 
-    if is_residential is True:
+    if is_polluted or has_warp:
+        has_res = False
+        has_res_suf = False
+    elif is_residential is True:
         has_res = True
         has_res_suf = False
     elif is_residential is False:
@@ -194,9 +210,9 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
         elif has_res_suffix is False:
             has_res_suf = False
         else:
-            has_res_suf = bool(re.search(r'(?i)_(?:isp|res|家宽)(?=_|$)', old_name))
+            has_res_suf = bool(re.search(r'(?i)_isp(?=_|$)', base_old_name))
     else:
-        # 未显式指定时的保底（如单测或纯文本转换）
+        # 未显式指定时的保底（仅认规范 🏠 或 _ISP，绝不采信上游自标 家宽/res）
         if has_res_suffix is True:
             has_res = False
             has_res_suf = not has_iplc
@@ -204,17 +220,17 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
             has_res = res_candidate
             has_res_suf = False
         else:
-            if re.search(r'(?i)_(?:isp|res|家宽)(?=_|$)', old_name):
+            if re.search(r'(?i)_isp(?=_|$)', base_old_name):
                 has_res = False
                 has_res_suf = not has_iplc
             else:
                 has_res = res_candidate
                 has_res_suf = False
 
-    is_us = bool(re.search(r'🇺🇸|美国|USA|\bUS\b', old_name))
+    is_us = bool(re.search(r'🇺🇸|美国|USA|\bUS\b', base_old_name))
     key = bool(re.search(r'(?i)\bkey(?![a-z])', rest) or (is_us and re.search(r'(?i)\bfree(?![a-z])', rest)))
     fast = bool(re.search(r'(?i)\bfast(?![a-z])', rest))
-    has_usai = bool(re.search(r'(?i)(?:^|_)usai(?=_|$)', old_name)) and not is_inconsistent
+    has_usai = bool(re.search(r'(?i)(?:^|_)usai(?=_|$)', base_old_name)) and not is_inconsistent
 
     prefix = ""
     if sparkle:
@@ -254,9 +270,9 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
         clean_suffix = re.sub(r'_+', '_', clean_suffix).strip('_')
         prefix_suf = "_IPLC" if has_iplc else ("_ISP" if has_res_suf else "")
         final_suf = f"{prefix_suf}_{clean_suffix}" if (prefix_suf and clean_suffix) else (prefix_suf or (f"_{clean_suffix}" if clean_suffix else ""))
-        return f"{flag}{prefix}{country}_{slot}{final_suf}"
+        return f"{flag}{prefix}{country}_{slot}{final_suf}{warp_suffix}"
 
-    m_old = re.search(r'^(.*?)_(\d+)(.*)$', old_name)
+    m_old = re.search(r'^(.*?)_(\d+)(.*)$', base_old_name)
     if m_old:
         country = m_old.group(1)
         country = re.sub(r'(?i)(?:^|_)?(?:hinet|hkt|tokala|seller|blurpath|bigleaf|blackmesa|proxy[-_]?cheap|iproyal)*(?:双isp|家宽|住宅|residential)+(?=_|$)?', '', country).strip('_')
@@ -276,10 +292,10 @@ def renumber_node_tag(old_name, slot, is_hq=False, is_iplc=False, is_residential
         clean_suffix = re.sub(r'_+', '_', clean_suffix).strip('_')
         prefix_suf = "_IPLC" if has_iplc else ("_ISP" if has_res_suf else "")
         final_suf = f"{prefix_suf}_{clean_suffix}" if (prefix_suf and clean_suffix) else (prefix_suf or (f"_{clean_suffix}" if clean_suffix else ""))
-        return f"{flag}{prefix}{country}_{slot}{final_suf}"
-    prefix_extra = "_IPLC" if (has_iplc and not re.search(r'(?i)_iplc', old_name)) else ("_ISP" if (has_res_suf and not re.search(r'(?i)_(?:isp|res|家宽)', old_name)) else "")
-    res_prefix = "🏠" if (has_res and "🏠" not in old_name) else ""
-    return f"{res_prefix}{old_name}_{slot}{prefix_extra}"
+        return f"{flag}{prefix}{country}_{slot}{final_suf}{warp_suffix}"
+    prefix_extra = "_IPLC" if (has_iplc and not re.search(r'(?i)_iplc', base_old_name)) else ("_ISP" if (has_res_suf and not re.search(r'(?i)_isp', base_old_name)) else "")
+    res_prefix = "🏠" if (has_res and "🏠" not in base_old_name) else ""
+    return f"{res_prefix}{base_old_name}_{slot}{prefix_extra}{warp_suffix}"
 
 
 def sort_nodes_by_region_and_landing(items, resort=False):
@@ -359,6 +375,8 @@ def sort_nodes_by_region_and_landing(items, resort=False):
         return bool(re.search(r'(?i)iplc|专线', name))
 
     def _is_res(item, name):
+        if "_⚠️" in name or "[⚡WARP]" in name:
+            return False
         if isinstance(item, dict):
             # 1. 显式布尔值优先
             if item.get("is_residential") is True or item.get("_is_residential") is True:
@@ -385,11 +403,13 @@ def sort_nodes_by_region_and_landing(items, resort=False):
             orig = (item.get("_orig_name") or item.get("orig_name") or
                     (p.get("_orig_name") or p.get("orig_name") if isinstance(p, dict) else "") or
                     (raw.get("_orig_name") or raw.get("orig_name") if isinstance(raw, dict) else ""))
-            if orig and ("🏠" in str(orig) or re.search(r'(?i)家宽|双isp|住宅|residential', str(orig))):
+            if orig and "🏠" in str(orig):
                 return True
         return bool("🏠" in name)
 
     def _has_res_suffix(item, name):
+        if "_⚠️" in name or "[⚡WARP]" in name:
+            return False
         if isinstance(item, dict):
             if item.get("has_res_suffix") is True or item.get("_has_res_suffix") is True:
                 return True
@@ -414,10 +434,10 @@ def sort_nodes_by_region_and_landing(items, resort=False):
             orig = (item.get("_orig_name") or item.get("orig_name") or
                     (p.get("_orig_name") or p.get("orig_name") if isinstance(p, dict) else "") or
                     (raw.get("_orig_name") or raw.get("orig_name") if isinstance(raw, dict) else ""))
-            is_cand = orig and ("🏠" in str(orig) or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', str(orig)))
+            is_cand = orig and ("🏠" in str(orig) or re.search(r'(?i)_isp(?=_|\[|$)', str(orig)))
             if is_cand and rep.get("status") == "observed" and sc is not None and sc < 80:
                 return True
-        return bool(re.search(r'(?i)_(?:isp|res|家宽)(?=_|$)', name))
+        return bool(re.search(r'(?i)_isp(?=_|\[|$)', name))
 
     def _should_sink(item):
         if not _is_lnd(item):
@@ -447,8 +467,8 @@ def sort_nodes_by_region_and_landing(items, resort=False):
                 r_dict.get('_ip_reputation') or {})
 
     def _is_hq(item, name):
-        # 送中/受限地区污染节点不授予 ♥️，与打标层 format_node_name 保持一致
-        if '_⚠️' in name:
+        # 送中/受限地区或 WARP 污染节点不授予 ♥️，与打标层 format_node_name 保持一致
+        if '_⚠️' in name or '[⚡WARP]' in name:
             return False
         if isinstance(item, dict):
             p_obj = item.get("proxy")
@@ -514,7 +534,7 @@ def sort_nodes_by_region_and_landing(items, resort=False):
         if is_residential:
             return (geo_inconsistent, sparkle, home, ai, key, fast, line_prio, iplc, orig_idx, 0, 0, 0, 0, 0, 0, orig_idx, name)
         else:
-            is_polluted = 1 if ('_⚠️' in name) else 0
+            is_polluted = 1 if ('_⚠️' in name or '[⚡WARP]' in name) else 0
             reputation = _reputation(item)
             score = valid_reputation_score(reputation.get('score'))
             hq = 0 if _is_hq(item, name) else 1
@@ -585,8 +605,8 @@ def sort_nodes_by_region_and_landing(items, resort=False):
                         (isinstance(item, dict) and (item.get("ai_supported") or (item.get("proxy") or {}).get("_ai_supported")))
                         or "❇️" in new_name or "❇" in new_name
                     )
-                    if ai_cap and not re.search(r'(?i)(?:^|_)goai(?=_|$)', new_name):
-                        m_media = re.search(r'((?:_(?:NF|D\+|ChromeGo|⚠️[A-Z0-9]+))+.*)$', new_name)
+                    if ai_cap and not re.search(r'(?i)(?:^|_)goai(?=_|\[|$)', new_name):
+                        m_media = re.search(r'((?:_(?:NF|D\+|ChromeGo|⚠️[A-Z0-9]+)|\[⚡WARP\])+.*)$', new_name)
                         if m_media:
                             pos = m_media.start(1)
                             new_name = new_name[:pos] + "_GOAI" + new_name[pos:]
@@ -876,11 +896,11 @@ def inject_streaming_rules(rules, providers=None):
 
 def render_clash_config(proxies, template_path=None):
     """根据测试后的节点与母版生成最终完整的 Clash / Mihomo 配置字典。"""
-    sorted_proxies = sort_nodes_by_region_and_landing(proxies)
+    sorted_proxies = [dict(p) if isinstance(p, dict) else p for p in sort_nodes_by_region_and_landing(proxies)]
     template = load_template(template_path)
+    front_fallback = [p.get("name") for p in sorted_proxies if isinstance(p, dict) and p.get("_front_fallback")]
+    groups = build_proxy_groups(sorted_proxies, front_fallback=front_fallback)
     clean_proxies = [clean_proxy_dict(p) for p in sorted_proxies]
-    front_fallback = [p.get("name") for p in sorted_proxies if p.get("_front_fallback")]
-    groups = build_proxy_groups(clean_proxies, front_fallback=front_fallback)
 
     config = deepcopy(template)
     config["proxies"] = clean_proxies

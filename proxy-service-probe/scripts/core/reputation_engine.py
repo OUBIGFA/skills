@@ -66,15 +66,17 @@ def probe_dnsbl(ip: str, zones: Optional[List[str]] = None, timeout: float = 1.2
             pass
         return None
 
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=len(zones))
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(zones)) as executor:
-            futures = [executor.submit(_check_zone, z) for z in zones]
-            for fut in concurrent.futures.as_completed(futures, timeout=timeout + 0.3):
-                res = fut.result()
-                if res:
-                    hits.append(res)
+        futures = [executor.submit(_check_zone, z) for z in zones]
+        for fut in concurrent.futures.as_completed(futures, timeout=timeout + 0.3):
+            res = fut.result()
+            if res:
+                hits.append(res)
     except Exception:
         pass
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
     return hits
 
@@ -119,10 +121,15 @@ def fetch_scamalytics(ip: str, timeout: float = 2.5) -> Optional[Dict[str, Any]]
     risk_match = re.search(r'(?i)Risk</th>\s*<td[^>]*>(?:<[^>]+>)*\s*([A-Za-z]+)', html)
     risk_level = risk_match.group(1).lower() if risk_match else "unknown"
 
+    asn_match = re.search(r'(?i)ASN\s*</th>\s*<td[^>]*>(?:<[^>]+>)*\s*(AS?\d+|\d+)', html)
+    scama_asn = asn_match.group(1).strip() if asn_match else None
+    isp_match = re.search(r'(?i)(?:ISP|Organization)\s*Name\s*</th>\s*<td[^>]*>\s*(?:<[^>]+>\s*)*([^<\r\n]+)', html)
+    scama_isp = isp_match.group(1).strip() if isp_match and isp_match.group(1).strip().lower() not in ("n/a", "unknown", "-") else None
+
     if fraud_score is None:
         return None
 
-    return {
+    res_dict: Dict[str, Any] = {
         "provider": "Scamalytics",
         "fraud_score": fraud_score,
         "is_datacenter": is_dc,
@@ -130,6 +137,11 @@ def fetch_scamalytics(ip: str, timeout: float = 2.5) -> Optional[Dict[str, Any]]
         "is_residential_proxy": is_res_proxy,
         "risk_level": risk_level,
     }
+    if scama_asn:
+        res_dict["asn"] = scama_asn
+    if scama_isp:
+        res_dict["isp"] = scama_isp
+    return res_dict
 
 
 def fetch_abuseipdb(ip: str, api_key: Optional[str] = None, timeout: float = 2.0) -> Optional[Dict[str, Any]]:
@@ -260,6 +272,7 @@ def evaluate_ip_reputation(
     asn_raw: Any = None,
     isp_name: str = "",
     ipinfo_flags: Optional[Dict[str, Any]] = None,
+    ptr_hint: Optional[str] = None,
     use_cache: bool = True,
     timeout: float = 2.5
 ) -> Dict[str, Any]:
@@ -289,14 +302,15 @@ def evaluate_ip_reputation(
             return cached_res
 
     # 1. 本地极速层：反向域名解析 (rDNS / PTR)
-    ptr = resolve_ptr(ip, timeout=1.5)
+    ptr = resolve_ptr(ip, timeout=1.5) or ptr_hint
 
     # 2. 并发探测层：DNSBL + Scamalytics + 可选 AbuseIPDB
     dnsbl_hits: List[str] = []
     scamalytics_data: Optional[Dict[str, Any]] = None
     abuse_data: Optional[Dict[str, Any]] = None
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+    try:
         fut_dnsbl = executor.submit(probe_dnsbl, ip, timeout=1.2)
         fut_scama = executor.submit(fetch_scamalytics, ip, timeout=timeout)
         fut_abuse = executor.submit(fetch_abuseipdb, ip, timeout=1.5)
@@ -315,6 +329,8 @@ def evaluate_ip_reputation(
             abuse_data = fut_abuse.result(timeout=1.6)
         except Exception:
             abuse_data = None
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
     # 3. 容灾兜底检查：若权威反欺诈源均失败，启动 Net.Coffee 兜底
     fallback_coffee = None
@@ -322,11 +338,21 @@ def evaluate_ip_reputation(
         fallback_coffee = fetch_net_coffee_fallback(ip, timeout=timeout)
 
     # 4. 家宽真实性四级形态交叉判定
+    effective_asn = (
+        asn_raw
+        or (scamalytics_data.get("asn") if scamalytics_data else None)
+        or (fallback_coffee.get("asn") if fallback_coffee else None)
+    )
+    effective_isp = (
+        isp_name
+        or (scamalytics_data.get("isp") if scamalytics_data else "")
+        or (fallback_coffee.get("isp") if fallback_coffee else "")
+    )
     res_classification = classify_residential(
         ip=ip,
         ptr=ptr,
-        asn_raw=asn_raw or (fallback_coffee.get("asn") if fallback_coffee else None),
-        isp_name=isp_name or (fallback_coffee.get("isp") if fallback_coffee else ""),
+        asn_raw=effective_asn,
+        isp_name=effective_isp,
         scamalytics=scamalytics_data,
         ipinfo_flags=ipinfo_flags,
         dnsbl_hits=len(dnsbl_hits)

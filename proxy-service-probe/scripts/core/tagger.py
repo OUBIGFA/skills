@@ -74,8 +74,13 @@ def format_node_name(cc, slot, ai_supported=False, comprehensive_sparkle=False,
     [国旗] [✨️] [🏠 / ♥️] [❇️] [Key/Fast] [国家][_城市]_[编号][IPLC/ISP后缀][落地后缀][流媒体后缀][来源后缀][污染标记]
     """
     effective_goai = bool(is_goai or is_gui)
-    if poison_tag:
-        ai_supported = comprehensive_sparkle = is_usai = effective_goai = is_high_quality = False
+    raw_poison = str(poison_tag or "")
+    has_warp = "[⚡WARP]" in raw_poison
+    geo_poison = raw_poison.replace("[⚡WARP]", "")
+    if geo_poison:
+        ai_supported = comprehensive_sparkle = is_usai = effective_goai = is_high_quality = is_residential = has_res_suffix = False
+    if has_warp:
+        comprehensive_sparkle = is_high_quality = is_residential = has_res_suffix = False
     flag = flag_emoji(cc)
     cname = country_name_zh(cc)
 
@@ -212,8 +217,16 @@ def tag_and_rename_nodes(results, resort=False):
         waf_eval = shield_det.get("waf_evaluation") or {}
         waf_score = shield_det.get("waf_shield_score", waf_eval.get("waf_shield_score"))
 
-        # WARP 套壳识别并附加 [⚡WARP] 污染标记
-        is_warp = shield_det.get("is_warp_wrapped") or waf_eval.get("is_warp_wrapped")
+        # WARP 套壳识别并附加 [⚡WARP] 污染标记（保留 AI 标记，仅剥夺 ✨️ / 🏠 / ♥️ / _ISP）
+        is_warp = bool(
+            r.get("is_warp")
+            or p.get("_is_warp")
+            or shield_det.get("is_warp_wrapped")
+            or waf_eval.get("is_warp_wrapped")
+            or "[⚡WARP]" in orig
+            or "[⚡WARP]" in pname
+        )
+        geo_poison_tag = poison_tag
         if is_warp and "[⚡WARP]" not in (poison_tag or ""):
             poison_tag = f"{poison_tag or ''}[⚡WARP]"
 
@@ -236,6 +249,16 @@ def tag_and_rename_nodes(results, resort=False):
         else:
             cf_pass = None
 
+        # 若存在 HTTP v3 WAF 评分且无浏览器全通证据，✨️ 必须满足 sparkle_badge 或 waf_score >= 85
+        has_browser_shield = any(
+            isinstance(shield_det.get(k), dict) and "status" in shield_det[k]
+            for k in ("cloudflare", "chatgpt", "anthropic", "gemini", "claude")
+        )
+        if waf_score is not None and not has_browser_shield:
+            waf_sparkle_ok = bool(shield_det.get("sparkle_badge") is True or waf_score >= 85)
+        else:
+            waf_sparkle_ok = True
+
         # 综合全通 ✨️: 必须同时满足 AI五大全通 + Groq解锁 + YouTube免登实播 + 免盾达成
         # 且丢包率必须健康 (< 20%)，严重丢包/高抖动节点不授予 ✨️ 徽章
         liveness_info = r.get("liveness") or {}
@@ -243,13 +266,13 @@ def tag_and_rename_nodes(results, resort=False):
         loss_ok = bool(loss_val is None or loss_val < 20.0)
 
         if yt_pass is not None and cf_pass is not None:
-            sparkle = bool(ai_sup and groq_pass and yt_pass and cf_pass and loss_ok)
+            sparkle = bool(ai_sup and groq_pass and yt_pass and cf_pass and waf_sparkle_ok and loss_ok and not is_warp)
         elif yt_pass is None and cf_pass is not None:
-            sparkle = bool(ai_sup and groq_pass and (orig_has_sparkle or shield_det.get("sparkle_badge")) and cf_pass and loss_ok)
+            sparkle = bool(ai_sup and groq_pass and (orig_has_sparkle or shield_det.get("sparkle_badge")) and cf_pass and waf_sparkle_ok and loss_ok and not is_warp)
         elif r.get("youtube_details") or r.get("shield_details"):
-            sparkle = bool(ai_sup and groq_pass and (yt_pass is True) and (cf_pass is True) and loss_ok)
+            sparkle = bool(ai_sup and groq_pass and (yt_pass is True) and (cf_pass is True) and waf_sparkle_ok and loss_ok and not is_warp)
         else:
-            sparkle = bool(ai_sup and groq_pass and orig_has_sparkle and not poison_tag and loss_ok)
+            sparkle = bool(ai_sup and groq_pass and orig_has_sparkle and not poison_tag and loss_ok and not is_warp)
 
         # 测速相关：实测以实测为准，未测速继承原 Key / Fast
         if r.get("speed_result") is not None or r.get("is_key") is True or r.get("is_fast") is True:
@@ -341,15 +364,28 @@ def tag_and_rename_nodes(results, resort=False):
         )
         r["is_iplc"] = is_iplc
 
-        # 家宽 / 双ISP 候选识别：全面支持网络层出口 IP 属性 (Net.Coffee / ISP / ASN) 与节点名称 / 属性
+        # 家宽 / 双ISP 真实检测识别：严禁盲信上游节点自标名称（家宽/双ISP/住宅/residential），仅信任真实网络层检测或已有规范标记
         ip_info = r.get("ip_info") or p.get("_ip_info") or {}
-        ip_flags = ip_info.get("flags") or {}
-        isp_text = f"{ip_info.get('isp', '')} {ip_info.get('asn', '')}".lower()
+        ip_flags = dict(ip_info.get("flags") or {})
+        asn_cand = ip_info.get("asn")
+        isp_cand = ip_info.get("isp") or ""
+        ptr_cand = ip_info.get("ptr")
+        isp_text = f"{isp_cand} {asn_cand or ''}".lower()
         for entry in (r.get("ip_info_by_ip") or {}).values():
             if isinstance(entry, dict):
                 flags = entry.get("flags") or {}
                 if flags.get("residential") is True:
                     ip_flags["residential"] = True
+                if flags.get("datacenter") is True:
+                    ip_flags["datacenter"] = True
+                elif flags.get("datacenter") is False and "datacenter" not in ip_flags:
+                    ip_flags["datacenter"] = False
+                if not asn_cand and entry.get("asn"):
+                    asn_cand = entry.get("asn")
+                if not isp_cand and entry.get("isp"):
+                    isp_cand = entry.get("isp")
+                if not ptr_cand and entry.get("ptr"):
+                    ptr_cand = entry.get("ptr")
                 isp_text += f" {entry.get('isp', '')} {entry.get('asn', '')}".lower()
 
         is_known_res_isp = any(k in isp_text for k in [
@@ -358,24 +394,39 @@ def tag_and_rename_nodes(results, resort=False):
             'charter', 'verizon', 'bigleaf', 'residential'
         ])
 
-        is_res_cand = bool(
-            ip_flags.get("residential") is True
-            or (is_known_res_isp and ip_flags.get("datacenter") is False)
-            or r.get("is_residential")
+        canon_node = (
+            parse_canonical_node(orig)
+            or parse_canonical_node(pname)
+            or parse_canonical_node(raw_name)
+        )
+        canon_has_home = bool(canon_node and ("🏠" in orig or "🏠" in pname or "🏠" in raw_name))
+        canon_has_isp = bool(
+            canon_node and (
+                re.search(r'(?:^|_)ISP(?=_|\[|$)', orig)
+                or re.search(r'(?:^|_)ISP(?=_|\[|$)', pname)
+                or re.search(r'(?:^|_)ISP(?=_|\[|$)', raw_name)
+            )
+        )
+        explicit_res = bool(
+            r.get("is_residential")
             or p.get("is_residential")
             or p.get("_is_residential")
             or raw.get("is_residential")
             or raw.get("_is_residential")
-            or "🏠" in orig
-            or "🏠" in pname
-            or "🏠" in raw_name
-            or "🏠" in (r.get("name") or "")
-            or "🏠" in (r.get("tag") or "")
-            or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', orig)
-            or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', pname)
-            or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', raw_name)
-            or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', r.get("name") or "")
-            or re.search(r'(?i)家宽|双isp|住宅|residential|\bisp\b|_isp|\bres\b|_res', r.get("tag") or "")
+        )
+        explicit_isp = bool(
+            r.get("has_res_suffix")
+            or p.get("has_res_suffix")
+            or p.get("_has_res_suffix")
+            or raw.get("has_res_suffix")
+            or raw.get("_has_res_suffix")
+        )
+
+        is_res_cand = bool(
+            ip_flags.get("residential") is True
+            or (is_known_res_isp and ip_flags.get("datacenter") is False)
+            or explicit_res
+            or canon_has_home
         )
 
         # 核心准则升级：四级家宽形态精准仲裁
@@ -389,8 +440,23 @@ def tag_and_rename_nodes(results, resort=False):
             or rep.get("residential_level")
             or (rep.get("details") or {}).get("residential_level")
         )
+        if not res_level and (asn_cand or isp_cand or ptr_cand or ip_flags):
+            from .residential_judge import classify_residential
+            judged = classify_residential(
+                ip=str(r.get("egress_ip") or ip_info.get("ip") or ""),
+                ptr=ptr_cand,
+                asn_raw=asn_cand,
+                isp_name=isp_cand,
+                scamalytics=(rep.get("details") or {}).get("scamalytics"),
+                ipinfo_flags=ip_flags
+            )
+            res_level = judged.get("level")
 
-        if res_level == "Level 1: True Residential":
+        if is_warp or geo_poison_tag:
+            is_res_hq = False
+            has_res_suf = False
+            is_hq = False
+        elif res_level == "Level 1: True Residential":
             is_res_hq = bool(is_hq)
             has_res_suf = bool(not is_res_hq and not is_iplc)
         elif res_level == "Level 2: Commercial Dual-ISP":
@@ -404,12 +470,12 @@ def tag_and_rename_nodes(results, resort=False):
             is_res_hq = False
             has_res_suf = False
         else:
-            # 兼容旧版基于 is_res_cand 的推断
+            # 仅针对显式标记或既有规范节点（canon_node）的后备推断，绝不采信上游原始节点名自标家宽
             if rep.get("status") == "observed" or "is_high_quality" in r or "ip_reputation" in r:
                 is_res_hq = bool(is_res_cand and is_hq)
             else:
-                is_res_hq = bool(is_res_cand and (is_hq or r.get("is_residential") or p.get("is_residential") or "🏠" in orig or "🏠" in pname))
-            has_res_suf = bool(is_res_cand and not is_res_hq and not is_iplc)
+                is_res_hq = bool(is_res_cand and (is_hq or explicit_res or canon_has_home))
+            has_res_suf = bool(((is_res_cand and not is_res_hq) or explicit_isp or canon_has_isp) and not is_iplc)
 
         r["is_residential"] = is_res_hq
         r["has_res_suffix"] = has_res_suf
@@ -442,7 +508,7 @@ def tag_and_rename_nodes(results, resort=False):
         )
 
         # 杜绝任何同名碰撞
-        if new_name in seen_names:
+        while new_name in seen_names:
             extra_slot = allocators[cc].next_slot()
             new_name = format_node_name(
                 cc=cc,
@@ -465,6 +531,7 @@ def tag_and_rename_nodes(results, resort=False):
                 has_res_suffix=has_res_suf
             )
             r["assigned_slot"] = extra_slot
+        seen_names.add(new_name)
 
         is_geo_inconsistent = is_ip_region_inconsistent(r)
         if "proxy" in r:

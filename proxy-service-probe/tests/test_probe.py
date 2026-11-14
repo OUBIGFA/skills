@@ -235,12 +235,16 @@ class TestProxyServiceProbe(unittest.TestCase):
         n3 = format_node_name(cc="TW", slot=3, is_iplc=True, is_residential=True)
         self.assertEqual(n3, "🇹🇼 🏠台湾_3_IPLC")
 
-        # 2. renumber_node_tag 清除旧的 HiNet家宽/双ISP 等杂质并规范化为 🏠 前缀徽章
+        # 2. renumber_node_tag 清除旧的 HiNet家宽/双ISP 等上游自标杂质；未经实测确认家宽时不盲目晋升 🏠，经实测确认 (is_residential=True) 时赋予 🏠
         renamed1 = renumber_node_tag("🇹🇼 ✨️Fast台湾_HiNet家宽_15", 3)
-        self.assertEqual(renamed1, "🇹🇼 ✨️🏠Fast台湾_3")
+        self.assertEqual(renamed1, "🇹🇼 ✨️Fast台湾_3")
+        renamed1_verified = renumber_node_tag("🇹🇼 ✨️Fast台湾_HiNet家宽_15", 3, is_residential=True)
+        self.assertEqual(renamed1_verified, "🇹🇼 ✨️🏠Fast台湾_3")
 
         renamed2 = renumber_node_tag("🇲🇽 ✨️Fast墨西哥_Seller双ISP_9", 4)
-        self.assertEqual(renamed2, "🇲🇽 ✨️🏠Fast墨西哥_4")
+        self.assertEqual(renamed2, "🇲🇽 ✨️Fast墨西哥_4")
+        renamed2_verified = renumber_node_tag("🇲🇽 ✨️Fast墨西哥_Seller双ISP_9", 4, is_residential=True)
+        self.assertEqual(renamed2_verified, "🇲🇽 ✨️🏠Fast墨西哥_4")
 
         renamed3 = renumber_node_tag("🇭🇰 🏠Fast香港_双ISP家宽_5", 2)
         self.assertEqual(renamed3, "🇭🇰 🏠Fast香港_2")
@@ -1392,6 +1396,123 @@ class TestProxyServiceProbe(unittest.TestCase):
         }
         res = tag_and_rename_nodes([{"proxy": node_mx_google_us, "cc": "MX", "is_fast": True, "ai_supported": True, "geo_decision": node_mx_google_us["geo_decision"]}], resort=True)
         self.assertEqual(res[0]["final_name"], "🇲🇽 ❇️Fast墨西哥_1_GOAI")
+
+    def test_real_residential_and_isp_detection_vs_fake_upstream_labels(self):
+        """验证家宽 (🏠) 与商宽双 ISP (_ISP) 严格依据真实网络层检测，绝不盲信上游节点自标的'家宽/双ISP/住宅'字样。"""
+        batch = [
+            # 1. 上游自标“HiNet家宽”，但网络层实测为机房 (AS14061 DigitalOcean, flags.datacenter=True) -> 严禁给 🏠 或 _ISP
+            {
+                "proxy": {"name": "台湾_HiNet原生家宽_01", "type": "vless", "server": "1.1.1.1", "port": 443},
+                "cc": "TW",
+                "ip_info": {
+                    "asn": "AS14061",
+                    "isp": "DigitalOcean, LLC",
+                    "flags": {"datacenter": True, "hosting": True, "isp": False, "residential": False}
+                },
+                "ip_reputation": {"score": 90, "status": "observed"}
+            },
+            # 2. 上游仅叫“普通节点”，但网络层实测为 AS3462 Chunghwa Telecom 动态光世代 PTR -> 真实检测到 Level 1 真家宽，授予 🏠
+            {
+                "proxy": {"name": "普通节点A", "type": "vless", "server": "2.2.2.2", "port": 443},
+                "cc": "TW",
+                "ip_info": {
+                    "asn": "AS3462",
+                    "isp": "Chunghwa Telecom Co., Ltd.",
+                    "ptr": "114-32-10-1.dynamic-ip.hinet.net",
+                    "flags": {"datacenter": False, "hosting": False, "isp": True, "residential": True}
+                },
+                "ip_reputation": {"score": 90, "status": "observed"}
+            },
+            # 3. 上游仅叫“普通节点B”，网络层实测为 AS7922 Comcast (无动态 PTR，归为 Level 2 商宽/双ISP) -> 授予 _ISP 后缀
+            {
+                "proxy": {"name": "普通节点B", "type": "vless", "server": "3.3.3.3", "port": 443},
+                "cc": "US",
+                "ip_info": {
+                    "asn": "AS7922",
+                    "isp": "Comcast Cable Communications, LLC",
+                    "ptr": "",
+                    "flags": {"datacenter": False, "hosting": False, "isp": True, "residential": False}
+                },
+                "ip_reputation": {"score": 85, "status": "observed"}
+            },
+        ]
+        tag_and_rename_nodes(batch, resort=True)
+        by_srv = {r["proxy"]["server"]: r for r in batch}
+
+        # 伪家宽被识破：无 🏠、无 _ISP（因信誉分 90 获得机房高质量 ♥️）
+        self.assertFalse(by_srv["1.1.1.1"]["is_residential"])
+        self.assertFalse(by_srv["1.1.1.1"]["has_res_suffix"])
+        self.assertNotIn("🏠", by_srv["1.1.1.1"]["final_name"])
+        self.assertNotIn("_ISP", by_srv["1.1.1.1"]["final_name"])
+        self.assertIn("♥️", by_srv["1.1.1.1"]["final_name"])
+
+        # 真家宽实测识别：获得 🏠
+        self.assertTrue(by_srv["2.2.2.2"]["is_residential"])
+        self.assertIn("🏠", by_srv["2.2.2.2"]["final_name"])
+
+        # 商宽双 ISP 实测识别：获得 _ISP 后缀
+        self.assertFalse(by_srv["3.3.3.3"]["is_residential"])
+        self.assertTrue(by_srv["3.3.3.3"]["has_res_suffix"])
+        self.assertIn("_ISP", by_srv["3.3.3.3"]["final_name"])
+
+    def test_warp_preserves_ai_unlock_badges(self):
+        """验证 [⚡WARP] 节点保留 AI 解锁标记 (❇️ / _USAI / _GOAI)，仅剥离 ✨️ / 🏠 / ♥️ / _ISP。"""
+        from core.renderer import sort_nodes_by_region_and_landing
+        batch = [
+            {
+                "proxy": {"name": "美国WARP节点", "type": "vless", "server": "1.1.1.1", "port": 443},
+                "cc": "US",
+                "ai_supported": True,
+                "groq_passed": True,
+                "youtube_passed": True,
+                "shield_passed": True,
+                "is_warp": True,
+                "is_residential": True,
+                "ip_reputation": {"score": 95, "status": "observed"},
+                "geo_decision": {"cc": "US", "google_cc": "US", "geoip_cc": "US", "conflict": False}
+            }
+        ]
+        tag_and_rename_nodes(batch, resort=True)
+        final_name = batch[0]["final_name"]
+        self.assertIn("❇️", final_name)
+        self.assertIn("_USAI", final_name)
+        self.assertTrue(final_name.endswith("[⚡WARP]"))
+        self.assertNotIn("✨️", final_name)
+        self.assertNotIn("🏠", final_name)
+        self.assertNotIn("♥️", final_name)
+        self.assertNotIn("_ISP", final_name)
+
+        # 重排序二次渲染时同样保留 ❇️ 与 _USAI 及末尾 [⚡WARP]
+        resorted = sort_nodes_by_region_and_landing([dict(batch[0]["proxy"])], resort=True)
+        self.assertEqual(resorted[0]["name"], "🇺🇸 ❇️美国_1_USAI[⚡WARP]")
+
+    def test_merge_into_target_file_singbox_json_preview_does_not_overwrite(self):
+        """验证 merge_into_target_file 在 apply=False 预览模式下不会就地覆写 sing-box JSON 目标文件。"""
+        import json
+        import tempfile
+        from core.merger import merge_into_target_file
+
+        orig_cfg = {
+            "outbounds": [
+                {"type": "vless", "tag": "🇯🇵 日本_1", "server": "1.1.1.1", "server_port": 443, "uuid": "u1"}
+            ]
+        }
+        new_nodes = [
+            {"name": "🇺🇸 美国_1", "type": "vless", "server": "2.2.2.2", "port": 443, "uuid": "u2"}
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            target_json = os.path.join(tmp, "target.json")
+            with open(target_json, "w", encoding="utf-8") as f:
+                json.dump(orig_cfg, f)
+
+            dest_path, report = merge_into_target_file(target_json, new_nodes, apply=False)
+            self.assertEqual(report["added_count"], 1)
+
+            with open(target_json, "r", encoding="utf-8") as f:
+                disk_cfg = json.load(f)
+            # 预览模式下磁盘文件保持原样（仅 1 个节点）
+            self.assertEqual(len(disk_cfg["outbounds"]), 1)
+            self.assertEqual(disk_cfg["outbounds"][0]["server"], "1.1.1.1")
 
 
 if __name__ == "__main__":

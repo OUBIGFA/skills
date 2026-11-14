@@ -36,7 +36,7 @@ if sys.platform == "win32":
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="代理节点服务能力测试与配置渲染工具 (proxy-service-probe)")
     parser.add_argument("--input", "-i", nargs="+", required=True,
-                        help="输入节点源: 本地文件路径(.yaml/.json/.txt)、远程订阅URL或FoFa在线订阅检索(如 fofa:recommended, fofa:vless, fofa:hy2)，支持多个输入文件")
+                        help="输入节点源: 本地文件路径(.yaml/.json/.txt)、远程订阅URL或空间测绘/Gist检索(如 fofa:recommended, quake:vless, spatial:hy2, gist:clash)，支持多个输入源")
     parser.add_argument("--output", "-o", help="输出渲染后的 Clash/Mihomo YAML 配置文件路径")
     add_flow_arguments(parser)
     return parser.parse_args(argv)
@@ -92,4 +92,4 @@ if __name__ == "__main__":
     ret = main()
     sys.stdout.flush()
     sys.stderr.flush()
-    os._exit(ret if isinstance(ret, int) else 0)
+    sys.exit(ret if isinstance(ret, int) else 0)

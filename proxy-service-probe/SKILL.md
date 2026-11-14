@@ -1,6 +1,6 @@
 ---
 name: proxy-service-probe
-description: 对代理节点执行服务能力测试（IP属地检测、AI解锁、YouTube免登实播、免盾过盾、流媒体、打标命名、本地测速与Key节点筛选及Clash/Mihomo配置渲染，以及用户主动触发时的FoFa/Quake空间测绘订阅搜索与节点提取）时使用。
+description: 对代理节点执行服务能力测试（IP属地检测、AI解锁、YouTube免登实播、免盾过盾、流媒体、打标命名、本地测速与Key节点筛选、配置合并/转换及Clash/Mihomo配置渲染，以及用户主动触发时的FoFa/Quake空间测绘与GitHub Gist订阅搜索与节点提取）时使用。
 ---
 
 # 代理节点服务能力测试与配置渲染
@@ -27,8 +27,8 @@ description: 对代理节点执行服务能力测试（IP属地检测、AI解锁
 | 维度 | 关键判据 | 细节 |
 |---|---|---|
 | 测活与丢包 | 3 端点轮换采样 10 次；丢包 >= 50% 淘汰；20%~49% 保留但不可作 Key、剥离 ✨️ | [testing-criteria.md](references/testing-criteria.md) |
-| IP 属地 | 按真实出口绑定 IPinfo / ipwho.is / ipapi.is / DB-IP 与 Gemini、YT 信号；分歧取严格多数，不以谷歌兜底；仅无任何有效证据时才用 Google 观测地区；送中保留实际属地并标 `_⚠️CN` | [geolocation.md](references/geolocation.md) |
-| 信誉与家宽 | 多源共识评分 + 四级家宽分类；多出口取最低分，缺证据记未知 | [testing-criteria.md](references/testing-criteria.md) §1.4 |
+| IP 属地 | 按真实出口绑定 IPinfo / ipwho.is / ipapi.is / DB-IP 与 Gemini、YT 信号；分歧优先取全源有效票严格多数；平票且纯 GeoIP 有共识时以 GeoIP 为准；平票无共识或无其他有效证据时以 Google 观测地区兜底；送中保留实际属地并标 `_⚠️CN` | [geolocation.md](references/geolocation.md) |
+| 信誉与家宽 | 多源共识评分 + 网络层四级家宽真实检测（严禁盲信上游节点自标家宽/双ISP名称）；多出口取最低分与最严等级，缺证据记未知 | [testing-criteria.md](references/testing-criteria.md) §1.4 |
 | AI 解锁 | OpenAI、Claude、Gemini、Hugging Face、Grok；Groq 仅作 ✨️ 条件 | §2 |
 | YouTube | Playwright 实播 >= 10 秒、非缓冲停滞、非机器人验证，前后复核出口，2 个视频通过 | §3 |
 | 免盾 | OpenAI Sentinel、Google/YouTube、Reddit、TikTok、Cloudflare 共 5 站，0–100 分 | §4 |
@@ -48,7 +48,7 @@ description: 对代理节点执行服务能力测试（IP属地检测、AI解锁
 ## 打标、编号与配置
 
 - 命名结构：`[国旗] [✨️] [🏠 / ♥️] [❇️] [Key / Free / Fast] [国家][_城市]_[编号][_IPLC 或 _ISP][落地][流媒体][来源][污染标记]`。
-- 前缀顺序 ✨️ > 🏠 > ❇️ > Key > Fast；🏠 与 ♥️ 互斥；Key/Free 与 Fast 互斥且只在主动测速达标时授予。
+- 前缀顺序 ✨️ > 🏠 > ❇️ > Key > Fast；🏠 与 ♥️ 互斥，且 🏠 真家宽节点专作高纯净出口、不参与 `[Key]` 前置跳板评选；Key/Free 与 Fast 互斥且只在主动测速达标时授予；`[⚡WARP]` 节点剥夺 `🏠`/`♥️`/`✨️` 但保留 AI 解锁标记（`❇️`/`_USAI`/`_GOAI`）。
 - 链式落地（`_Lnd` 或实测需前置的 `_USAI` / `_GOAI`）沉底并注入 `dialer-proxy: "🛡️ Front前置"`（sing-box 为 `detour`）；直连 USAI/GOAI 与 🏠/`_ISP` 家宽不沉底。
 - 落地节点不得进入 `🛡️ Front前置` 或 `⚡ Fast自动选择`；无 Key 时使用已验证的备用前置，再回落直连节点或 `DIRECT`。
 - 导出只替换母版的 `proxies` / `proxy-groups`，其余注释与空行逐字保留；测试前先校验母版。`probe_services.py` 导出 `.yaml`，`probe_singbox.py` 与 `convert_dual.py` 同时导出 `.json` 与 `.yaml`。

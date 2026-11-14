@@ -276,14 +276,12 @@ def request_streaming(
         except Exception as e:
             logger.debug("curl_cffi 模式请求失败 (%s)，回退至 Tuned SSL: %s", url, e)
 
-    # Mode B: 内置标准库 Tuned SSLContext 零依赖模式
+    # Mode B: 内置标准库 Tuned SSLContext 零依赖模式（显式注入 ProxyHandler(proxies_dict) 防止继承环境变量系统代理）
     parsed = urllib.parse.urlsplit(url)
     proxies_dict = _format_proxy_for_urllib(proxy)
-    proxy_handler = urllib.request.ProxyHandler(proxies_dict) if proxies_dict else None
+    proxy_handler = urllib.request.ProxyHandler(proxies_dict)
 
-    handlers = [TunedHTTPAdapter()]
-    if proxy_handler:
-        handlers.append(proxy_handler)
+    handlers = [TunedHTTPAdapter(), proxy_handler]
 
     opener = urllib.request.build_opener(*handlers)
     req = urllib.request.Request(

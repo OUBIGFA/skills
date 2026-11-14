@@ -9,7 +9,7 @@
 - **Python**: 3.9 及以上版本。
 - **必要 Python 包**：
   ```bash
-  pip install pyyaml requests pycountry playwright
+  pip install pyyaml requests urllib3 pycountry playwright curl_cffi beautifulsoup4 cryptography
   ```
 - **Playwright 浏览器安装**：
   ```bash
@@ -79,19 +79,19 @@
 ## 4. 模式说明：标准全量模式 vs 测速模式 vs 降级模式
 
 - **标准全量模式（默认，不测速）**：
-  - 默认启动全量服务测试（IP属地、AI三大全通、Playwright Chromium YouTube 免登录实播 >=10s、4 站免盾检测、国际流媒体解锁）。
+  - 默认启动全量服务测试（IP属地、AI五平台全通、Playwright Chromium YouTube 免登录实播 >=10s、5 站免盾检测、国际流媒体解锁）。
   - 执行 3 秒轻量防断流快检（<16KB 淘汰）。
   - **不执行** Sustained 下载测速，不评选 Key。
   - 符合标准的节点授予 `✨️` 徽章。
 
 - **完整测速模式（主动要求 `--speed-test`）**：
   - 节点判活后同时进入完整服务线与测速线；落地测速等待前置带宽/出口证据，最终统一核对（稳态 < 6 Mbps 删除、>= 12 Mbps 且最低 >= 6 Mbps 授 Key/Fast，详见 testing-criteria.md 5.3）。
-  - 激活 Key 优质前置跳板遴选与配额分配（过滤 HTTP/SOCKS，按强加密与亚太核心区优先打分）。
-  - 节点前置标识自动注入 `Key`（前置跳板）或 `Fast`（高速直连/落地节点）。
+  - 激活 Key 优质前置跳板遴选与配额分配（过滤 HTTP/SOCKS 与 `🏠` 真家宽，按强加密、亚太核心区、速度、延迟与低丢包满分 48 分模型打分）。
+  - 节点前置标识自动注入 `Key` / `Free`（前置跳板）或 `Fast`（高速直连/落地节点）。
   - 策略组同步生成包含 Key 节点的 `🛡️ Front前置` 与 `⚡ Fast自动选择`。
 
 - **轻量降级模式（仅限显式指定 `--no-browser`）**：
-  - 跳过 Playwright Chromium 浏览器实测（省略 YouTube 与 4 站浏览器免盾）。
+  - 跳过 Playwright Chromium 浏览器实测（省略 YouTube 与 5 站浏览器免盾，保留 HTTP v3 五站 WAF 免盾探测）。
   - 保留 IP 属地、AI 接口、流媒体与防断流快检。
 
 ---

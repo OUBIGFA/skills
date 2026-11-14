@@ -34,7 +34,7 @@
   - 例如 IP 属地有韩国共识、Google/Gemini 为 `CN/CHN`：保留韩国，记录 `is_sent_to_china=True` / `is_poisoned=True`，命名后缀 `_⚠️CN`，剥离 AI 全通和综合全通徽章。
   - 不把这类节点改成中国或普通“未知”；是否淘汰仍由任务策略决定，本次属地抽查不修改订阅。
   - 任一次可信 CN 观测不能被后续非 CN 信号投票抹掉。
-- 普通非受限地区的强分歧暂定 `UNK`，保留候选、来源和待复核标志，不用原国旗兜底。
+- 普通非受限地区的分歧优先取全源有效票严格多数（`majority_vote`）；平票且纯 GeoIP 有共识时以 GeoIP 为准；平票无共识或无其他有效证据时以 Google/Gemini 观测地区兜底（保留候选、来源和 `is_inconsistent=True` 标志）；绝不用原节点国旗或名称兜底。
 
 ### 1.3 出口绑定的多源 GeoIP
 - 固定 IP 反查：IPinfo、ipwho.is、ipapi.is、DB-IP；全部 HTTPS，每条来源须回显同一有效公网 IP 才能投票。注册地、ASN 国别不作为地理位置。
@@ -52,9 +52,10 @@
   1. **本地极速层 (0-20ms)**：本地 SQLite 24小时有效缓存（命中直接返回）；本地 `socket.gethostbyaddr` rDNS/PTR 域名特征提取；核心 Eyeball/IDC ASN 分类；
   2. **基础元数据层 (100-250ms)**：IPinfo、ipwho.is 基础属性与 DoH/DNSBL 黑名单快速检测；
   3. **权威风控与兜底层 (200-400ms)**：Scamalytics 免 Key 欺诈分与代理标记结构化提取；AbuseIPDB 恶意威胁（免配置自动短路，有 Key 自动富化）；Net.Coffee 仅作为后备兜底。
-- **家宽真实性四级形态精确分类**：
-  - **Level 1: 原生民用住宅宽带 (True Residential)**：ASN 属于已知 Eyeball 运营商且 PTR 命中动态住宅正则，无机房标记。**若信誉分 >= 80 且无任何 cf-mitigated 硬拦截授予 `🏠` 专属徽章；若 < 80 授予 `_ISP` 后缀**。
-  - **Level 2: 商用/机房双 ISP (Commercial Dual-ISP)**：属于 ISP 机构但位于 IDC 托管环境或缺乏民用动态 PTR。**严禁授予 `🏠` 徽章，统一授予纯英文 `_ISP` 后缀**。
+- **家宽真实性四级形态精确分类（严禁采信上游节点自标名称）**：
+  - **硬性准则**：`🏠` 与 `_ISP` 必须依赖真实网络层探测（ASN 归属、ISP 组织名、rDNS/PTR 反向域名正则、Scamalytics 欺诈与机房/代理标记、多源 GeoIP flags），**严禁因为上游节点原名自标“家宽 / 双ISP / 住宅 / residential / HiNet”就直接授予 `🏠` 或 `_ISP`**，上游残留的自标家宽字样一律清洗剔除。
+  - **Level 1: 原生民用住宅宽带 (True Residential)**：ASN 属于已知 Eyeball 运营商且（PTR 命中动态住宅正则，或确认为非机房且无机房 PTR）。**若信誉分 >= 80 且无任何 cf-mitigated 硬拦截、无污染标记授予 `🏠` 专属徽章；若 < 80 授予 `_ISP` 后缀**。
+  - **Level 2: 商用/机房双 ISP (Commercial Dual-ISP)**：真实网络层检测属于 ISP 机构或具备双 ISP/住宅属性，但位于 IDC 托管环境或缺乏民用动态 PTR。**严禁授予 `🏠` 徽章，统一授予纯英文 `_ISP` 后缀**。
   - **Level 3: 住宅代理池 (Residential Proxy)**：高危轮换池或黑灰产代理。**剥离 `🏠` 与 `♥️` 资格**，列入风控警告池。
   - **Level 4: 数据中心/机房 (Datacenter / Hosting)**：纯机房/云商节点，不带家宽相关标记。
 - **综合信誉评分计算模型 (Composite Reputation Score: 0–100)**：
@@ -83,7 +84,7 @@
 - **AI 服务全解锁条件 (`❇️` 徽章)**：
   出口稳定 + 真实出口非送中 + ChatGPT 通过 + Claude 通过 + Gemini 通过 + Hugging Face 通过 + Grok 通过（剔除 Groq，5 项全通即授予 `❇️`）。
 - **综合全通能力徽章 (`✨️` 徽章)**：
-  必须同时满足：**AI 五大核心全通 + 成功解锁 Groq + YouTube 免登实播通过 + 四站免盾通过**。只有解锁 Groq 才能给 `✨️`！
+  必须同时满足：**AI 五大核心全通 + 成功解锁 Groq + YouTube 免登实播通过 + 五站免盾通过（WAF Shield Score >= 85 且至少 4 站完美直通） + 丢包率 < 20%**。只有解锁 Groq 才能给 `✨️`！
 
 ---
 
@@ -127,8 +128,7 @@
 - **免盾综合得分 (WAF Shield Score 0–100) 与徽章授权**：
   - **`[✨️]` 综合全通徽章**：必须满足 **WAF Shield Score >= 85** 且至少 4 站完美直通 + AI 全通 + Groq 解锁 + YouTube 免登实播 + 丢包率 < 20%；
   - **`[❇️]` AI 服务徽章**：AI 五平台全通 + OpenAI Sentinel **无高危降智惩罚**（未判定为 `DEGRADED_HEAVY`）；
-  - **`[⚡WARP]` 污染标记**：实测 `warp=on` 或 `warp=plus` 时自动追加套壳污染标记；
-  - **`[Key]` 核心跳板遴选联动**：结合公式 `Key_Index = 0.45 * Composite_Reputation + 0.35 * WAF_Shield + 0.20 * Speed_Stability`，且在 OpenAI Sentinel 探针中无高危降智惩罚、Reddit 机房盾不封禁。
+  - **`[⚡WARP]` 污染标记**：实测 `warp=on` 或 `warp=plus` 时自动追加 `[⚡WARP]` 套壳标记，剥夺 `🏠` / `♥️` / `✨️` 及 `_ISP`，但**保留 AI 解锁标记（`❇️` / `_USAI` / `_GOAI`）**。
 
 ---
 
@@ -177,21 +177,24 @@ Key 节点是专门用于在落地节点（`_Lnd`/`_USAI`）建立多跳链路�
 - **协议准入硬门槛**：
   - **严禁**：`http`、`https`、`socks`、`socks5` 充当 Key（无加密易被干扰，且 CONNECT 无法中转非标端口落地）。
   - **支持**：`ss`、`vmess`（含TLS）、`vless`（含TLS/Reality/ws/grpc）、`trojan`、`hysteria2`、`tuic`。
-- **拓扑与出口硬门槛**：
+- **拓扑、家宽与出口硬门槛**：
   - 必须是直连节点，落地节点绝对禁止充当 Key；
+  - **真家宽节点（`🏠`）专作高纯净度终端出口，一律排除在 Key 前置跳板候选之外**（避免大流量中转消耗珍贵住宅带宽或触发家宽风控）；
   - 节点出口 IP 真实有效，严禁与本地跑机基线出口重合。
 - **测速硬门槛**：
   - 必须通过上述 5.3 节的持续下载测速（`verdict=qualified`：稳态 >= 12 Mbps 且最低 >= 6 Mbps）。
 - **丢包与稳定性硬门槛**：
   - 测活丢包率必须健康（`loss_rate < 20%`，超出阈值严禁充当 Key 前置跳板）。
-- **加权评分与配额**：
-  - 协议分类分：TLS-TCP (10分) > Self-enc (6分) > CDN-plain (4分) > UDP (3分)；
-  - 亚太核心区加分：香港（HK）、台湾（TW）、日本（JP）、新加坡（SG）、韩国（KR）优先加分；
-  - 稳定性加分：低丢包率加分（0% 丢包满分 5 分，平滑递减至 20% 丢包 0 分）；
-  - 综合评分前 N 名授予 `is_key = True`，并施加单国家配额（默认每国最多 3 个）。
+- **加权评分模型（满分 48 分，实现见 `scripts/core/key_evaluator.py`）与配额**：
+  - **协议分类分（满分 10 分）**：`tls-tcp`（`vless`/`trojan`/`vmess`+TLS/Reality/WS/gRPC，10分） > `self-enc`（`ss`/`ssr`/`vmess` 无 TLS，6分） > `cdn-plain`（明文 `ws`/`grpc`，4分） > `udp`（`hysteria2`/`hysteria`/`tuic`/`wireguard`，3分）；
+  - **亚太核心区加分（满分 8 分）**：香港（HK）、台湾（TW）、日本（JP）、新加坡（SG）、韩国（KR）加 8 分；
+  - **速度得分（满分 15 分）**：按 `min(15.0, (speed_mbps / 50.0) * 15.0)` 线性折算；
+  - **延迟得分（满分 10 分）**：`<= 50ms` 满分 10 分，线性递减至 `550ms` 为 0 分；
+  - **低丢包稳定性加分（满分 5 分）**：0% 丢包满分 5 分，平滑递减至 20% 丢包 0 分；
+  - 综合评分前 N 名授予 `is_key = True`（美国 `_USAI` 节点显示为 `Free` 前缀），并施加单国家配额（默认每国最多 3 个）。
 
 ### 5.5 直连 / 需前置节点区分与落地测试（两条流水线一致）
-- **首轮测活**：全部节点直连并发探测，每节点最多 3 次、轮换 Google/Cloudflare/Apple 端点；原 `dialer-proxy` / `detour` 在临时直连监听中剥离。声明的落地角色仍保留。
+- **首轮测活**：全部节点直连并发探测，每节点轮换 Google/Cloudflare/Apple 204 三端点采样 10 次（前 5 次连续失败即熔断，丢包率 >= 50% 判死淘汰）；原 `dialer-proxy` / `detour` 在临时直连监听中剥离。声明的落地角色仍保留。
 - **第二轮**：首轮直连不通的节点以并发 4 直连复测，同时在本地经最多 3 个不同服务器的已判活前置探测。前置须具备协议资格、非落地，按延迟择优；UDP 节点优先用支持 UDP 的前置。云端或 `--no-landing-probe` 不做链式探测。
 - **即时服务检测**：任一前置测通即能放行声明落地节点；未声明者优先等待直连复测结论。经前置成功的节点设置 `path=front`、`is_landing=True`，立即执行完整服务；该前置拿不到公网出口时换剩余备用前置，最多合计 3 个。实际前置写入 `front_node`，回退写入 `front_attempts`。
 - **落地下载测速**：等待直连测速（含空闲重测）与出口证据，按 Key 候选档 → 备用档（稳态 >= 6 Mbps、最低 >= 3 Mbps）评分选最多 3 个不同服务器前置；经某前置没有样本时换下一个，成功前置写入 `speed_front_node`。没有合格前置则明确记为跳过，不能伪称已测速。

@@ -6,13 +6,13 @@
 
 - **非主动触发机制**：空间测绘订阅检索为主动触发式能力，默认流水线绝不主动发起网络资产扫描；**仅当用户明确主动要求搜索订阅**（如指令包含“搜索 FoFa 订阅”、“搜索 Quake 订阅”、“抓取订阅节点”或显式调用 `scripts/fofa_search.py` / 传入 `--input fofa:...` / `--input quake:...` / `--input spatial:...`）时才启动。
 - **双引擎高容错与独立运行**：支持同时调用 FoFa 与 360 Quake 检索。单一引擎遭遇网络异常、凭证缺失或限流不会阻断另一个引擎工作；两端检索到的目标订阅源 URL 自动执行全局规范化去重。
-- **配置与密钥独立隔离**：FoFa Token/Key 与 360 Quake Key 以独立文件形式在技能根目录下的 [`fofa_config.json`](../fofa_config.json) 中进行配置与变量引用，严禁在代码中硬编码任何个人敏感凭证。
+- **配置与密钥独立隔离**：FoFa Token/Key 与 360 Quake Key 以独立文件形式在技能根目录下的 `fofa_config.json`（模板见 [`fofa_config.example.json`](../fofa_config.example.json)）中进行配置与变量引用，严禁在代码中硬编码任何个人敏感凭证。
 
 ---
 
 ## 2. 配置文件规范 (`fofa_config.json`)
 
-在技能根目录 (`E:\_BIGFAFree\_code\skills\proxy-service-probe\fofa_config.json`) 下统一维护如下结构：
+在技能根目录 (`<skill>/fofa_config.json`) 下统一维护如下结构：
 
 ```json
 {
@@ -23,11 +23,11 @@
   "key": "",
   "quake_key": "",
   "proxy": "http://127.0.0.1:3067",
-  "page_size": 50,
+  "page_size": 80,
   "timeout": 12,
   "max_nodes_per_subscription": 300,
-  "default_query": "(server=\"nginx\" || server=\"caddy\" || server=\"cloudflare\" || server=\"openresty\") && header=\"subscription-userinfo\" && body=\"proxies:\" && body!=\"<html\"",
-  "quake_default_query": "status_code: 200 AND NOT response: \"<html\" AND (response: \"nginx\" OR response: \"caddy\" OR response: \"cloudflare\" OR response: \"openresty\") AND (response: \"subscription-userinfo\" OR (response: \"upload=\" AND response: \"download=\")) AND response: \"proxies:\""
+  "default_query": "residential",
+  "quake_default_query": "residential"
 }
 ```
 
@@ -88,24 +88,6 @@ status_code: 200 AND NOT response: "<html" AND (response: "proxies:" OR response
 | **`vless` (VLESS/Reality)** | `body="proxies:" && body="type: vless" && status_code="200" && body!="<html"` | `status_code: 200 AND NOT response: "<html" AND response: "proxies:" AND response: "vless"` |
 | **`hy2` (Hysteria 2)** | `body="type: hysteria2" && body="server" && status_code="200" && body!="<html"` | `status_code: 200 AND NOT response: "<html" AND response: "hysteria2" AND response: "server"` |
 | **`sub_userinfo` (动态流量池)** | `header="subscription-userinfo" && status_code="200"` | `status_code: 200 AND response: "subscription-userinfo"` |
-```text
-body="proxies:" && body="type: vless" && status_code="200" && body!="<html"
-```
-
-### 🌟 预设 4: `hy2` (Hysteria 2 极速节点专项订阅)
-```text
-body="type: hysteria2" && body="server" && status_code="200" && body!="<html"
-```
-
-### 🌟 预设 5: `sub_userinfo` (通用动态流量池)
-```text
-header="subscription-userinfo" && status_code="200"
-```
-
-### 🌟 预设 6: `comprehensive` (多协议复合订阅源)
-```text
-status_code="200" && body!="<html" && (body="proxies:" || body="\"outbounds\":" || (header="text/plain" && (body="dm1lc3M6" || body="c3M6Ly" || body="dHJvamFuOi")))
-```
 
 ---
 

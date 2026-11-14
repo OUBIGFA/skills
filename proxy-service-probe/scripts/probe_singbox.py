@@ -160,4 +160,4 @@ if __name__ == "__main__":
     ret = main()
     sys.stdout.flush()
     sys.stderr.flush()
-    os._exit(ret if isinstance(ret, int) else 0)
+    sys.exit(ret if isinstance(ret, int) else 0)

@@ -33,15 +33,42 @@ def valid_reputation_score(value):
 
 
 def reputation_for_exits(info_by_ip, observed_ips):
-    """For rotating/dual-stack exits, use the worst measured score or stay unknown."""
+    """For rotating/dual-stack exits, use the worst measured score and strictest residential level."""
     ips = list(dict.fromkeys(observed_ips))
     entries = {ip: (info_by_ip.get(ip) or {}).get('reputation') or {} for ip in ips}
     values = [entry.get('score') for entry in entries.values()]
     complete = bool(ips) and all(valid_reputation_score(score) is not None for score in values)
-    return {"score": min(values) if complete else None,
-            "status": "observed" if complete else "unknown",
-            "provider": "Net.Coffee", "by_ip": entries,
-            "reason": None if complete else "missing_exit_or_reputation_evidence"}
+    level_rank = {
+        "Level 3: Residential Proxy": 0,
+        "Level 4: Datacenter": 1,
+        "Level 2: Commercial Dual-ISP": 2,
+        "Level 1: True Residential": 3,
+    }
+    levels = [
+        entry.get("residential_level") or (info_by_ip.get(ip) or {}).get("residential_level")
+        for ip, entry in entries.items()
+        if (entry.get("residential_level") or (info_by_ip.get(ip) or {}).get("residential_level")) in level_rank
+    ]
+    strictest_level = min(levels, key=lambda lv: level_rank[lv]) if levels else None
+    merged_flags = {}
+    for ip, entry in entries.items():
+        f = entry.get("flags") or (info_by_ip.get(ip) or {}).get("flags") or {}
+        if isinstance(f, dict):
+            for k, v in f.items():
+                if v is True or k not in merged_flags:
+                    merged_flags[k] = v
+    res = {
+        "score": min(values) if complete else None,
+        "status": "observed" if complete else "unknown",
+        "provider": "CompositeConsensus",
+        "by_ip": entries,
+        "reason": None if complete else "missing_exit_or_reputation_evidence",
+    }
+    if strictest_level:
+        res["residential_level"] = strictest_level
+    if merged_flags:
+        res["flags"] = merged_flags
+    return res
 
 
 # 保留现有渲染、排序接口。地区排序按 (位阶, 序号)：未列出的地区为 (7, 999)，排在已列出地区之后；
@@ -235,6 +262,103 @@ def country_from_name(value):
         return None
 
 
+def _extract_geo_metadata(provider, data):
+    """提取真实网络层 ASN、ISP/组织名称、PTR 与属性标记（供真家宽与商宽双 ISP 实测判定使用）。"""
+    asn = None
+    isp = ""
+    ptr = data.get("hostname") or data.get("ptr") or None
+    flags = dict(data.get("flags")) if isinstance(data.get("flags"), dict) else {}
+
+    if provider == "ipinfo":
+        org = str(data.get("org") or "").strip()
+        asn_field = data.get("asn")
+        if isinstance(asn_field, dict):
+            asn = asn_field.get("asn")
+            isp = str(asn_field.get("name") or "").strip()
+            if asn_field.get("type") == "hosting":
+                flags["datacenter"] = True
+                flags["hosting"] = True
+            elif asn_field.get("type") == "isp":
+                flags["isp"] = True
+        elif asn_field:
+            asn = asn_field
+        if org:
+            m = re.match(r"^(AS\d+)\s+(.*)$", org, re.I)
+            if m:
+                asn = asn or m.group(1).upper()
+                isp = isp or m.group(2).strip()
+            else:
+                isp = isp or org
+        comp = data.get("company") if isinstance(data.get("company"), dict) else {}
+        if comp.get("name") and not isp:
+            isp = str(comp["name"]).strip()
+        if comp.get("type") == "hosting":
+            flags["datacenter"] = True
+            flags["hosting"] = True
+        elif comp.get("type") == "isp":
+            flags["isp"] = True
+        priv = data.get("privacy") if isinstance(data.get("privacy"), dict) else {}
+        if priv.get("hosting") is True:
+            flags["datacenter"] = True
+            flags["hosting"] = True
+        if priv.get("proxy") is True or priv.get("vpn") is True or priv.get("tor") is True:
+            flags["proxy"] = True
+
+    elif provider == "ipwhois":
+        conn = data.get("connection") if isinstance(data.get("connection"), dict) else {}
+        asn = conn.get("asn") or data.get("asn")
+        isp = str(conn.get("isp") or conn.get("org") or data.get("isp") or data.get("org") or "").strip()
+        sec = data.get("security") if isinstance(data.get("security"), dict) else {}
+        if sec.get("hosting") is True:
+            flags["datacenter"] = True
+            flags["hosting"] = True
+        if sec.get("proxy") is True or sec.get("vpn") is True or sec.get("tor") is True:
+            flags["proxy"] = True
+
+    elif provider == "ipapi.is":
+        asn_obj = data.get("asn") if isinstance(data.get("asn"), dict) else {}
+        comp_obj = data.get("company") if isinstance(data.get("company"), dict) else {}
+        asn = asn_obj.get("asn") if asn_obj else data.get("asn")
+        isp = str(
+            comp_obj.get("name")
+            or asn_obj.get("org")
+            or asn_obj.get("descr")
+            or data.get("isp")
+            or data.get("org")
+            or ""
+        ).strip()
+        if isinstance(data.get("is_datacenter"), bool):
+            flags["datacenter"] = data["is_datacenter"]
+            if data["is_datacenter"]:
+                flags["hosting"] = True
+        elif asn_obj.get("type") == "hosting" or comp_obj.get("type") == "hosting":
+            flags["datacenter"] = True
+            flags["hosting"] = True
+        if isinstance(data.get("is_isp"), bool):
+            flags["isp"] = data["is_isp"]
+        elif asn_obj.get("type") == "isp" or comp_obj.get("type") == "isp":
+            flags["isp"] = True
+        if data.get("is_proxy") or data.get("is_vpn") or data.get("is_tor"):
+            flags["proxy"] = True
+        if flags.get("isp") is True and flags.get("datacenter") is False and not flags.get("proxy"):
+            flags.setdefault("residential", True)
+
+    else:
+        asn = data.get("asNumber") or data.get("asn")
+        isp = str(data.get("isp") or data.get("organization") or data.get("asName") or data.get("org") or "").strip()
+
+    meta = {}
+    if asn is not None and asn != "":
+        meta["asn"] = asn
+    if isp:
+        meta["isp"] = isp
+    if ptr:
+        meta["ptr"] = str(ptr).strip()
+    if flags:
+        meta["flags"] = flags
+    return meta
+
+
 def parse_geo_record(provider, data, target_ip):
     """校验回显 IP；注册国、ASN 国别、错误响应一律不冒充 geolocation。"""
     record = {"provider": provider, "family": provider, "target_ip": target_ip, "status": "invalid"}
@@ -254,7 +378,8 @@ def parse_geo_record(provider, data, target_ip):
         cc, city = normalize_country_code(data.get('countryCode')), data.get('city')
     else:
         cc, city = normalize_country_code(data.get('country_code')), data.get('city')
-    return {**record, "ip": ip, "cc": cc, "city": city, "status": 'ok' if cc else 'invalid',
+    meta = _extract_geo_metadata(provider, data)
+    return {**record, **meta, "ip": ip, "cc": cc, "city": city, "status": 'ok' if cc else 'invalid',
             **({} if cc else {"error": "country_missing"})}
 
 
@@ -303,13 +428,24 @@ def query_ip_info(ip, timeout=(3.0, 6.0)):
         records = list(pool.map(query, providers))
     from .reputation_engine import evaluate_ip_reputation
 
-    # 提取已发现的 asn, isp, flags 供多维信誉与家宽形态精确仲裁
+    # 提取已发现的 asn, isp, ptr, flags 供多维信誉与家宽形态精确仲裁
     asn_candidate = next((r.get('asn') for r in records if r.get('asn')), None)
-    isp_candidate = next((r.get('isp') for r in records if r.get('isp')), None)
+    isp_candidates = [str(r.get('isp')).strip() for r in records if r.get('isp')]
+    isp_candidate = " / ".join(dict.fromkeys(isp_candidates)) if isp_candidates else ""
+    ptr_candidate = next((r.get('ptr') for r in records if r.get('ptr')), None)
     flags_candidate = {}
+    dc_votes = [
+        r['flags']['datacenter']
+        for r in records
+        if isinstance(r.get('flags'), dict) and isinstance(r['flags'].get('datacenter'), bool)
+    ]
     for r in records:
         if isinstance(r.get('flags'), dict):
             flags_candidate.update(r['flags'])
+    if dc_votes:
+        flags_candidate['datacenter'] = any(dc_votes)
+        if flags_candidate['datacenter']:
+            flags_candidate['hosting'] = True
 
     to_sec = timeout[0] if isinstance(timeout, (list, tuple)) else timeout
     rep_result = evaluate_ip_reputation(
@@ -317,6 +453,7 @@ def query_ip_info(ip, timeout=(3.0, 6.0)):
         asn_raw=asn_candidate,
         isp_name=isp_candidate or "",
         ipinfo_flags=flags_candidate,
+        ptr_hint=ptr_candidate,
         timeout=to_sec
     )
     score = rep_result.get("score")

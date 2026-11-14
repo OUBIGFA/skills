@@ -108,11 +108,13 @@ def via(port):
 
 
 def fetch(url, port=None, js=True, tries=2, timeout=(6, 10)):
+    sess = requests.Session()
+    sess.trust_env = False
     for _ in range(tries):
         try:
-            r = requests.get(url, proxies=via(port) if port else None,
-                             timeout=timeout,
-                             headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+            r = sess.get(url, proxies=via(port) if port else {},
+                         timeout=timeout,
+                         headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
             if r.status_code == 200:
                 return r.json() if js else r.text
         except Exception:
@@ -227,45 +229,46 @@ def main():
                            'base_port': a.base_port, 'format': 'sing-box'})
 
     proc = start_kernel(a.singbox, cfg_path, workdir, 'singbox.log', a.base_port)
-    print('内核已启动，开始并行检测...', flush=True)
-
-    recs = [None] * len(nodes)
     t0 = time.time()
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        futs = {ex.submit(probe_node, a.base_port + i, n['tag']): i
-                for i, n in enumerate(nodes)}
-        done = 0
-        for f in as_completed(futs):
-            i = futs[f]
-            try:
-                r = vote(f.result())
-            except Exception as e:
-                r = {'tag': nodes[i]['tag'], 'status': 'error', 'error': repr(e)}
-            recs[i] = r
-            done += 1
-            if r['status'] == 'ok':
-                print(f"[{done}/{len(nodes)}] {r['tag']} -> {r['cc']} {r['country_zh']} "
-                      f"{r['city_zh']} 票{r['votes']}/{r['answered']} {r['conf']} "
-                      f"colo={r['colo'] or '-'}", flush=True)
-            else:
-                print(f"[{done}/{len(nodes)}] {r['tag']} -> {r['status']}", flush=True)
+    try:
+        print('内核已启动，开始并行检测...', flush=True)
 
-    # 第二轮：间隔后复测出口 IP，识别动态/漂移出口
-    print('第二轮出口稳定性复测...', flush=True)
-    time.sleep(10)
+        recs = [None] * len(nodes)
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            futs = {ex.submit(probe_node, a.base_port + i, n['tag']): i
+                    for i, n in enumerate(nodes)}
+            done = 0
+            for f in as_completed(futs):
+                i = futs[f]
+                try:
+                    r = vote(f.result())
+                except Exception as e:
+                    r = {'tag': nodes[i]['tag'], 'status': 'error', 'error': repr(e)}
+                recs[i] = r
+                done += 1
+                if r['status'] == 'ok':
+                    print(f"[{done}/{len(nodes)}] {r['tag']} -> {r['cc']} {r['country_zh']} "
+                          f"{r['city_zh']} 票{r['votes']}/{r['answered']} {r['conf']} "
+                          f"colo={r['colo'] or '-'}", flush=True)
+                else:
+                    print(f"[{done}/{len(nodes)}] {r['tag']} -> {r['status']}", flush=True)
 
-    def recheck_ip(i):
-        t = p_cf(fetch('https://www.cloudflare.com/cdn-cgi/trace', a.base_port + i, js=False))
-        return i, (t or {}).get('ip')
+        # 第二轮：间隔后复测出口 IP，识别动态/漂移出口
+        print('第二轮出口稳定性复测...', flush=True)
+        time.sleep(10)
 
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        for f in as_completed([ex.submit(recheck_ip, i) for i, r in enumerate(recs)
-                               if r['status'] == 'ok']):
-            i, ip2 = f.result()
-            recs[i]['exit_ip_2nd'] = ip2
-            recs[i]['exit_stable'] = (ip2 == recs[i]['exit_ip']) if ip2 else None
+        def recheck_ip(i):
+            t = p_cf(fetch('https://www.cloudflare.com/cdn-cgi/trace', a.base_port + i, js=False))
+            return i, (t or {}).get('ip')
 
-    proc.terminate()
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            for f in as_completed([ex.submit(recheck_ip, i) for i, r in enumerate(recs)
+                                   if r['status'] == 'ok']):
+                i, ip2 = f.result()
+                recs[i]['exit_ip_2nd'] = ip2
+                recs[i]['exit_stable'] = (ip2 == recs[i]['exit_ip']) if ip2 else None
+    finally:
+        proc.terminate()
     for i, n in enumerate(nodes):  # 关联指纹：后续脚本靠它匹配节点，不怕外部改名
         recs[i]['fp'] = fp_of(n)
     with open(os.path.join(workdir, 'probe_result.json'), 'w', encoding='utf-8') as f:

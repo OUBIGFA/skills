@@ -163,46 +163,47 @@ def main():
 
     proc = start_kernel(s['singbox'], os.path.join(workdir, 'test_config.json'),
                         workdir, 'singbox_recheck.log', base)
+    try:
+        offline_idx = [i for i, r in enumerate(recs) if r['status'] != 'ok']
+        revived = []
+        if offline_idx:
+            print(f'离线节点二次复测（{len(offline_idx)} 个，低并发）...', flush=True)
+            with ThreadPoolExecutor(max_workers=3) as ex:
+                futs = {ex.submit(probe_node, base + i, recs[i]['tag']): i
+                        for i in offline_idx}
+                for f in as_completed(futs):
+                    i = futs[f]
+                    r = f.result()
+                    if r['status'] == 'ok':
+                        recs[i] = r
+                        revived.append(i)
+                        print(f"  复活: {r['tag']} exit={r['exit_ip']}", flush=True)
+                    else:
+                        print(f"  仍离线: {recs[i]['tag']}", flush=True)
 
-    offline_idx = [i for i, r in enumerate(recs) if r['status'] != 'ok']
-    revived = []
-    if offline_idx:
-        print(f'离线节点二次复测（{len(offline_idx)} 个，低并发）...', flush=True)
-        with ThreadPoolExecutor(max_workers=3) as ex:
-            futs = {ex.submit(probe_node, base + i, recs[i]['tag']): i
-                    for i in offline_idx}
-            for f in as_completed(futs):
-                i = futs[f]
-                r = f.result()
-                if r['status'] == 'ok':
-                    recs[i] = r
-                    revived.append(i)
-                    print(f"  复活: {r['tag']} exit={r['exit_ip']}", flush=True)
-                else:
-                    print(f"  仍离线: {recs[i]['tag']}", flush=True)
-
-    # 出口池采样：复活节点 + 首轮发现出口漂移/分流的节点
-    need_sample = sorted(set(revived) | {
-        i for i, r in enumerate(recs)
-        if r.get('status') == 'ok' and (r.get('split_exit') or r.get('exit_stable') is False)})
-    if need_sample:
-        print(f'出口稳定性采样（{len(need_sample)} 个节点 × 3 次）...', flush=True)
-        for i in need_sample:
-            r = recs[i]
-            pool = set(filter(None, [r.get('exit_ip'), r.get('exit_ip_2nd')]))
-            samples = []
-            for _ in range(3):
-                t = p_cf(fetch('https://www.cloudflare.com/cdn-cgi/trace', base + i, js=False))
-                if t and t.get('ip'):
-                    samples.append(t['ip'])
-                    pool.add(t['ip'])
-                time.sleep(2)
-            r['exit_pool'] = sorted(pool)
-            if r.get('exit_stable') is None:
-                r['exit_ip_2nd'] = samples[0] if samples else None
-                r['exit_stable'] = (all(x == r['exit_ip'] for x in samples)
-                                    if samples else None)
-    proc.terminate()
+        # 出口池采样：复活节点 + 首轮发现出口漂移/分流的节点
+        need_sample = sorted(set(revived) | {
+            i for i, r in enumerate(recs)
+            if r.get('status') == 'ok' and (r.get('split_exit') or r.get('exit_stable') is False)})
+        if need_sample:
+            print(f'出口稳定性采样（{len(need_sample)} 个节点 × 3 次）...', flush=True)
+            for i in need_sample:
+                r = recs[i]
+                pool = set(filter(None, [r.get('exit_ip'), r.get('exit_ip_2nd')]))
+                samples = []
+                for _ in range(3):
+                    t = p_cf(fetch('https://www.cloudflare.com/cdn-cgi/trace', base + i, js=False))
+                    if t and t.get('ip'):
+                        samples.append(t['ip'])
+                        pool.add(t['ip'])
+                    time.sleep(2)
+                r['exit_pool'] = sorted(pool)
+                if r.get('exit_stable') is None:
+                    r['exit_ip_2nd'] = samples[0] if samples else None
+                    r['exit_stable'] = (all(x == r['exit_ip'] for x in samples)
+                                        if samples else None)
+    finally:
+        proc.terminate()
 
     # 中转复活：直连仍离线的节点，经本机现有代理客户端中转再给最后一次机会
     still_offline = [i for i, r in enumerate(recs)

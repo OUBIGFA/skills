@@ -10,17 +10,17 @@
 
 - 前缀徽章顺序固定：✨️ > 🏠 / ♥️ > ❇️ > Key / Free / Fast。
 - 后缀只用英文缩写：`_IPLC`、`_ISP`、`_Lnd`、`_USAI`、`_GOAI`、`_NF`、`_D+`；不保留“HiNet家宽”“双ISP”“Seller双ISP”等中缀。
-- 污染标记如 `_⚠️CN`、`⚡WARP` 放在最后。
+- 污染标记如 `_⚠️CN`、`[⚡WARP]` 放在最后（其中 `_⚠️` 送中/地区污染剥夺 `❇️`/`✨️`/`_USAI`/`_GOAI`/`♥️`/`🏠`；而 `[⚡WARP]` 套壳标记**保留 AI 解锁标记 `❇️`/`_USAI`/`_GOAI`**，仅剥夺 `🏠`/`♥️`/`✨️`/`_ISP`）。
 
 ## 2. 前缀徽章
 
 | 徽章 | 授予条件 | 互斥与剥离 |
 |---|---|---|
-| `✨️` | AI 五项全通 + Groq + YouTube 免登实播 + WAF Shield Score >= 85 且至少 4 站直通 + 丢包率 < 20% | 丢包 20%~49%、送中/受限污染时剥离 |
-| `🏠` | Level 1 原生家宽，且综合信誉 >= 80、无 cf-mitigated 硬拦截、出口稳定无污染 | 与 ♥️ 互斥；Level 1 但 < 80 改为 `_ISP` 后缀 |
-| `♥️` | 非家宽节点，综合信誉 >= 80、无 cf-mitigated 硬拦截、出口稳定 | Level 3 住宅代理池、带 `_⚠️CN` 等污染标记不授予 |
-| `❇️` | OpenAI + Claude + Gemini + Hugging Face + Grok 全通，出口稳定非送中 | OpenAI Sentinel 判定重度降智（`DEGRADED_HEAVY`）时剥离 |
-| `Key` | 通过 Key 准入（见下节） | 与 Fast 互斥 |
+| `✨️` | AI 五项全通 + Groq + YouTube 免登实播 + WAF Shield Score >= 85 且至少 4 站直通 + 丢包率 < 20% | 丢包 20%~49%、送中/受限污染或 `[⚡WARP]` 套壳时剥离 |
+| `🏠` | 真实网络层检测为 Level 1 原生家宽（严禁采信上游节点名自标家宽），且综合信誉 >= 80、无 cf-mitigated 硬拦截、出口稳定无污染 | 与 ♥️ 互斥；Level 1 但 < 80 改为 `_ISP` 后缀；不参与 `Key` 评选 |
+| `♥️` | 非家宽节点，综合信誉 >= 80、无 cf-mitigated 硬拦截、出口稳定 | Level 3 住宅代理池、带 `_⚠️CN` 或 `[⚡WARP]` 等污染标记不授予 |
+| `❇️` | OpenAI + Claude + Gemini + Hugging Face + Grok 全通，出口稳定非送中 | OpenAI Sentinel 判定重度降智（`DEGRADED_HEAVY`）或 `_⚠️` 送中污染时剥离（`[⚡WARP]` 保留 `❇️`） |
+| `Key` | 通过 Key 准入（见下节） | 与 Fast、`🏠` 互斥 |
 | `Free` | 带 `_USAI` 的美国 Key 节点改用 Free，排序与入组权重与 Key 完全相同 | 其他美国 Key 与非美 Key 仍用 Key |
 | `Fast` | 主动完整测速达标（稳态 >= 12 Mbps 且最低 >= 6 Mbps）但未选为 Key/Free | 3 秒防断流快检、未测速、未达标均不授予 |
 
@@ -28,15 +28,16 @@
 
 - 协议：禁止 `http`、`https`、`socks`、`socks5`。
 - 拓扑：落地节点（`_Lnd`、需前置的 `_USAI` / `_GOAI`、实测经前置连通者）不可作 Key / Front。
+- 家宽保护：真家宽节点（`🏠`）专作终端高纯净出口，不参与 Key 前置跳板评选。
 - 出口：真实出网，且不与本机跑机基线 IP 重合。
 - 测速：必须主动完整测速达标。
 - 丢包：`loss_rate < 20%`（`--key-max-loss-rate`）。
-- 评分与配额：TLS-TCP 加密、亚太核心区（HK/TW/JP/SG/KR）、低丢包加分；单国配额默认 3。
+- 评分与配额（满分 48 分）：协议（TLS-TCP 10 / Self-enc 6 / CDN-plain 4 / UDP 3）+ 亚太核心区（HK/TW/JP/SG/KR +8）+ 速度（最高 15）+ 延迟（最高 10）+ 低丢包（最高 5）；单国配额默认 3。
 
 ## 4. 后缀
 
 - `_IPLC`：节点名含 IPLC/专线标识时保留，排在所有后缀第一位（如 `🇭🇰 ❇️香港_1_IPLC_NF`）。
-- `_ISP`：Level 2 商用双 ISP，或 Level 1 但信誉 < 80 的家宽。家宽又是专线时只留 `_IPLC`。
+- `_ISP`：真实网络层检测为 Level 2 商用双 ISP，或 Level 1 但信誉 < 80 的家宽（绝不因上游节点原名含“双ISP/家宽”而直接授予）。家宽又是专线时只留 `_IPLC`。
 - `_USAI`：属地统一认定为美国且 AI 全通。
 - `_GOAI`：属地存在分歧，但谷歌认定为美国且具备原 USAI 能力（AI 全通）；不论多数决最终归属何地，都用 `_GOAI` 替换 `_USAI`。属地分歧但非谷歌认定美国、或无 AI 能力的节点，两者都不授予。
 - `_Lnd`：常规中转落地节点。

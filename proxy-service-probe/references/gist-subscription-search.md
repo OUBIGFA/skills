@@ -45,7 +45,7 @@ GitHub Gist 与空间测绘引擎（FoFa / 360 Quake）在 `proxy-service-probe`
 
 ## 3. 预设查询语法矩阵 (Preset Queries)
 
-系统内置经过高频存活率实测校准的 6 大预设语法：
+系统内置经过高频存活率实测校准的 8 大预设语法：
 
 | 预设标识 (`--preset`) | 内部查询语法 | 命中目标与特征 |
 | :--- | :--- | :--- |
@@ -83,7 +83,7 @@ GitHub Gist 与空间测绘引擎（FoFa / 360 Quake）在 `proxy-service-probe`
   "max_nodes_per_subscription": 300,
   "proxy": "http://127.0.0.1:3067",
   "timeout": 12,
-  "default_query": "filename:yaml proxies"
+  "default_query": "residential"
 }
 ```
 *注：若 `proxy` 为空，系统自动尝试复用 `fofa_config.json` 中的代理地址；支持环境变量 `GIST_PROXY`、`GIST_MAX_AGE_HOURS`、`GIST_DEFAULT_TARGETS` 进行运行时覆盖。*
@@ -108,7 +108,7 @@ python scripts/gist_search.py --dry-run-targets
 # 5. 指定时效上限为最近 24 小时、单源上限 100 节点
 python scripts/gist_search.py --max-age-hours 24 --max-nodes-per-sub 100 -o fresh.yaml
 
-# 6. 一键检索并直接联动全量服务能力测试 (Playwright YouTube实播 + AI全通 + 4站免盾 + 导出)
+# 6. 一键检索并直接联动全量服务能力测试 (Playwright YouTube实播 + AI五平台全通 + 5站免盾 + 导出)
 python scripts/gist_search.py --probe --output final.yaml
 
 # 7. 检索、测试并直接合流并入既有目标底库配置

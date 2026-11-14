@@ -7,12 +7,14 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 import time
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_TTL = 86400.0  # 24 小时 (秒)
+_GLOBAL_LOCK = threading.Lock()
 
 
 class LocalReputationCache:
@@ -20,6 +22,7 @@ class LocalReputationCache:
 
     def __init__(self, db_path: Optional[str] = None, ttl: float = DEFAULT_TTL):
         self.ttl = ttl
+        self._lock = threading.Lock()
         if db_path is None:
             # 默认存放在项目根目录下的 cache/ 目录中
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -42,6 +45,7 @@ class LocalReputationCache:
             if db_dir and not os.path.exists(db_dir):
                 os.makedirs(db_dir, exist_ok=True)
             conn = sqlite3.connect(self.db_path, timeout=5.0)
+            conn.execute("PRAGMA journal_mode=WAL;")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS ip_reputation_cache (
                     ip TEXT PRIMARY KEY,
@@ -70,9 +74,10 @@ class LocalReputationCache:
         now = time.time()
 
         if self._use_memory_only:
-            item = self._memory_fallback.get(ip)
-            if item and (now - item["updated_at"]) < self.ttl:
-                return item["data"]
+            with self._lock:
+                item = self._memory_fallback.get(ip)
+                if item and (now - item["updated_at"]) < self.ttl:
+                    return dict(item["data"])
             return None
 
         conn = None
@@ -94,13 +99,15 @@ class LocalReputationCache:
                     data["cache_age_hours"] = round((now - updated_at) / 3600.0, 1)
                     return data
                 else:
-                    cur.execute("DELETE FROM ip_reputation_cache WHERE ip = ?", (ip,))
-                    conn.commit()
+                    with self._lock:
+                        cur.execute("DELETE FROM ip_reputation_cache WHERE ip = ?", (ip,))
+                        conn.commit()
         except Exception as e:
             logger.debug("读取 SQLite 缓存异常 (%s)，回退尝试内存", e)
-            item = self._memory_fallback.get(ip)
-            if item and (now - item["updated_at"]) < self.ttl:
-                return item["data"]
+            with self._lock:
+                item = self._memory_fallback.get(ip)
+                if item and (now - item["updated_at"]) < self.ttl:
+                    return dict(item["data"])
         finally:
             if conn:
                 try:
@@ -119,64 +126,65 @@ class LocalReputationCache:
         cache_copy = dict(data)
         cache_copy["score"] = score
         cache_copy["residential_level"] = res_level
-        self._memory_fallback[ip] = {"data": cache_copy, "updated_at": now}
+        with self._lock:
+            self._memory_fallback[ip] = {"data": cache_copy, "updated_at": now}
+            if self._use_memory_only:
+                return
 
-        if self._use_memory_only:
-            return
-
-        conn = None
-        try:
-            data_json = json.dumps(data, ensure_ascii=False)
-            conn = sqlite3.connect(self.db_path, timeout=5.0)
-            conn.execute(
-                """
-                INSERT INTO ip_reputation_cache (ip, score, res_level, data_json, updated_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(ip) DO UPDATE SET
-                    score=excluded.score,
-                    res_level=excluded.res_level,
-                    data_json=excluded.data_json,
-                    updated_at=excluded.updated_at
-                """,
-                (ip, score, res_level, data_json, now)
-            )
-            conn.commit()
-        except Exception as e:
-            logger.warning("写入 SQLite 缓存异常 (%s)", e)
-        finally:
-            if conn:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
+            conn = None
+            try:
+                data_json = json.dumps(data, ensure_ascii=False)
+                conn = sqlite3.connect(self.db_path, timeout=5.0)
+                conn.execute(
+                    """
+                    INSERT INTO ip_reputation_cache (ip, score, res_level, data_json, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(ip) DO UPDATE SET
+                        score=excluded.score,
+                        res_level=excluded.res_level,
+                        data_json=excluded.data_json,
+                        updated_at=excluded.updated_at
+                    """,
+                    (ip, score, res_level, data_json, now)
+                )
+                conn.commit()
+            except Exception as e:
+                logger.warning("写入 SQLite 缓存异常 (%s)", e)
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
 
     def clear_expired(self) -> int:
         """清理已过期的旧记录。"""
-        if self._use_memory_only:
-            now = time.time()
-            expired = [ip for ip, it in self._memory_fallback.items() if (now - it["updated_at"]) >= self.ttl]
-            for ip in expired:
-                del self._memory_fallback[ip]
-            return len(expired)
+        with self._lock:
+            if self._use_memory_only:
+                now = time.time()
+                expired = [ip for ip, it in self._memory_fallback.items() if (now - it["updated_at"]) >= self.ttl]
+                for ip in expired:
+                    del self._memory_fallback[ip]
+                return len(expired)
 
-        conn = None
-        try:
-            expire_before = time.time() - self.ttl
-            conn = sqlite3.connect(self.db_path, timeout=5.0)
-            cur = conn.cursor()
-            cur.execute("DELETE FROM ip_reputation_cache WHERE updated_at < ?", (expire_before,))
-            deleted = cur.rowcount
-            conn.commit()
-            return deleted
-        except Exception as e:
-            logger.warning("清理过期缓存异常: %s", e)
-            return 0
-        finally:
-            if conn:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
+            conn = None
+            try:
+                expire_before = time.time() - self.ttl
+                conn = sqlite3.connect(self.db_path, timeout=5.0)
+                cur = conn.cursor()
+                cur.execute("DELETE FROM ip_reputation_cache WHERE updated_at < ?", (expire_before,))
+                deleted = cur.rowcount
+                conn.commit()
+                return deleted
+            except Exception as e:
+                logger.warning("清理过期缓存异常: %s", e)
+                return 0
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
 
 
 # 全局默认单例
@@ -186,6 +194,7 @@ _GLOBAL_CACHE: Optional[LocalReputationCache] = None
 def get_default_cache() -> LocalReputationCache:
     """获取默认的全局信誉缓存实例。"""
     global _GLOBAL_CACHE
-    if _GLOBAL_CACHE is None:
-        _GLOBAL_CACHE = LocalReputationCache()
-    return _GLOBAL_CACHE
+    with _GLOBAL_LOCK:
+        if _GLOBAL_CACHE is None:
+            _GLOBAL_CACHE = LocalReputationCache()
+        return _GLOBAL_CACHE

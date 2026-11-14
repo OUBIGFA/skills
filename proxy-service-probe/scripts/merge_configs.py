@@ -213,7 +213,8 @@ def main():
             new_nodes_or_file=additions,
             output_path=a.out,
             insert_mode=a.insert_mode,
-            dedup=a.dedup
+            dedup=a.dedup,
+            apply=a.apply
         )
         print(f'\n合流统计结果: 底库原有 {stats["base_count"]} 个，新增入库 {stats["added_count"]} 个，合流后总计 {stats["total_count"]} 个节点')
         if not a.apply:

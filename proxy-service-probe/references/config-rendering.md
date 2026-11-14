@@ -31,10 +31,12 @@ flowchart TD
     Google --> AIUnlock
     Google --> USNodes["🇺🇸 美国节点"]
     Google --> AutoSelect
+    Google --> ManualSelect
 
     Streaming --> NFUnlock["🎥 奈飞解锁 (url-test)"]
     Streaming --> DPUnlock["✨ 解锁Disney+ (url-test)"]
     Streaming --> ManualSelect
+    Streaming --> Direct
 
     LandingNodes["落地节点群 (需前置的 _Lnd / 需前置的 _USAI)"] -.->|dialer-proxy 链式前置| FrontGroup["🛡️ Front前置"]
     FrontGroup --> Direct["DIRECT (默认首选项)"]
@@ -53,7 +55,7 @@ flowchart TD
    - **绝不允许落地节点充当跳板**：任何标记为 `_Lnd`、需前置的 `_USAI` / `_GOAI` 或带有 `dialer-proxy` 的真实落地节点严禁进入前置组（直连 USAI / GOAI 节点不属于此类）。
    - 未评出 Key 但 `probe_services.py` 选出了备用前置（测速未被淘汰的可前置节点，即实际用于验证落地节点的前置）时，`⚡ Fast自动选择` 与 `🛡️ Front前置` 使用备用前置；再无则退守为可用直连节点或 `DIRECT`。
 2. **`✅ 解锁 AI` 与 `✅ 解锁USAI`**：
-   - `✅ 解锁 AI`：由所有带 `❇️`（AI三大全通）的节点组成，执行低延迟自动选优。
+   - `✅ 解锁 AI`：由所有带 `❇️`（AI五平台全通）的节点组成，执行低延迟自动选优。
    - `✅ 解锁USAI`：仅由归属美国（`US`）且带 `_USAI`（多源统一认定归属美国且 AI 全通的节点）组成；属地存在分歧但谷歌判定为美国的节点授予 `_GOAI` 后缀，不进入该组。
    - 若无可达节点，自动回落至 `🚀 自动选择`。
 3. **`🎬 国际流媒体`（奈飞与迪士尼）**：
@@ -67,7 +69,7 @@ flowchart TD
 
 ## 3. 落地节点链式跳板注入 (Dialer-Proxy)
 
-对于所有落地节点，渲染器会自动设置链式前置字段：
+对于所有链式落地节点（`_Lnd` 或实测需前置的 `_USAI` / `_GOAI`；直连 `_USAI` / `_GOAI` 与直连家宽 `🏠` / `_ISP` 不注入），渲染器会自动设置链式前置字段：
 - Clash/Mihomo 设置 `dialer-proxy`，sing-box 设置 `detour`，均指向 `🛡️ Front前置` 策略组（原有 `detour` 可能指向不存在的出站，一律先剥离再注入）；
 - 若直连前置发生变动或测速后动态调度，落地节点统一通过 `🛡️ Front前置` 建立连接；
 - 直连节点自动剔除任何 `dialer-proxy` / `detour` 属性，杜绝循环前置引用。

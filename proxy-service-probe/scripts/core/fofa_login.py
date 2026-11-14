@@ -51,9 +51,9 @@ LOGIN_URL = "https://i.nosec.org/login?service=https://fofa.info/f_login"
 
 
 def get_default_profile_dir() -> str:
-    """返回默认的 FoFa 专用浏览器持久化数据目录 (scripts/core/data/fofa_profile)。"""
-    core_dir = os.path.dirname(os.path.abspath(__file__))
-    pdir = os.path.join(core_dir, "data", "fofa_profile")
+    """返回默认的 FoFa 专用浏览器持久化数据目录 (cache/fofa_profile)。"""
+    skill_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    pdir = os.path.join(skill_root, "cache", "fofa_profile")
     return os.path.abspath(pdir)
 
 

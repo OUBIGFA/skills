@@ -173,12 +173,14 @@ def resolve_ptr(ip: str, timeout: float = 1.5) -> Optional[str]:
         except Exception:
             return None
 
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_lookup)
-            return future.result(timeout=timeout)
+        future = executor.submit(_lookup)
+        return future.result(timeout=timeout)
     except Exception:
         return None
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def match_ptr_pattern(ptr: Optional[str]) -> Tuple[bool, bool, Optional[str]]:
