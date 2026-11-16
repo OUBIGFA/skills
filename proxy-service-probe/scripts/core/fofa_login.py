@@ -189,61 +189,62 @@ def login_fofa_and_extract_token(
 
     with sync_playwright() as p:
         # 使用持久化上下文以保留 Cookies、LocalStorage、设备指纹与 Turnstile 信任状态
+        # 注意：不硬编码过时 User-Agent，也不覆盖 plugins/languages 等原生指纹，避免与真实内核版本不一致而被 Turnstile 拦截
         launch_kwargs: Dict[str, Any] = {
             "user_data_dir": final_user_data_dir,
             "headless": headless,
             "viewport": {"width": 1280, "height": 850},
-            "user_agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
+            "ignore_default_args": ["--enable-automation"],
             "args": [
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
                 "--disable-infobars",
-            ]
+            ],
         }
         if final_proxy:
             launch_kwargs["proxy"] = {"server": final_proxy}
 
-        # 尝试选择合适的浏览器内核 (优先 Edge，其次内置 Chromium)
+        # 优先使用用户配置或本机 Chrome Dev，其次按 Chrome / Edge / 内置 Chromium 回退
+        configured_browser = str(cfg.get("browser_path") or os.environ.get("FOFA_BROWSER_PATH") or "").strip()
+        preferred_exe_paths = [
+            p_cand for p_cand in (
+                configured_browser,
+                r"C:\Program Files\Google\Chrome Dev\Application\chrome.exe",
+            )
+            if p_cand and os.path.isfile(p_cand)
+        ]
+
         context = None
-        for channel in ["msedge", None]:
+        last_launch_err: Optional[Exception] = None
+        launch_candidates: list = []
+        for exe_path in preferred_exe_paths:
+            launch_candidates.append(("executable_path", exe_path))
+        for ch in ("chrome", "msedge", None):
+            launch_candidates.append(("channel", ch))
+
+        for mode, val in launch_candidates:
             try:
-                if channel:
-                    launch_kwargs["channel"] = channel
-                else:
-                    launch_kwargs.pop("channel", None)
-                context = p.chromium.launch_persistent_context(**launch_kwargs)
+                kw = dict(launch_kwargs)
+                if mode == "executable_path":
+                    kw["executable_path"] = val
+                elif val:
+                    kw["channel"] = val
+                context = p.chromium.launch_persistent_context(**kw)
+                print(f"    - 启动内核: {val or 'Playwright Chromium'}")
                 break
-            except Exception:
+            except Exception as exc:
+                last_launch_err = exc
                 continue
 
         if not context:
-            return False, None, "无法启动 Chromium / Edge 浏览器，请检查 Playwright 运行环境。"
+            err_msg = f"无法启动 Chrome Dev / Chrome / Edge 浏览器: {last_launch_err or '未知错误'}"
+            print(f"[!] 登录失败: {err_msg}")
+            return False, None, err_msg
 
         try:
-            # 增强反检测脚本注入
+            # 仅做最小化的 webdriver 隐藏，保持其余浏览器指纹完全原生
             context.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                if (!window.chrome) {
-                    window.chrome = { runtime: {} };
-                }
-                const originalQuery = window.navigator.permissions ? window.navigator.permissions.query : null;
-                if (originalQuery) {
-                    window.navigator.permissions.query = (parameters) => (
-                        parameters.name === 'notifications' ?
-                            Promise.resolve({ state: Notification.permission }) :
-                            originalQuery(parameters)
-                    );
-                }
-                Object.defineProperty(navigator, 'plugins', {
-                    get: () => [1, 2, 3, 4, 5],
-                });
-                Object.defineProperty(navigator, 'languages', {
-                    get: () => ['en-US', 'en', 'zh-CN', 'zh'],
-                });
             """)
 
             page = context.pages[0] if context.pages else context.new_page()
@@ -264,12 +265,14 @@ def login_fofa_and_extract_token(
             try:
                 page.goto(LOGIN_URL, timeout=30000, wait_until="domcontentloaded")
             except Exception as e:
-                return False, None, f"打开登录页失败: {e}"
+                err_msg = f"打开登录页失败: {e}"
+                print(f"[!] 登录失败: {err_msg}")
+                return False, None, err_msg
 
             page.wait_for_timeout(1500)
 
-            def _ensure_form_filled() -> None:
-                """确保账号、密码、保持登录与服务协议复选框在登录页就绪。"""
+            def _fill_form_once() -> None:
+                """仅在登录页就绪后填一次账号、密码并勾选保持登录与服务协议，避免轮询中频繁操作 DOM 干扰人机验证。"""
                 if final_email:
                     try:
                         loc = page.locator('input[name="username"]')
@@ -288,23 +291,15 @@ def login_fofa_and_extract_token(
                                 loc.fill(final_pwd)
                     except Exception:
                         pass
-                try:
-                    page.evaluate("""() => {
-                        const boxes = document.querySelectorAll('input[type="checkbox"]');
-                        boxes.forEach(b => {
-                            if (!b.checked) {
-                                b.checked = true;
-                                b.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-                        });
-                        if (typeof Cookies !== 'undefined') {
-                            Cookies.set('fofa_service', 1);
-                        }
-                    }""")
-                except Exception:
-                    pass
+                for cb_sel in ('#rememberMe', '#fofa_service'):
+                    try:
+                        cb = page.locator(cb_sel)
+                        if cb.count() > 0 and not cb.first.is_checked():
+                            cb.first.check()
+                    except Exception:
+                        pass
 
-            _ensure_form_filled()
+            _fill_form_once()
 
             # 4. 轮询检测登录重定向与 fofa_token Cookie 状态
             start_time = time.time()
@@ -316,6 +311,10 @@ def login_fofa_and_extract_token(
                 print("    (若浏览器窗口中显示人机验证框，请在弹出窗口中手动点击完成后将自动提交并提取 Token)")
 
             while time.time() < deadline:
+                if page.is_closed() is True:
+                    message = "浏览器窗口已被手动关闭，登录取消"
+                    break
+
                 # 检查当前所有 Cookie 中是否已出现有效的 fofa_token
                 try:
                     cookies = context.cookies()
@@ -365,37 +364,26 @@ def login_fofa_and_extract_token(
                 except Exception:
                     pass
 
-                # 若仍在登录表单页，确保字段与复选框已填好，并在验证令牌就绪且提交按钮可用时自动点击登录
+                # 当检测到 Turnstile 令牌已生成时，自动点击登录按钮
                 if final_email and final_pwd:
                     try:
-                        _ensure_form_filled()
                         ts_loc = page.locator('input[name="cf-turnstile-response"]')
                         ts_val = ts_loc.input_value() if ts_loc.count() > 0 else ""
                         if len(ts_val) > 20 and ts_val != last_submitted_ts_token:
-                            clicked = page.evaluate("""() => {
-                                const srv = document.querySelector('#fofa_service');
-                                if (srv && !srv.checked) {
-                                    srv.checked = true;
-                                }
-                                const rem = document.querySelector('#rememberMe');
-                                if (rem && !rem.checked) {
-                                    rem.checked = true;
-                                }
-                                const btn = document.querySelector('button[type="submit"], input[type="submit"]');
-                                if (btn) {
-                                    btn.disabled = false;
-                                    btn.click();
-                                    return true;
-                                }
-                                const form = document.querySelector('#login-form');
-                                if (form) {
-                                    form.submit();
-                                    return true;
-                                }
-                                return false;
-                            }""")
-                            if clicked:
+                            for cb_sel in ('#rememberMe', '#fofa_service'):
+                                try:
+                                    cb = page.locator(cb_sel)
+                                    if cb.count() > 0 and not cb.first.is_checked():
+                                        cb.first.check()
+                                except Exception:
+                                    pass
+                            submit_btn = page.locator('button[type="submit"], input[type="submit"]')
+                            if submit_btn.count() > 0:
                                 print("[*] 验证已就绪，正在自动提交登录表单...")
+                                try:
+                                    submit_btn.first.click(timeout=3000)
+                                except Exception:
+                                    page.evaluate("() => { const f = document.querySelector('#login-form'); if (f) f.submit(); }")
                                 last_submitted_ts_token = ts_val
                     except Exception:
                         pass

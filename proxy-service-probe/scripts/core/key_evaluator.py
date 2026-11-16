@@ -7,16 +7,19 @@ Key (优质前置跳板) 节点判定、评分与优选模块 (移植自 freenod
 2. 落地节点 (_Lnd, _USAI, dialer-proxy) 绝不可作为前置跳板。
 3. 必须具备可核实的真实代理出网出口，绝不可与本地跑机基线出口重合。
 4. 必须通过完整持续下载测速 (默认: 稳态速度 >= 12 Mbps 且 2 秒滑动最低 >= 6 Mbps)。
-5. 亚太核心地区 (HK/TW/JP/SG/KR) 优先，TLS-TCP 强加密协议优先。
+5. 高速直连核心地区 (HK/TW/JP/SG) 首选，次级亚太地区 (KR) 次之，TLS-TCP 强加密协议优先。
 """
 import math
 
+from .egress_geo import FOCUS_FAST_DIRECT_REGIONS
 from .speed_probe import DEFAULT_MIN_FLOOR_MBPS, DEFAULT_MIN_STABLE_MBPS, speed_qualified
 
 # 严禁作为前置跳板的协议 (无法胜任落地中转)
 KEY_DISALLOWED_PROTOCOLS = frozenset({"http", "https", "socks", "socks5"})
 
-ASIA_CORE = frozenset({"HK", "TW", "JP", "SG", "KR"})
+FOCUS_DIRECT_CORE = FOCUS_FAST_DIRECT_REGIONS
+ASIA_CORE = FOCUS_DIRECT_CORE | frozenset({"KR"})
+SECONDARY_ASIA_BONUS = 5.0
 DEFAULT_KEY_MAX_LOSS_RATE = 20.0  # Key 优质跳板丢包率硬门槛: >= 20% 严禁充当前置
 
 PROTOCOL_CLASS_SCORE = {
@@ -116,10 +119,12 @@ def evaluate_key_node(proxy, speed_result=None, egress_result=None, delay=None,
     p_class = protocol_class(proxy)
     score += PROTOCOL_CLASS_SCORE.get(p_class, 5)
 
-    # 2. 亚太核心地区加分 (HK/TW/JP/SG/KR 优先)
+    # 2. 高速直连核心地区加分 (HK/TW/JP/SG 首选 +8.0，次级亚太 KR +5.0)
     cc = proxy.get("_country_code") or ((egress_result.get("cc") or egress_result.get("country")) if egress_result else "")
-    if cc in ASIA_CORE:
+    if cc in FOCUS_DIRECT_CORE:
         score += 8.0
+    elif cc in ASIA_CORE:
+        score += SECONDARY_ASIA_BONUS
 
     # 3. 带宽速率对数分 (按超出合格门槛的倍数计分，0 ~ 15 分)
     if speed_mbps > 0:

@@ -45,6 +45,7 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if CURRENT_DIR not in sys.path:
     sys.path.insert(0, CURRENT_DIR)
 
+from core.fofa import print_candidate_focus_summary
 from core.gist import (
     DEFAULT_GIST_PRESET,
     DEFAULT_TARGETS,
@@ -82,12 +83,12 @@ def parse_args(argv=None):
                         help="自定义 Gist 查询语法 (若指定将覆盖 --preset)")
     parser.add_argument("--config", "-c", default=None,
                         help=f"配置文件路径 (默认引用技能主目录下: {os.path.basename(get_default_gist_config_path())})")
-    parser.add_argument("--max-targets", "--limit", type=int, default=DEFAULT_TARGETS,
-                        help=f"最多抓取的有效 Gist 数量 (默认: {DEFAULT_TARGETS} 条最新有效目标)")
-    parser.add_argument("--max-age-hours", type=float, default=DEFAULT_MAX_AGE_HOURS,
-                        help=f"时效过滤上限小时数 (默认: {DEFAULT_MAX_AGE_HOURS} 小时内更新的目标)")
-    parser.add_argument("--max-nodes-per-sub", type=int, default=DEFAULT_MAX_NODES_PER_SUB,
-                        help=f"单订阅源节点数量上限 (默认: {DEFAULT_MAX_NODES_PER_SUB})，超过此上限的聚合源将被丢弃以防垃圾节点干扰")
+    parser.add_argument("--max-targets", "--limit", type=int, default=None,
+                        help="最多抓取的有效 Gist 数量 (默认读取配置文件或代码默认值)")
+    parser.add_argument("--max-age-hours", type=float, default=None,
+                        help="时效过滤上限小时数 (默认读取配置文件或代码默认值)")
+    parser.add_argument("--max-nodes-per-sub", type=int, default=None,
+                        help="单订阅源节点数量上限 (默认读取配置文件或代码默认值)，超过此上限的聚合源将被丢弃以防垃圾节点干扰")
     parser.add_argument("--timeout", type=int, default=None, help="HTTP 超时秒数 (默认使用配置文件中的值)")
     parser.add_argument("--proxy", default=None, help="本地 HTTP/SOCKS 代理地址 (如 http://127.0.0.1:3067)")
     parser.add_argument("--dry-run-targets", action="store_true",
@@ -117,10 +118,14 @@ def main(argv=None):
 
     actual_query = resolve_gist_query(args.query or args.preset, cfg.get("default_query"))
     query_str = " + ".join(str(q) for q in actual_query) if isinstance(actual_query, list) else str(actual_query)
+    effective_max_age = args.max_age_hours if args.max_age_hours is not None else cfg.get("max_age_hours", DEFAULT_MAX_AGE_HOURS)
+    effective_max_targets = args.max_targets if args.max_targets is not None else cfg.get("default_targets", DEFAULT_TARGETS)
+    effective_max_nodes = args.max_nodes_per_sub if args.max_nodes_per_sub is not None else cfg.get("max_nodes_per_subscription", DEFAULT_MAX_NODES_PER_SUB)
+
     print(f"[*] 选用搜索预设/语法: {args.preset} -> {query_str}")
-    print(f"[*] 时效性窗口限制: 最近 {args.max_age_hours} 小时内更新")
-    print(f"[*] 目标抓取配额: 最多 {args.max_targets} 条最新有效 Gist")
-    print(f"[*] 单源节点熔断上限: {args.max_nodes_per_sub} 个节点")
+    print(f"[*] 时效性窗口限制: 最近 {effective_max_age} 小时内更新")
+    print(f"[*] 目标抓取配额: 最多 {effective_max_targets} 条最新有效 Gist")
+    print(f"[*] 单源节点熔断上限: {effective_max_nodes} 个节点")
     if cfg.get("proxy"):
         print(f"[*] 请求代理: {cfg['proxy']}")
 
@@ -164,6 +169,7 @@ def main(argv=None):
     print("\n[+] 协议构成统计:")
     for proto, cnt in counts.most_common():
         print(f"    - {proto.upper():12s}: {cnt} 个")
+    print_candidate_focus_summary(proxies)
 
     print(f"\n[3/3] 正在保存节点数据至: {args.output}")
     out_dir = os.path.dirname(os.path.abspath(args.output))

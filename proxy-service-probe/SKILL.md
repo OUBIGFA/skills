@@ -11,37 +11,38 @@ description: 对代理节点执行服务能力测试（IP属地检测、AI解锁
 
 - **主流水线 `probe_services.py`（mihomo）**：默认一律使用，支持全部输入格式、本地/GitHub Actions Profile 与云端运行。
 - **备用流水线 `probe_singbox.py`（sing-box）**：仅当用户要求用 sing-box 内核验证兼容性，或需要直接产出 sing-box JSON 时使用。
-- 两者共用 `core.probe_flow`：并发测活 → 服务检测线（默认并发 4）∥ 下载测速线（本地串行，仅开启测速时）→ 统一核对与导出。节点一判活就入队，不等整批完成。
+- 两者共用 `core.probe_flow`：并发测活 → 服务检测线（默认并发以代码为准）∥ 下载测速线（本地串行，仅开启测速时）→ 统一核对与导出。节点一判活就入队，不等整批完成。
 
 ## 默认契约
 
 > [!IMPORTANT]
-> 1. **全量服务检测**：默认执行 IP 属地、AI 五平台、Playwright YouTube 免登实播、5 站免盾、流媒体与 3 秒防断流。不得擅自用轻量模式；`--no-browser` 仅在用户指定或系统无浏览器时降级使用。
-> 2. **测速需主动触发**：默认只做 3 秒防断流快检（< 16KB 淘汰），不授 Key/Free/Fast。用户明确要求“测速 / 测试节点速度 / 测速筛选”或传 `--speed-test` 时，才跑完整持续下载测速与 Key 遴选。本地与 Actions 同一套代码与判据，`--profile auto` 自动选资源参数，两处各自独立完整运行，不做云端粗筛 + 本地精测。
+> 1. **全量服务检测**：默认执行 IP 属地、AI 全平台、Playwright YouTube 免登实播、多站免盾、流媒体与防断流快检。不得擅自用轻量模式；`--no-browser` 仅在用户指定或系统无浏览器时降级使用。
+> 2. **测速需主动触发**：默认只做防断流快检（低于代码淘汰线则淘汰），不授 Key/Free/Fast。用户明确要求“测速 / 测试节点速度 / 测速筛选”或传 `--speed-test` 时，才跑完整持续下载测速与 Key 遴选。本地与 Actions 同一套代码与判据，`--profile auto` 自动选资源参数，两处各自独立完整运行，不做云端粗筛 + 本地精测。
 > 3. **编号稳定**：默认保留原节点编号（属地未变不改号），新节点按国家补空号。仅当用户明确要求重排序/重编号时传 `--resort`，且先定位置再从 1 编号。
-> 4. **订阅搜索需主动触发**：FoFa / 360 Quake / GitHub Gist 搜索只在用户明确要求“搜索订阅”，或显式调用 `fofa_search.py` / `gist_search.py`、传入 `--input fofa:|quake:|spatial:|gist:...` 时启动；默认流水线绝不主动扫描或检索。默认预设 `residential`（家宽、双 ISP、高纯净度），单订阅源节点数 > 300 自动丢弃。配置分别在 [fofa_config.json](fofa_config.json)（本地私密，模板见 [fofa_config.example.json](fofa_config.example.json)）与 [gist_config.json](gist_config.json)。
+> 4. **订阅搜索需主动触发**：FoFa / 360 Quake / GitHub Gist 搜索只在用户明确要求“搜索订阅”，或显式调用 `fofa_search.py` / `gist_search.py`、传入 `--input fofa:|quake:|spatial:|gist:...` 时启动；默认流水线绝不主动扫描或检索。默认预设 `residential`（家宽、双 ISP、高纯净度），超过单订阅源节点上限自动丢弃（阈值以代码与配置为准）。配置分别在 [fofa_config.json](fofa_config.json)（本地私密，模板见 [fofa_config.example.json](fofa_config.example.json)）与 [gist_config.json](gist_config.json)。
 > 5. **合流并入**：`--merge-into` 默认保留底库原节点与原编号，新节点按国家补空号并按地区聚拢；仅当用户要求中间插入（`--insert` 或 `--resort`）时，才完整重排并从 1 连续编号。
+> 6. **默认重点地区（长期生效，无需用户重复提醒）**：搜索抓取、候选排序、`Key` 优选与结果汇总自动把 **高质量的美国节点（`US`：AI 全通 `❇️`/`_USAI`、家宽/双 ISP `🏠`/`_ISP`、高纯净 `♥️`、综合全通 `✨️`、流媒体全解）** 与 **高速直连的香港、台湾、日本、新加坡节点（`HK / TW / JP / SG`：直连、低延迟、低丢包、高稳态 `Key`/`Fast`，并作为 `Key` 前置跳板首选）** 作为重点目标。严守以实测为准，不凭原名直接授标。
 
 ## 检测范围速览
 
 | 维度 | 关键判据 | 细节 |
 |---|---|---|
-| 测活与丢包 | 3 端点轮换采样 10 次；丢包 >= 50% 淘汰；20%~49% 保留但不可作 Key、剥离 ✨️ | [testing-criteria.md](references/testing-criteria.md) |
+| 测活与丢包 | 多端点轮换采样；丢包率超淘汰线淘汰，中度丢包保留但不可作 Key、剥离 ✨️（阈值以代码为准） | [testing-criteria.md](references/testing-criteria.md) |
 | IP 属地 | 按真实出口绑定 IPinfo / ipwho.is / ipapi.is / DB-IP 与 Gemini、YT 信号；分歧优先取全源有效票严格多数；平票且纯 GeoIP 有共识时以 GeoIP 为准；平票无共识或无其他有效证据时以 Google 观测地区兜底；送中保留实际属地并标 `_⚠️CN` | [geolocation.md](references/geolocation.md) |
 | 信誉与家宽 | 多源共识评分 + 网络层四级家宽真实检测（严禁盲信上游节点自标家宽/双ISP名称）；多出口取最低分与最严等级，缺证据记未知 | [testing-criteria.md](references/testing-criteria.md) §1.4 |
 | AI 解锁 | OpenAI、Claude、Gemini、Hugging Face、Grok；Groq 仅作 ✨️ 条件 | §2 |
-| YouTube | Playwright 实播 >= 10 秒、非缓冲停滞、非机器人验证，前后复核出口，2 个视频通过 | §3 |
-| 免盾 | OpenAI Sentinel、Google/YouTube、Reddit、TikTok、Cloudflare 共 5 站，0–100 分 | §4 |
-| 流媒体 / 防断流 | Netflix 非自制剧、Disney+；3 秒窗口 < 16KB 淘汰 | §5.1–5.2 |
-| 持续测速（主动） | 观测 10–20 秒取末 6 秒：稳态 >= 12 且最低 >= 6 Mbps 为 Key/Fast 级；稳态 < 6 Mbps 删除；贴近门槛重测一次 | §5.3 |
-| 直连 / 需前置 | 首轮不通者经最多 3 个已判活前置复测；最终必须保留至少一条已验证落地链路才导出 | §5.5 |
+| YouTube | Playwright 连续实播达标、非缓冲停滞、非机器人验证，前后复核出口，多视频通过（时长与数量以代码为准） | §3 |
+| 免盾 | OpenAI Sentinel、Google/YouTube、Reddit、TikTok、Cloudflare 多站联合评分 | §4 |
+| 流媒体 / 防断流 | Netflix 非自制剧、Disney+；防断流快检低于代码阈值淘汰 | §5.1–5.2 |
+| 持续测速（主动） | 持续下载观测稳态与最低速率：达标授 Key/Fast 级，低于淘汰线删除，贴近门槛重测一次（窗口与速率门槛以代码为准） | §5.3 |
+| 直连 / 需前置 | 首轮不通者经多个已判活前置复测；最终必须保留至少一条已验证落地链路才导出 | §5.5 |
 
 ## 安全隔离
 
 - 不修改 Windows 注册表代理（`ProxyEnable` / `ProxyServer`）与系统路由；测试流量只走本地环回端口。
 - 避让常见客户端端口（`7890-7895, 9090, 2080-2081, 3067, 10808-10809, 24999`），一律申请动态空闲端口。
 - 测试内核关闭 TUN；Windows 自动探测物理网卡并绑定。sing-box 有网卡时经 mihomo DIRECT 中继出网，中继失败即停止，不悄悄改走 TUN。
-- 测速上限不低于合格门槛（本地 40 / 云端 50 Mbps）；同一节点及其前置不同时被测速与服务占用。
+- 测速上限不低于合格门槛（本地与云端参数以代码 Profile 为准）；同一节点及其前置不同时被测速与服务占用。
 
 详见 [runner-environment.md](references/runner-environment.md)。
 

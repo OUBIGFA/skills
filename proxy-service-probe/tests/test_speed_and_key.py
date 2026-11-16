@@ -196,8 +196,11 @@ class TestKeyEvaluator(unittest.TestCase):
         speed = {"status": "complete", "verdict": "qualified", "stable_mbps": 40.0, "floor_mbps": 35.0}
         row = {"exit_ip": "1.1.1.1", "cc": "JP"}
         _, jp_score, _ = evaluate_key_node({"name": "a", "type": "trojan"}, speed, row, delay=50.0)
+        _, kr_score, _ = evaluate_key_node({"name": "c", "type": "trojan"}, speed, {**row, "cc": "KR"}, delay=50.0)
         _, us_score, _ = evaluate_key_node({"name": "b", "type": "trojan"}, speed, {**row, "cc": "US"}, delay=50.0)
         self.assertAlmostEqual(jp_score - us_score, 8.0, places=6)
+        self.assertAlmostEqual(kr_score - us_score, 5.0, places=6)
+        self.assertGreater(jp_score, kr_score)
 
 
 class TestTaggerAndNaming(unittest.TestCase):

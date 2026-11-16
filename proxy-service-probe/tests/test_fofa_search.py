@@ -522,6 +522,33 @@ proxies:
         mock_web_api.assert_called_once()
         self.assertEqual(mock_web_api.call_args.kwargs.get("token"), new_jwt)
 
+    def test_deduplicate_and_sort_prioritizes_focus_regions_and_quality_hints(self):
+        from core.egress_geo import classify_candidate_focus, summarize_candidate_focus
+        raw_proxies = [
+            {"name": "🇮🇷 IR_bulk_hy2", "type": "hysteria2", "server": "9.9.9.1", "port": 443, "password": "p1"},
+            {"name": "generic_unnamed_vless", "type": "vless", "server": "9.9.9.2", "port": 443, "uuid": "u2"},
+            {"name": "🇸🇬 新加坡普通", "type": "trojan", "server": "9.9.9.3", "port": 443, "password": "p3"},
+            {"name": "🇺🇸 美国 双ISP 住宅", "type": "vmess", "server": "9.9.9.4", "port": 443, "uuid": "u4"},
+            {"name": "🇭🇰 香港 HKT 家宽", "type": "ss", "server": "9.9.9.5", "port": 8388, "password": "p5"},
+        ]
+        deduped = deduplicate_and_sort_proxies(raw_proxies)
+        names = [p["name"] for p in deduped]
+        # Tier 0 (focus + quality hint, ordered by protocol: vmess before ss) -> Tier 1 (focus) -> Tier 2 (neutral) -> Tier 3 (non-focus)
+        self.assertEqual(names, [
+            "🇺🇸 美国 双ISP 住宅",
+            "🇭🇰 香港 HKT 家宽",
+            "🇸🇬 新加坡普通",
+            "generic_unnamed_vless",
+            "🇮🇷 IR_bulk_hy2",
+        ])
+        self.assertEqual(classify_candidate_focus("generic_unnamed_vless"), (2, None))
+        summary = summarize_candidate_focus(deduped)
+        self.assertEqual(summary["focus_counts"]["US"], 1)
+        self.assertEqual(summary["focus_counts"]["HK"], 1)
+        self.assertEqual(summary["focus_counts"]["SG"], 1)
+        self.assertEqual(summary["quality_hint_count"], 2)
+        self.assertEqual(summary["non_focus_count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

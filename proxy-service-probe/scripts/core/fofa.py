@@ -22,11 +22,14 @@ import urllib3
 import yaml
 
 try:
+    from core.egress_geo import FOCUS_REGIONS, classify_candidate_focus, summarize_candidate_focus
     from core.parsers import load_proxies
 except ImportError:
     try:
+        from .egress_geo import FOCUS_REGIONS, classify_candidate_focus, summarize_candidate_focus
         from .parsers import load_proxies
     except ImportError:
+        from scripts.core.egress_geo import FOCUS_REGIONS, classify_candidate_focus, summarize_candidate_focus
         from scripts.core.parsers import load_proxies
 
 urllib3.disable_warnings()
@@ -915,7 +918,8 @@ def fetch_subscription_nodes(targets: List[str], config: Optional[Dict[str, Any]
 def deduplicate_and_sort_proxies(proxies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     对抓取到的候选节点按 (type, server, port, secret) 指纹去重，
-    并按协议优质顺位 (hysteria2/hy2 -> vless -> trojan -> vmess -> ss -> others) 进行保序排序。
+    并按重点地区预优先度 (HK/TW/JP/SG/US 重点线索 -> 未标地区 -> 非重点地区)
+    与协议优质顺位 (hysteria2/hy2 -> vless -> trojan -> vmess -> ss -> others) 进行保序排序。
     """
     # 协议顺位权重
     type_priority = {
@@ -933,7 +937,10 @@ def deduplicate_and_sort_proxies(proxies: List[Dict[str, Any]]) -> List[Dict[str
 
     sorted_raw = sorted(
         proxies,
-        key=lambda p: type_priority.get(str(p.get("type", "")).lower(), 99)
+        key=lambda p: (
+            classify_candidate_focus(p.get("name") or p.get("tag") or "")[0],
+            type_priority.get(str(p.get("type", "")).lower(), 99),
+        )
     )
 
     seen = set()
@@ -968,6 +975,17 @@ def deduplicate_and_sort_proxies(proxies: List[Dict[str, Any]]) -> List[Dict[str
         deduped.append(p_clean)
 
     return deduped
+
+
+def print_candidate_focus_summary(proxies: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """打印候选节点按默认重点地区（高质量 US + 高速直连 HK/TW/JP/SG）的线索分布。"""
+    summary = summarize_candidate_focus(proxies)
+    fc = summary["focus_counts"]
+    focus_parts = ", ".join(f"{cc}:{fc.get(cc, 0)}" for cc in FOCUS_REGIONS)
+    print(f"\n[+] 重点地区线索统计 (已优先排前 | 仅预排序线索，最终属地以实测为准):")
+    print(f"    - 重点地区 ({focus_parts})，含家宽/专线/直连/AI 线索 {summary['quality_hint_count']} 个")
+    print(f"    - 未标地区/中性 {summary['neutral_count']} 个 | 其他非重点地区 {summary['non_focus_count']} 个")
+    return summary
 
 
 def normalize_and_dedup_targets(targets: List[str]) -> List[str]:

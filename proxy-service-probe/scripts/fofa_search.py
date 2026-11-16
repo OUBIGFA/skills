@@ -47,6 +47,7 @@ from core.fofa import (
     fetch_subscription_nodes,
     get_default_config_path,
     load_fofa_config,
+    print_candidate_focus_summary,
     resolve_query,
     search_all_targets,
     search_fofa_targets,
@@ -83,7 +84,7 @@ def parse_args(argv=None):
     parser.add_argument("--page-size", "--size", type=int, default=80, help="单页结果条数 (默认: 80)")
     parser.add_argument("--max-targets", type=int, default=None, help="最多抓取的订阅源数量 (默认全量抓取)")
     parser.add_argument("--max-nodes-per-sub", type=int, default=None,
-                        help="单订阅源节点数量上限 (默认: 300)，超过此上限的聚合源将被丢弃以防垃圾节点干扰")
+                        help="单订阅源节点数量上限 (默认读取配置文件或代码默认值)，超过此上限的聚合源将被丢弃以防垃圾节点干扰")
     parser.add_argument("--timeout", type=int, default=None, help="HTTP 超时秒数 (默认使用配置文件中的值)")
     parser.add_argument("--proxy", default=None, help="本地 HTTP/SOCKS 代理地址 (如 http://127.0.0.1:3067)")
     parser.add_argument("--dry-run-targets", action="store_true",
@@ -290,6 +291,7 @@ def main(argv=None):
     print("\n[+] 协议构成统计:")
     for proto, cnt in counts.most_common():
         print(f"    - {proto.upper():12s}: {cnt} 个")
+    print_candidate_focus_summary(proxies)
 
     print(f"\n[3/3] 正在保存节点数据至: {args.output}")
     out_dir = os.path.dirname(os.path.abspath(args.output))

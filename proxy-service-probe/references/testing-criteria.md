@@ -6,10 +6,10 @@
 
 ## 0. 测活与丢包抖动 (Liveness & Packet Loss)
 
-- 轮换 Google / Cloudflare / Apple 204 三端点轻量采样 10 次（`--loss-samples`），记录握手延迟、平均延迟、抖动（`jitter_ms`）与丢包率；起始连续 5 次失败即熔断。
-- 丢包率 >= 50%（`--max-loss-rate`）判定不可用并淘汰。
-- 丢包率 20%~49%：保留可用，但不可作 Key 前置（`--key-max-loss-rate`），并剥离 ✨️。
-- 丢包率 < 20% 才具备 Key/✨️ 资格；需前置的落地按前置丢包率升序、延迟升序择优选前置。
+- 轮换 Google / Cloudflare / Apple 204 三端点轻量采样（次数以 `--loss-samples` 代码默认值为准），记录握手延迟、平均延迟、抖动（`jitter_ms`）与丢包率；起始连续失败达代码熔断次数即熔断。
+- 丢包率超过淘汰上限（`--max-loss-rate`，以代码默认值为准）判定不可用并淘汰。
+- 丢包率处于中度丢包区间（介于 `--key-max-loss-rate` 与 `--max-loss-rate` 之间）：保留可用，但不可作 Key 前置，并剥离 ✨️。
+- 丢包率低于 `--key-max-loss-rate` 才具备 Key/✨️ 资格；需前置的落地按前置丢包率升序、延迟升序择优选前置。
 
 ---
 
@@ -54,17 +54,13 @@
   3. **权威风控与兜底层 (200-400ms)**：Scamalytics 免 Key 欺诈分与代理标记结构化提取；AbuseIPDB 恶意威胁（免配置自动短路，有 Key 自动富化）；Net.Coffee 仅作为后备兜底。
 - **家宽真实性四级形态精确分类（严禁采信上游节点自标名称）**：
   - **硬性准则**：`🏠` 与 `_ISP` 必须依赖真实网络层探测（ASN 归属、ISP 组织名、rDNS/PTR 反向域名正则、Scamalytics 欺诈与机房/代理标记、多源 GeoIP flags），**严禁因为上游节点原名自标“家宽 / 双ISP / 住宅 / residential / HiNet”就直接授予 `🏠` 或 `_ISP`**，上游残留的自标家宽字样一律清洗剔除。
-  - **Level 1: 原生民用住宅宽带 (True Residential)**：ASN 属于已知 Eyeball 运营商且（PTR 命中动态住宅正则，或确认为非机房且无机房 PTR）。**若信誉分 >= 80 且无任何 cf-mitigated 硬拦截、无污染标记授予 `🏠` 专属徽章；若 < 80 授予 `_ISP` 后缀**。
+  - **Level 1: 原生民用住宅宽带 (True Residential)**：ASN 属于已知 Eyeball 运营商且（PTR 命中动态住宅正则，或确认为非机房且无机房 PTR）。**若信誉分达到 `🏠` 门槛（以代码为准）且无任何 cf-mitigated 硬拦截、无污染标记授予 `🏠` 专属徽章；否则授予 `_ISP` 后缀**。
   - **Level 2: 商用/机房双 ISP (Commercial Dual-ISP)**：真实网络层检测属于 ISP 机构或具备双 ISP/住宅属性，但位于 IDC 托管环境或缺乏民用动态 PTR。**严禁授予 `🏠` 徽章，统一授予纯英文 `_ISP` 后缀**。
   - **Level 3: 住宅代理池 (Residential Proxy)**：高危轮换池或黑灰产代理。**剥离 `🏠` 与 `♥️` 资格**，列入风控警告池。
   - **Level 4: 数据中心/机房 (Datacenter / Hosting)**：纯机房/云商节点，不带家宽相关标记。
-- **综合信誉评分计算模型 (Composite Reputation Score: 0–100)**：
-  $$\text{Score} = \text{Base}(100) - \text{Penalty}_{\text{Fraud}} - \text{Penalty}_{\text{Abuse}} - \text{Penalty}_{\text{DC}} - \text{Penalty}_{\text{Blacklist}} + \text{Bonus}_{\text{CleanRes}}$$
-  - 欺诈扣分：Scamalytics 分数 <= 15 扣 0 分；16-40 扣 `(Score-15)*0.5` 分；>40 扣 `25 + (Score-40)*0.8` 分；
-  - 恶意扣分：AbuseIPDB 滥用分 * 0.4；
-  - 机房扣分：纯机房固定扣 10 分（基准上限 90）；
-  - 黑名单扣分：DNSBL 命中每项扣 15 分；
-  - 纯净家宽奖励：Level 1 且欺诈分 < 10 奖励 +5 分（上限 100 封顶）。
+- **综合信誉评分计算模型 (Composite Reputation Score, 实现见 `scripts/core/reputation_engine.py`)**：
+  $$\text{Score} = \text{Base} - \text{Penalty}_{\text{Fraud}} - \text{Penalty}_{\text{Abuse}} - \text{Penalty}_{\text{DC}} - \text{Penalty}_{\text{Blacklist}} + \text{Bonus}_{\text{CleanRes}}$$
+  - 各项扣分/加分系数（Scamalytics 欺诈分、AbuseIPDB 滥用分、纯机房扣分、DNSBL 黑名单扣分、纯净 Level 1 家宽奖励）与封顶规则均以 `scripts/core/reputation_engine.py` 代码为准。
 
 ---
 
@@ -84,7 +80,7 @@
 - **AI 服务全解锁条件 (`❇️` 徽章)**：
   出口稳定 + 真实出口非送中 + ChatGPT 通过 + Claude 通过 + Gemini 通过 + Hugging Face 通过 + Grok 通过（剔除 Groq，5 项全通即授予 `❇️`）。
 - **综合全通能力徽章 (`✨️` 徽章)**：
-  必须同时满足：**AI 五大核心全通 + 成功解锁 Groq + YouTube 免登实播通过 + 五站免盾通过（WAF Shield Score >= 85 且至少 4 站完美直通） + 丢包率 < 20%**。只有解锁 Groq 才能给 `✨️`！
+  必须同时满足：**AI 核心全通 + 成功解锁 Groq + YouTube 免登实播通过 + WAF 免盾分数与直通站数达标 + 丢包率达标（各阈值以代码为准）**。只有解锁 Groq 才能给 `✨️`！
 
 ---
 
@@ -96,7 +92,7 @@
 - **测试样本视频**：`jNQXAC9IVRw`, `YE7VzlLtp-4`, `M7lc1UVf-VE`。
 - **HTML5 播放观察者（Playback Observer）**：
   - 动态监听 `<video>` 元素的播放事件与时间戳更新。
-  - **达标条件**：健康播放累计 `>= 10.0` 秒，结束时非停滞且 `readyState >= 3`；进度变化须与墙钟一致，跳进度、缓冲、广告不计时。
+  - **达标条件**：健康播放累计时长与 `readyState` 达到代码门槛，结束时非停滞；进度变化须与墙钟一致，跳进度、缓冲、广告不计时。
   - **风控与限制判定**：
     - `bot_required`：页面提示 "Sign in to confirm you’re not a bot" 或出现 Turnstile/Captcha 人机验证。
     - `sign_in_required`：需要登录才能观看。
@@ -105,7 +101,7 @@
 - **双向出口复核（Double Egress Check）**：
   - 播放前：浏览器 Context 访问出口检测接口，确认当前浏览器 IP 确实等于被测节点 IP。
   - 播放后：再次核对浏览器出口 IP，前后任一缺失、变化或与节点 IP 不符都判 `browser_egress_unverified`；不从 HTML 错误页中抽取 IP。回显站失败时尝试独立 HTTPS 端点，并记录 `youtube_details.egress`。
-- **通过标准**：至少成功实播通过 **2 个** 独立样本视频。
+- **通过标准**：按代码要求实播通过足够数量的独立样本视频。
 
 ---
 
@@ -125,8 +121,8 @@
   3. **Reddit Fastly (严苛机房 ASN 盾)**：`/r/all/top.json` 数据直通 (20分) vs 403 `Blocked by network security` 硬拦截 (0分)；
   4. **TikTok / X Social (商业社媒反爬)**：会话建立直通 (20分) vs 滑块验证码 `verify-bar` / `captcha` (6分)；
   5. **Cloudflare Strict & Trace (CF 官方挑战头与套壳核验)**：严格站无 `cf-mitigated` 挑战 (15分) + `1.1.1.1/cdn-cgi/trace` 原生出口 `warp=off` (5分)；检测到 `warp=on/plus` 扣 8 分并标记套壳。
-- **免盾综合得分 (WAF Shield Score 0–100) 与徽章授权**：
-  - **`[✨️]` 综合全通徽章**：必须满足 **WAF Shield Score >= 85** 且至少 4 站完美直通 + AI 全通 + Groq 解锁 + YouTube 免登实播 + 丢包率 < 20%；
+- **免盾综合得分 (WAF Shield Score) 与徽章授权**：
+  - **`[✨️]` 综合全通徽章**：必须满足 WAF Shield Score 与直通站数达标（以代码为准）+ AI 全通 + Groq 解锁 + YouTube 免登实播 + 丢包率达标；
   - **`[❇️]` AI 服务徽章**：AI 五平台全通 + OpenAI Sentinel **无高危降智惩罚**（未判定为 `DEGRADED_HEAVY`）；
   - **`[⚡WARP]` 污染标记**：实测 `warp=on` 或 `warp=plus` 时自动追加 `[⚡WARP]` 套壳标记，剥夺 `🏠` / `♥️` / `✨️` 及 `_ISP`，但**保留 AI 解锁标记（`❇️` / `_USAI` / `_GOAI`）**。
 
@@ -142,11 +138,10 @@
   - 请求 `https://www.disneyplus.com/`。
   - 状态码返回 `200`, `301`, `302` 且页面正文不含 `not available` 或 `unsupported` 判定为解锁。
 
-### 5.2 默认 3 秒流式下载带宽与断流淘汰 (Stall Check)
+### 5.2 默认流式下载防断流快检 (Stall Check)
 - **非主动模式默认行为**：
   - 测速目标：`https://speed.cloudflare.com/__down?bytes=10000000` 或 Google DMG。
-  - 测速窗：固定 3.0 秒流式下载。
-  - 断流淘汰标准：累计传输字节数 `< 16 KiB` 判定为“断流假死”淘汰；完全无法连接且速度为 0 判定为死节点淘汰。
+  - 测速窗与断流淘汰标准：按代码设定的时间窗与最低累计字节数（`DEFAULT_STALL_MIN_BYTES`）判定；低于阈值判为“断流假死”淘汰，完全无法连接且速度为 0 判定为死节点淘汰。
 
 ### 5.3 持续下载测速规范 (按真实 YouTube 播放校准，主动要求时启用)
 - **触发条件**：仅在用户显式要求测速或传入 `--speed-test` 时激活；本地与 GitHub Actions 同一套判据。
@@ -162,14 +157,14 @@
   - `stable_mbps` 稳态速度：窗口平均；单秒速率按窗口中位数的 2 倍封顶，孤立尖峰不能拉高结论；
   - `floor_mbps` 最低速度：窗口内 2 秒滑动平均的最小值，容忍 1 秒抖动（播放器有缓冲），抓连续下滑；
   - 另报告 `peak_mbps`、`mean_mbps`、`sample_mbps`、`observed_seconds`、`max_stall_seconds`。
-- **结论 (`verdict`) 与何时停止**：
-  - `qualified`（Key/Fast 级）：`stable >= 12`（`--min-speed-mbps`）且 `floor >= 6`（`--min-floor-mbps`）。观测满 10 秒即可结束，但窗口后半段均值低于前半段 75%（正在下滑、慢慢限速型假高速）时继续观测，由下滑后的稳态决定；
-  - `drop`（**淘汰并从输出配置删除**）：`stable < 6`（`--drop-below-mbps`，0 为不按速度淘汰）。观测满 10 秒、最近 3 秒均值 < 4.5 Mbps 且未见爬升时提前结束；贴近淘汰线或仍在爬升的节点观测到 20 秒再定；
+- **结论 (`verdict`) 与何时停止（门槛均以代码常数及 CLI 参数为准）**：
+  - `qualified`（Key/Fast 级）：`stable >= --min-speed-mbps` 且 `floor >= --min-floor-mbps`。观测满基础窗口即可结束，但窗口后半段均值明显低于前半段（正在下滑、慢慢限速型假高速）时继续观测，由下滑后的稳态决定；
+  - `drop`（**淘汰并从输出配置删除**）：`stable < --drop-below-mbps`（0 为不按速度淘汰）。观测满基础窗口、最近数秒均值明显低于淘汰线且未见爬升时提前结束；贴近淘汰线或仍在爬升的节点观测到上限窗口再定；
   - `keep`：介于两者之间，保留但不授 Key/Fast；
   - 中途断流、超时（`status` 非 `complete`）：不授 Key/Fast，按已测秒数判 `keep` 或 `drop`；完全没有样本判 `drop`。
-- **贴近门槛重测**：结论为 `drop` 但稳态 >= 3.6 Mbps（淘汰线 60%）、为 `keep` 但稳态 >= 9.6 Mbps（Key 门槛 80%），或没有样本时，用新连接完整重测一次，取较好结论；两次摘要记录在 `attempts`。同一节点实测单次稳态可在 6~23 Mbps 间波动，重测减少偶发误删。
-- **先突发后限速的防护**：开头突发的秒数不在稳态窗口内；突发延伸进窗口的单秒被 2 倍中位数封顶；限速后的连续低速拉低 `floor`；逐步限速被"下滑不提前判达标"拦下。
-- **带宽上限**（`--rate-limit-mbps`）：默认 local 40 / ci 50 Mbps，必须不低于 Key 门槛且不超过 100。稳态窗口每 2 秒都接近上限时报告 `capped=true`，表示真实能力不低于上限。
+- **贴近门槛重测**：结论为 `drop` 但接近淘汰线、为 `keep` 但接近 Key 门槛，或没有样本时（具体比例以代码为准），用新连接完整重测一次，取较好结论；两次摘要记录在 `attempts`。同一节点实测单次稳态可能存在波动，重测减少偶发误删。
+- **先突发后限速的防护**：开头突发的秒数不在稳态窗口内；突发延伸进窗口的单秒按中位数倍数封顶；限速后的连续低速拉低 `floor`；逐步限速被"下滑不提前判达标"拦下。
+- **带宽上限**（`--rate-limit-mbps`）：默认值按 `local` / `ci` Profile（以代码为准），必须不低于 Key 门槛且不超过代码上限。稳态窗口持续接近上限时报告 `capped=true`，表示真实能力不低于上限。
 - **观测位置**：本地测的是"本机网络 → 节点 → CDN"，云端测的是"云端机房 → 节点 → CDN"，后者不包含国内网络到节点这一段。报告 `speed_profile.vantage` 注明来源，两者结论不混用。本地运行时若没有节点达标，会提示检查本机宽带是否低于带宽上限。
 
 ### 5.4 Key 优质前置跳板节点判定标准 (Key Qualification)
@@ -182,22 +177,19 @@ Key 节点是专门用于在落地节点（`_Lnd`/`_USAI`）建立多跳链路�
   - **真家宽节点（`🏠`）专作高纯净度终端出口，一律排除在 Key 前置跳板候选之外**（避免大流量中转消耗珍贵住宅带宽或触发家宽风控）；
   - 节点出口 IP 真实有效，严禁与本地跑机基线出口重合。
 - **测速硬门槛**：
-  - 必须通过上述 5.3 节的持续下载测速（`verdict=qualified`：稳态 >= 12 Mbps 且最低 >= 6 Mbps）。
+  - 必须通过上述 5.3 节的持续下载测速（`verdict=qualified`）。
 - **丢包与稳定性硬门槛**：
-  - 测活丢包率必须健康（`loss_rate < 20%`，超出阈值严禁充当 Key 前置跳板）。
-- **加权评分模型（满分 48 分，实现见 `scripts/core/key_evaluator.py`）与配额**：
-  - **协议分类分（满分 10 分）**：`tls-tcp`（`vless`/`trojan`/`vmess`+TLS/Reality/WS/gRPC，10分） > `self-enc`（`ss`/`ssr`/`vmess` 无 TLS，6分） > `cdn-plain`（明文 `ws`/`grpc`，4分） > `udp`（`hysteria2`/`hysteria`/`tuic`/`wireguard`，3分）；
-  - **亚太核心区加分（满分 8 分）**：香港（HK）、台湾（TW）、日本（JP）、新加坡（SG）、韩国（KR）加 8 分；
-  - **速度得分（满分 15 分）**：按 `min(15.0, (speed_mbps / 50.0) * 15.0)` 线性折算；
-  - **延迟得分（满分 10 分）**：`<= 50ms` 满分 10 分，线性递减至 `550ms` 为 0 分；
-  - **低丢包稳定性加分（满分 5 分）**：0% 丢包满分 5 分，平滑递减至 20% 丢包 0 分；
-  - 综合评分前 N 名授予 `is_key = True`（美国 `_USAI` 节点显示为 `Free` 前缀），并施加单国家配额（默认每国最多 3 个）。
+  - 测活丢包率必须低于 `--key-max-loss-rate`（超出阈值严禁充当 Key 前置跳板）。
+- **加权评分模型（实现见 `scripts/core/key_evaluator.py`）与配额**：
+  - 按**协议安全等级**（`tls-tcp` > `self-enc` > `cdn-plain` > `udp`）+ **高速直连核心区首选加分**（`HK/TW/JP/SG` 首选 `+8.0`，次级亚太 `KR` `+5.0`）+ **速度得分** + **延迟得分** + **低丢包稳定性加分**综合计算（具体权重、满分与折算公式以 `scripts/core/key_evaluator.py` 代码为准）；
+  - 综合评分前 N 名授予 `is_key = True`（美国 `_USAI` 节点显示为 `Free` 前缀），并施加单国家配额（默认配额以代码为准）。
+  - **默认重点地区汇总**：全量检测汇总表与 JSON 报告 `focus_summary` 自动单列 **高质量美国节点（`US`）** 与 **高速直连亚太节点（`HK/TW/JP/SG`）** 实测产出，长期自动生效，无需每次提醒。
 
 ### 5.5 直连 / 需前置节点区分与落地测试（两条流水线一致）
-- **首轮测活**：全部节点直连并发探测，每节点轮换 Google/Cloudflare/Apple 204 三端点采样 10 次（前 5 次连续失败即熔断，丢包率 >= 50% 判死淘汰）；原 `dialer-proxy` / `detour` 在临时直连监听中剥离。声明的落地角色仍保留。
-- **第二轮**：首轮直连不通的节点以并发 4 直连复测，同时在本地经最多 3 个不同服务器的已判活前置探测。前置须具备协议资格、非落地，按延迟择优；UDP 节点优先用支持 UDP 的前置。云端或 `--no-landing-probe` 不做链式探测。
-- **即时服务检测**：任一前置测通即能放行声明落地节点；未声明者优先等待直连复测结论。经前置成功的节点设置 `path=front`、`is_landing=True`，立即执行完整服务；该前置拿不到公网出口时换剩余备用前置，最多合计 3 个。实际前置写入 `front_node`，回退写入 `front_attempts`。
-- **落地下载测速**：等待直连测速（含空闲重测）与出口证据，按 Key 候选档 → 备用档（稳态 >= 6 Mbps、最低 >= 3 Mbps）评分选最多 3 个不同服务器前置；经某前置没有样本时换下一个，成功前置写入 `speed_front_node`。没有合格前置则明确记为跳过，不能伪称已测速。
+- **首轮测活**：全部节点直连并发探测，每节点轮换 Google/Cloudflare/Apple 204 三端点采样（采样次数、连续失败熔断次数与丢包淘汰线以代码为准）；原 `dialer-proxy` / `detour` 在临时直连监听中剥离。声明的落地角色仍保留。
+- **第二轮**：首轮直连不通的节点按代码并发度直连复测，同时在本地经多个不同服务器的已判活前置探测。前置须具备协议资格、非落地，按延迟择优；UDP 节点优先用支持 UDP 的前置。云端或 `--no-landing-probe` 不做链式探测。
+- **即时服务检测**：任一前置测通即能放行声明落地节点；未声明者优先等待直连复测结论。经前置成功的节点设置 `path=front`、`is_landing=True`，立即执行完整服务；该前置拿不到公网出口时换剩余备用前置（上限以代码为准）。实际前置写入 `front_node`，回退写入 `front_attempts`。
+- **落地下载测速**：等待直连测速（含空闲重测）与出口证据，按 Key 候选档 → 备用档（门槛以代码为准）评分选多个不同服务器前置；经某前置没有样本时换下一个，成功前置写入 `speed_front_node`。没有合格前置则明确记为跳过，不能伪称已测速。
 - **统一核对**：服务、测速结束后核验出口与本机/服务前置是否重合，再淘汰并评 Key。实测落地即使原名无 `_Lnd` 也绝不能成为 Key。经最终入选 Key 的前置测得低速按同一门槛淘汰；经非 Key 前置时只记录链路速度，不将前置瓶颈归咎于落地。
 - **可用成品约束**：最终前置池必须包含至少一个本轮已验证能承载该落地的保留前置；唯一前置被淘汰时，不能改用未经验证的 HTTP 或 DIRECT 后照常导出落地。无 Key 时保留的备用前置写入默认前置池。
 - **未开启测速**：仍可用已判活、具备协议资格的前置做链式测活与服务检测，但不授予 Key/Fast。两入口都不再使用本机客户端端口作为隐藏兜底。

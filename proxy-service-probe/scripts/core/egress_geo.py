@@ -73,9 +73,16 @@ def reputation_for_exits(info_by_ip, observed_ips):
 
 # 保留现有渲染、排序接口。地区排序按 (位阶, 序号)：未列出的地区为 (7, 999)，排在已列出地区之后；
 # 中国 (8) 排在所有国家/地区之后，未知 (9) 垫底。
+# 长期默认重点地区策略（全局自动生效，无需用户重复提醒）:
+# - 高质量美国节点 (US: AI 全通 / 家宽 / 双ISP / 高纯净度 / 综合全通 / 流媒体)
+# - 高速直连亚太核心区 (HK / TW / JP / SG: 低延迟、低丢包、高稳态带宽直连及 Key 首选)
+FOCUS_HIGH_QUALITY_REGIONS = frozenset({"US"})
+FOCUS_FAST_DIRECT_REGIONS = frozenset({"HK", "TW", "JP", "SG"})
+FOCUS_REGIONS = ("HK", "TW", "JP", "SG", "US")
+
 CATEGORY_ORDER = {
-    'HK': (0, 0, '香港'), 'MO': (0, 1, '澳门'), 'TW': (0, 2, '台湾'),
-    'KR': (1, 0, '韩国'), 'JP': (1, 1, '日本'), 'SG': (1, 2, '新加坡'),
+    'HK': (0, 0, '香港'), 'TW': (0, 1, '台湾'), 'MO': (0, 2, '澳门'),
+    'JP': (1, 0, '日本'), 'SG': (1, 1, '新加坡'), 'KR': (1, 2, '韩国'),
     'US': (2, 0, '美国'), 'CA': (2, 1, '加拿大'), 'MX': (2, 2, '墨西哥'),
     'GB': (3, 0, '英国'), 'DE': (3, 1, '德国'), 'FR': (3, 2, '法国'), 'NL': (3, 3, '荷兰'),
     'IT': (3, 4, '意大利'), 'ES': (3, 5, '西班牙'), 'CH': (3, 6, '瑞士'), 'SE': (3, 7, '瑞典'),
@@ -92,6 +99,76 @@ CATEGORY_ORDER = {
     'AE': (6, 1, '阿联酋'), 'SA': (6, 2, '沙特阿拉伯'), 'IL': (6, 3, '以色列'),
     'CN': (8, 0, '中国'), 'UNK': (9, 999, '未知')
 }
+
+
+_CANDIDATE_QUALITY_HINT_RE = re.compile(
+    r'(?i)(?:家宽|住宅|双\s*isp|\bisp\b|hinet|chunghwa|hkt|pccw|hkbn|kddi|'
+    r'iplc|iepl|专线|cn2|gia|9929|4837|usai|openai|chatgpt|gpt|原生|residential|direct|直连|高速)'
+)
+_CANDIDATE_FOCUS_PATTERNS = (
+    ("HK", re.compile(r'(?i)🇭🇰|香港|hong[\s_-]?kong|(?:^|[^a-z])hk(?:g|t)?(?:$|[^a-z])')),
+    ("TW", re.compile(r'(?i)🇹🇼|台湾|台灣|台北|高雄|hinet|taiwan|taipei|\btpe\b|(?:^|[^a-z])tw(?:$|[^a-z])')),
+    ("JP", re.compile(r'(?i)🇯🇵|日本|东京|大阪|tokyo|osaka|japan|\bnrt\b|\bkix\b|\bkddi\b|(?:^|[^a-z])jp(?:$|[^a-z])')),
+    ("SG", re.compile(r'(?i)🇸🇬|新加坡|狮城|singapore|\bsin\b|(?:^|[^a-z])sg(?:$|[^a-z])')),
+    ("US", re.compile(
+        r'(?i)🇺🇸|美国|美國|洛杉矶|圣何塞|西雅图|旧金山|纽约|达拉斯|芝加哥|阿什本|'
+        r'los[\s_-]?angeles|san[\s_-]?jose|seattle|ashburn|new[\s_-]?york|dallas|chicago|'
+        r'silicon[\s_-]?valley|united[\s_-]?states|\busa\b|\blax\b|\bsjc\b|\bsfo\b|\bsea\b|\biad\b|'
+        r'(?:^|[^a-z])us(?:$|[^a-z])'
+    )),
+)
+_CANDIDATE_NON_FOCUS_RE = re.compile(
+    r'(?i)🇩🇪|🇬🇧|🇫🇷|🇳🇱|🇷🇺|🇮🇷|🇹🇷|🇰🇷|🇨🇦|🇦🇺|🇮🇹|🇨🇭|🇸🇪|🇵🇱|🇦🇪|🇮🇳|🇻🇳|🇧🇷|'
+    r'伊朗|俄罗斯|德国|法国|英国|荷兰|韩国|加拿大|澳大利亚|土耳其|印度|越南|巴西|'
+    r'iran|russia|germany|france|netherlands|korea|turkey|canada|australia|'
+    r'(?:^|[^a-z])(?:ir|ru|de|fr|gb|uk|nl|kr|tr|au|in|vn|br)(?:$|[^a-z])'
+)
+
+
+def classify_candidate_focus(name):
+    """
+    依据原始候选节点名称给出预排序提示 (tier, cc):
+      0 = 重点地区 (HK/TW/JP/SG/US) 且含家宽/专线/直连/AI 线索
+      1 = 重点地区 (HK/TW/JP/SG/US)
+      2 = 未标地区/中性名称
+      3 = 明确非重点地区名称
+    仅用于抓取后候选去重排位与线索统计，绝不覆盖实测属地或授标判定。
+    """
+    text = str(name or "").strip()
+    if not text:
+        return 2, None
+    for cc, pat in _CANDIDATE_FOCUS_PATTERNS:
+        if pat.search(text):
+            return (0 if _CANDIDATE_QUALITY_HINT_RE.search(text) else 1), cc
+    if _CANDIDATE_NON_FOCUS_RE.search(text):
+        return 3, None
+    return 2, None
+
+
+def summarize_candidate_focus(proxies):
+    """统计候选池中各重点地区线索 (US/HK/TW/JP/SG)、未标地区与非重点地区数量。"""
+    counts = {cc: 0 for cc in FOCUS_REGIONS}
+    quality_hints = 0
+    neutral = 0
+    non_focus = 0
+    for p in proxies or ():
+        name = p.get("name") or p.get("tag") or "" if isinstance(p, dict) else str(p)
+        tier, cc = classify_candidate_focus(name)
+        if cc in counts:
+            counts[cc] += 1
+            if tier == 0:
+                quality_hints += 1
+        elif tier == 3:
+            non_focus += 1
+        else:
+            neutral += 1
+    return {
+        "focus_counts": counts,
+        "quality_hint_count": quality_hints,
+        "neutral_count": neutral,
+        "non_focus_count": non_focus,
+        "total": len(proxies or ()),
+    }
 
 
 def normalize_country_code(value):

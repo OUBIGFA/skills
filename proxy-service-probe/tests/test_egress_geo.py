@@ -392,6 +392,31 @@ class PipelineIntegrationTests(unittest.TestCase):
         self.assertFalse(saved['ai_supported'])
         shared.assert_called_once()
 
+    def test_focus_region_order_and_summary(self):
+        from core.probe_flow import summarize_focus_targets
+        self.assertLess(geo.CATEGORY_ORDER['TW'][:2], geo.CATEGORY_ORDER['MO'][:2])
+        self.assertLess(geo.CATEGORY_ORDER['JP'][:2], geo.CATEGORY_ORDER['KR'][:2])
+        self.assertLess(geo.CATEGORY_ORDER['SG'][:2], geo.CATEGORY_ORDER['KR'][:2])
+
+        sample = [
+            {'cc': 'US', 'is_landing': False, 'comprehensive_sparkle': True, 'is_residential': True,
+             'ai_supported': True, 'is_usai': True, 'is_key': True, 'final_name': '🇺🇸 ✨️🏠❇️Free美国_1_USAI'},
+            {'cc': 'HK', 'is_landing': False, 'is_key': True, 'speed_mbps': 35.5, 'delay': 45.0},
+            {'cc': 'TW', 'is_landing': False, 'is_fast': True, 'speed_mbps': 24.0, 'delay': 62.0},
+            {'cc': 'JP', 'is_landing': True, 'is_fast': True, 'speed_mbps': 18.0, 'delay': 95.0},
+            {'cc': 'SG', 'is_landing': False, 'is_fast': True, 'speed_mbps': 39.8, 'delay': 55.0},
+        ]
+        summary = summarize_focus_targets(sample)
+        self.assertEqual(summary['us']['total'], 1)
+        self.assertEqual(summary['us']['residential'], 1)
+        self.assertEqual(summary['us']['usai'], 1)
+        self.assertEqual(summary['apac_direct']['HK']['key'], 1)
+        self.assertEqual(summary['apac_direct']['HK']['best_direct_mbps'], 35.5)
+        self.assertEqual(summary['apac_direct']['TW']['min_direct_delay_ms'], 62)
+        self.assertEqual(summary['apac_direct']['JP']['direct'], 0)
+        self.assertEqual(summary['apac_direct']['JP']['landing'], 1)
+        self.assertEqual(summary['apac_direct']['SG']['fast'], 1)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -25,7 +25,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack
 
 from .ai_probe import probe_all_ai
-from .egress_geo import flag_emoji, probe_egress, probe_geolocation, is_ip_region_inconsistent
+from .egress_geo import (FOCUS_FAST_DIRECT_REGIONS, FOCUS_HIGH_QUALITY_REGIONS, flag_emoji,
+                         is_ip_region_inconsistent, probe_egress, probe_geolocation)
 from .key_evaluator import is_front_capable, is_landing_role, pick_front_nodes, rank_front_candidates, select_key_nodes
 from .liveness import MAX_CHAIN_FRONTS, check_alive, check_alive_via_fronts, pick_chain_fronts, rank_chain_fronts
 from .media_probe import probe_all_media
@@ -118,6 +119,68 @@ def print_summary_table(results, speed_tested=False):
                 "Fast" if r.get("is_fast") else "落地" if r.get("is_landing") else "直连")
         print(f"{idx:<4} | {name:<32} | {ip:<15} | {delay:<6} | {loss_text:<5} | {score:<5} | {ai:<4} | {shield:<4} | {yt:<4} | {media:<6} | {speed_text:<12} | {role}")
     print("=" * 130 + "\n")
+
+
+def summarize_focus_targets(results):
+    """按默认长期重点策略统计实测结果：高质量美国节点 (US) 与高速直连节点 (HK/TW/JP/SG)。"""
+    us_rows = [r for r in results if (r.get("cc") or "") in FOCUS_HIGH_QUALITY_REGIONS]
+    us_summary = {
+        "total": len(us_rows),
+        "direct": sum(1 for r in us_rows if not r.get("is_landing")),
+        "landing": sum(1 for r in us_rows if r.get("is_landing")),
+        "sparkle": sum(1 for r in us_rows if r.get("comprehensive_sparkle")),
+        "residential": sum(1 for r in us_rows if r.get("is_residential")),
+        "isp": sum(1 for r in us_rows if r.get("has_res_suffix")),
+        "high_quality": sum(1 for r in us_rows if r.get("is_high_quality")),
+        "ai_all": sum(1 for r in us_rows if r.get("ai_supported")),
+        "usai": sum(1 for r in us_rows if r.get("is_usai")),
+        "key_or_free": sum(1 for r in us_rows if r.get("is_key")),
+        "fast": sum(1 for r in us_rows if r.get("is_fast")),
+        "top_nodes": [r.get("final_name") for r in us_rows[:5] if r.get("final_name")],
+    }
+    fast_direct = {}
+    for cc in ("HK", "TW", "JP", "SG"):
+        cc_rows = [r for r in results if (r.get("cc") or "") == cc]
+        direct_rows = [r for r in cc_rows if not r.get("is_landing")]
+        speeds = [float(r["speed_mbps"]) for r in direct_rows if r.get("speed_mbps") is not None]
+        delays = [float(r["delay"]) for r in direct_rows if r.get("delay") is not None]
+        fast_direct[cc] = {
+            "total": len(cc_rows),
+            "direct": len(direct_rows),
+            "landing": len(cc_rows) - len(direct_rows),
+            "key": sum(1 for r in direct_rows if r.get("is_key")),
+            "fast": sum(1 for r in direct_rows if r.get("is_fast")),
+            "sparkle": sum(1 for r in direct_rows if r.get("comprehensive_sparkle")),
+            "best_direct_mbps": round(max(speeds), 1) if speeds else None,
+            "min_direct_delay_ms": round(min(delays)) if delays else None,
+        }
+    return {
+        "policy": {
+            "us_high_quality": sorted(FOCUS_HIGH_QUALITY_REGIONS),
+            "apac_fast_direct": ["HK", "TW", "JP", "SG"],
+        },
+        "us": us_summary,
+        "apac_direct": fast_direct,
+    }
+
+
+def print_focus_summary(summary):
+    """输出默认重点地区（高质量 US + 高速直连 HK/TW/JP/SG）的实测概览。"""
+    us = summary["us"]
+    print("[重点地区] 默认关注: 高质量美国 (US) + 高速直连 (HK/TW/JP/SG)")
+    print(
+        f"      🇺🇸 高质量美国 (US): 共 {us['total']} 个 "
+        f"(直连 {us['direct']} / 落地 {us['landing']} | ✨️:{us['sparkle']} 🏠:{us['residential']} "
+        f"_ISP:{us['isp']} ♥️:{us['high_quality']} ❇️:{us['ai_all']} _USAI:{us['usai']} "
+        f"Free/Key:{us['key_or_free']} Fast:{us['fast']})"
+    )
+    apac_parts = []
+    for cc in ("HK", "TW", "JP", "SG"):
+        st = summary["apac_direct"][cc]
+        spd = f"最高{st['best_direct_mbps']}Mbps" if st["best_direct_mbps"] is not None else "未测速"
+        dly = f"最低{st['min_direct_delay_ms']}ms" if st["min_direct_delay_ms"] is not None else "-"
+        apac_parts.append(f"{cc}:直连{st['direct']}(Key{st['key']}/Fast{st['fast']},{spd},{dly})")
+    print("      🌏 高速直连亚太: " + " | ".join(apac_parts))
 
 
 def probe_runner_baseline(args, mihomo_bin):
@@ -910,6 +973,7 @@ def write_report(path, run, profile, results, eliminated, total, start_time):
         "qualified_count": len(results),
         "eliminated_count": len(eliminated),
         "key_count": sum(1 for r in results if r.get("is_key")),
+        "focus_summary": summarize_focus_targets(results),
         "landing_speed_fronts": [
             {
                 "kind": front["kind"],
@@ -1008,6 +1072,7 @@ def run_probe(args, profile_name, profile, kernel, proxies, export, mihomo_bin=N
     if results:
         tag_and_rename_nodes(results, resort=args.resort)
         print_summary_table(results, speed_tested=args.speed_test)
+        print_focus_summary(summarize_focus_targets(results))
     else:
         print("警告: 本轮所有节点均未通过服务测试或已被淘汰，不导出配置。")
     if args.report:

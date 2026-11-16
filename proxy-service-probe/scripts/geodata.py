@@ -188,7 +188,7 @@ ANCHORS = {
 # 地区展示顺序：按使用习惯从近到远排列（亚太 → 北美 → 欧洲 → 其他）。
 # 未列出的已知地区排在列表之后；中国排在所有国家/地区之后（含未列出的地区），未识别地区永远垫底。
 REGION_ORDER = [
-    'HK', 'TW', 'MO', 'JP', 'KR', 'SG',
+    'HK', 'TW', 'JP', 'SG', 'MO', 'KR',
     'MY', 'TH', 'VN', 'PH', 'ID', 'KH', 'LA', 'MM', 'BN',
     'IN', 'PK', 'BD', 'LK', 'NP', 'KZ', 'UZ', 'KG',
     'TR', 'AE', 'SA', 'QA', 'KW', 'BH', 'OM', 'IL', 'JO', 'IR', 'IQ',
