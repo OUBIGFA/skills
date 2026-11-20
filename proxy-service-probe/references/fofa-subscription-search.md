@@ -45,7 +45,7 @@
 | `proxy` | string | 本地 HTTP/SOCKS 代理客户端地址（如 `http://127.0.0.1:3067`），网络受阻时自动尝试代理与直连双通道保底 |
 | `page_size`| int | 每次检索请求的结果数量（FoFa / Quake 单页通常支持最大 50 条） |
 | `timeout` | int | 单次检索与订阅抓取的超时阈值（秒） |
-| `max_nodes_per_subscription` | int | 单订阅源节点数量上限（默认值以代码及配置为准，超过此阈值视为公开聚合低质垃圾源予以丢弃） |
+| `max_nodes_per_subscription` | int | 单订阅源节点数量上限（默认 `300`，超过此阈值视为公开聚合低质垃圾源予以丢弃） |
 | `default_query` | string | FoFa 未指定语法时使用的默认搜索语句 |
 | `quake_default_query` | string | Quake 未指定语法时使用的默认搜索语句 |
 
@@ -97,8 +97,8 @@ status_code: 200 AND NOT response: "<html" AND (response: "proxies:" OR response
    使用 `User-Agent: ClashforWindows/0.20.39`（兼容 Subconverter/各面板格式协商），确保下发完整的 Clash YAML 或 Base64 订阅。
 2. **多格式全兼容解析**：
    复用 `core.parsers.load_proxies` 引擎，单次自动兼容解析 Clash YAML、sing-box JSON (`outbounds:`) 及多行 Base64 节点链接。
-3. **低质公开聚合源自动淘汰**：
-   **单订阅源节点数超过上限一律自动丢弃（默认阈值以代码及配置为准）**。网络上节点数数百甚至上千的订阅源，绝大多数是爬取自 Telegram 频道等公开渠道的低质聚合垃圾池（含大量死节点与重复节点），会极度浪费检测时间并污染节点池。此阈值可在 `fofa_config.json` 中的 `max_nodes_per_subscription` 或通过命令行 `--max-nodes-per-sub` 调节。
+3. **低质公开聚合源与试用短期源自动淘汰（默认上限 300 节点）**：
+   **单订阅源节点数超过 `300` 一律自动丢弃（默认阈值 `300`，以配置 `max_nodes_per_subscription: 300` 及代码为准；不得擅自使用旧的 `200` 阈值）**。网络上节点数数百甚至上千的订阅源，绝大多数是爬取自 Telegram 频道等公开渠道的低质聚合垃圾池（含大量死节点与重复节点），会极度浪费检测时间并污染节点池。同时自动识别并淘汰含「试用 / 体验 / 临时 / 限时 / 短期 / 一次性 / 日抛 / 已过期」等不可长期使用的订阅源与单个节点。单源上限可在 `fofa_config.json` 中的 `max_nodes_per_subscription` 或通过命令行 `--max-nodes-per-sub` 调节。
 4. **全局唯一指纹去重**：
    对抓取的所有候选节点，依据 `(协议类型, 规范化服务器地址, 端口, 密码/UUID)` 进行指纹哈希去重。
 5. **重点地区与协议顺位优化**：

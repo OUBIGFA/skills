@@ -544,6 +544,19 @@ class TestEndToEndFlow(FlowHarness):
         self.assertGreater(self.alive_calls, 0)
         self.assertIn(("speed", "jp1", None), self.events)
 
+    def test_checkpoint_enabled_by_default_and_can_be_disabled(self):
+        from core.probe_flow import default_checkpoint_path
+        args_default = importlib.import_module("argparse").Namespace(
+            checkpoint=None, no_checkpoint=False, output="out_a.yaml", merge_into=None
+        )
+        ckpt_path = default_checkpoint_path(args_default, "mihomo")
+        self.assertIsNotNone(ckpt_path)
+        self.assertTrue(ckpt_path.endswith(".json"))
+        args_disabled = importlib.import_module("argparse").Namespace(
+            checkpoint=None, no_checkpoint=True, output="out_a.yaml", merge_into=None
+        )
+        self.assertIsNone(default_checkpoint_path(args_disabled, "mihomo"))
+
 
 # 落地节点多前置备用: 三个快的直连节点均可作前置，落地节点只能经前置连通
 FRONTED_NODES = [

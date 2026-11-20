@@ -287,17 +287,17 @@ class TestGistCLIAndParsersIntegration(unittest.TestCase):
 
         # 1. 直接传入 "gist"
         nodes1 = load_proxies("gist")
-        mock_search.assert_called_with(query_or_preset=None)
+        mock_search.assert_called_with(query_or_preset=None, max_nodes_per_sub=None)
         self.assertEqual(len(nodes1), 1)
 
         # 2. 传入 "gist:subs"
         nodes2 = load_proxies("gist:subs")
-        mock_search.assert_called_with(query_or_preset="subs")
+        mock_search.assert_called_with(query_or_preset="subs", max_nodes_per_sub=None)
         self.assertEqual(len(nodes2), 1)
 
         # 3. 传入 "gist:recommended"
         nodes3 = load_proxies("gist:recommended")
-        mock_search.assert_called_with(query_or_preset="recommended")
+        mock_search.assert_called_with(query_or_preset="recommended", max_nodes_per_sub=None)
         self.assertEqual(len(nodes3), 1)
 
     def test_gist_search_cli_args(self):

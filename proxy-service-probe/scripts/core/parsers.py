@@ -10,6 +10,14 @@ from copy import deepcopy
 import requests
 import yaml
 
+try:
+    from core.sub_filter import check_subscription_non_long_term, filter_non_long_term_nodes
+except ImportError:
+    try:
+        from .sub_filter import check_subscription_non_long_term, filter_non_long_term_nodes
+    except ImportError:
+        from scripts.core.sub_filter import check_subscription_non_long_term, filter_non_long_term_nodes
+
 VALID_FINGERPRINTS = {"chrome", "firefox", "safari", "ios", "android", "edge", "360", "qq", "random"}
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
@@ -458,20 +466,47 @@ def _proxy_has_server_port(item):
     return str(item.get("type", "")).lower() in ("hysteria", "hysteria2") and bool(item.get("ports") or item.get("mport"))
 
 
-def load_proxies(source):
+def _finalize_loaded_proxies(proxies, raw_text="", filter_short_term=True, max_nodes_per_sub=0, source_label="订阅源"):
+    if not proxies:
+        return proxies
+    if max_nodes_per_sub and max_nodes_per_sub > 0 and len(proxies) > max_nodes_per_sub:
+        print(f"      [跳过超量源] {source_label} 节点数 ({len(proxies)}) 超过上限 ({max_nodes_per_sub})，丢弃以防低质公开聚合源干扰")
+        return []
+    if not filter_short_term:
+        return proxies
+    sub_reason = check_subscription_non_long_term(raw_text=raw_text, nodes=proxies)
+    if sub_reason:
+        print(f"      [跳过试用/短期源] {sub_reason}，整源淘汰")
+        return []
+    kept, dropped = filter_non_long_term_nodes(proxies)
+    if dropped:
+        print(f"      [淘汰试用/短期节点] 已剔除 {len(dropped)}/{len(proxies)} 个不可长期使用节点")
+    return kept
+
+
+def load_proxies(source, filter_short_term=True, max_nodes_per_sub=None):
     """
     统一加载节点，输入 source 可以是:
     - 本地文件路径 (.yaml, .yml, .json, .txt)
     - 远程订阅 URL (http://, https://)
     - 内存原始文本/列表
+    默认自动淘汰含试用/临时/限时/短期等不可长期使用特征的订阅源与节点。
+    当加载远程订阅 URL 时，默认同样执行单源节点上限 (默认 300) 超量聚合源熔断。
     """
     text = ""
+    remote_limit = 0
+    source_label = "订阅源"
     if isinstance(source, list):
         if source and isinstance(source[0], dict) and "server" in source[0]:
-            return [deepcopy(p) for p in source if isinstance(p, dict) and "server" in p]
+            items = [deepcopy(p) for p in source if isinstance(p, dict) and "server" in p]
+            if filter_short_term:
+                items, dropped = filter_non_long_term_nodes(items)
+                if dropped:
+                    print(f"      [淘汰试用/短期节点] 已剔除 {len(dropped)} 个不可长期使用节点")
+            return items
         all_proxies = []
         for item in source:
-            all_proxies.extend(load_proxies(item))
+            all_proxies.extend(load_proxies(item, filter_short_term=filter_short_term, max_nodes_per_sub=max_nodes_per_sub))
         seen_names = {}
         for p in all_proxies:
             raw_name = p.get('name') or f"{p.get('type')}_{p.get('server')}:{p.get('port')}"
@@ -495,12 +530,15 @@ def load_proxies(source):
         ):
             sources = [s.strip() for s in source.split(",") if s.strip()]
             if len(sources) > 1:
-                return load_proxies(sources)
+                return load_proxies(sources, filter_short_term=filter_short_term, max_nodes_per_sub=max_nodes_per_sub)
         s_lower = source.lower()
         if s_lower == "gist" or s_lower.startswith("gist:"):
             from core.gist import search_and_fetch_gist_proxies
             query_or_preset = source[5:].strip() or None if s_lower.startswith("gist:") else None
-            proxies, _ = search_and_fetch_gist_proxies(query_or_preset=query_or_preset)
+            proxies, _ = search_and_fetch_gist_proxies(
+                query_or_preset=query_or_preset,
+                max_nodes_per_sub=max_nodes_per_sub,
+            )
             return proxies
         elif (s_lower in ("fofa", "quake", "spatial") or
                 s_lower.startswith(("fofa:", "quake:", "spatial:"))):
@@ -517,18 +555,44 @@ def load_proxies(source):
             else:
                 engine = "all"
                 query_or_preset = None
-            proxies, _ = search_and_fetch_proxies(query_or_preset=query_or_preset, engine=engine)
+            proxies, _ = search_and_fetch_proxies(
+                query_or_preset=query_or_preset,
+                engine=engine,
+                max_nodes_per_sub=max_nodes_per_sub,
+            )
             return proxies
         elif (source.startswith("http://") or source.startswith("https://")) and not (
             "@" in urllib.parse.urlparse(source).netloc and parse_node_uri(source)
         ):
+            source_label = f"目标 {source}"
+            if max_nodes_per_sub is not None:
+                remote_limit = int(max_nodes_per_sub)
+            elif filter_short_term:
+                remote_limit = 300
+            if filter_short_term:
+                url_reason = check_subscription_non_long_term(url=source)
+                if url_reason:
+                    print(f"      [跳过试用/短期源] 目标 {source} ({url_reason})，整源淘汰")
+                    return []
             resp = requests.get(source, headers={"User-Agent": UA}, timeout=25)
             resp.raise_for_status()
+            if filter_short_term:
+                resp_reason = check_subscription_non_long_term(
+                    url=source, headers=resp.headers, raw_text=resp.text
+                )
+                if resp_reason:
+                    print(f"      [跳过试用/短期源] 目标 {source} ({resp_reason})，整源淘汰")
+                    return []
             text = resp.text
         elif os.path.isfile(source):
+            source_label = f"文件 {source}"
+            if max_nodes_per_sub is not None:
+                remote_limit = int(max_nodes_per_sub)
             with open(source, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
         else:
+            if max_nodes_per_sub is not None:
+                remote_limit = int(max_nodes_per_sub)
             text = source
 
     if not text:
@@ -546,14 +610,26 @@ def load_proxies(source):
                     p.setdefault("_orig_name", p.get("name", ""))
                     proxies.append(p)
             if proxies:
-                return proxies
+                return _finalize_loaded_proxies(
+                    proxies,
+                    raw_text=text,
+                    filter_short_term=filter_short_term,
+                    max_nodes_per_sub=remote_limit,
+                    source_label=source_label,
+                )
         elif isinstance(data, list) and all(_proxy_has_server_port(x) for x in data):
             for item in data:
                 p = deepcopy(item)
                 p.setdefault("_orig_name", p.get("name", ""))
                 proxies.append(p)
             if proxies:
-                return proxies
+                return _finalize_loaded_proxies(
+                    proxies,
+                    raw_text=text,
+                    filter_short_term=filter_short_term,
+                    max_nodes_per_sub=remote_limit,
+                    source_label=source_label,
+                )
     except Exception:
         pass
 
@@ -567,7 +643,13 @@ def load_proxies(source):
                     cp.setdefault("_orig_name", cp.get("name", ""))
                     proxies.append(cp)
             if proxies:
-                return proxies
+                return _finalize_loaded_proxies(
+                    proxies,
+                    raw_text=text,
+                    filter_short_term=filter_short_term,
+                    max_nodes_per_sub=remote_limit,
+                    source_label=source_label,
+                )
     except Exception:
         pass
 
@@ -595,4 +677,10 @@ def load_proxies(source):
             seen_names[raw_name] = 1
             p["name"] = raw_name
 
-    return proxies
+    return _finalize_loaded_proxies(
+        proxies,
+        raw_text=text,
+        filter_short_term=filter_short_term,
+        max_nodes_per_sub=remote_limit,
+        source_label=source_label,
+    )

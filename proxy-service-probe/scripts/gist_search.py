@@ -88,7 +88,7 @@ def parse_args(argv=None):
     parser.add_argument("--max-age-hours", type=float, default=None,
                         help="时效过滤上限小时数 (默认读取配置文件或代码默认值)")
     parser.add_argument("--max-nodes-per-sub", type=int, default=None,
-                        help="单订阅源节点数量上限 (默认读取配置文件或代码默认值)，超过此上限的聚合源将被丢弃以防垃圾节点干扰")
+                        help="单订阅源节点数量上限 (默认读取配置文件或代码默认值 300)，超过此上限的聚合源将被丢弃以防垃圾节点干扰")
     parser.add_argument("--timeout", type=int, default=None, help="HTTP 超时秒数 (默认使用配置文件中的值)")
     parser.add_argument("--proxy", default=None, help="本地 HTTP/SOCKS 代理地址 (如 http://127.0.0.1:3067)")
     parser.add_argument("--dry-run-targets", action="store_true",

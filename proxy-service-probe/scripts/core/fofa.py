@@ -24,13 +24,16 @@ import yaml
 try:
     from core.egress_geo import FOCUS_REGIONS, classify_candidate_focus, summarize_candidate_focus
     from core.parsers import load_proxies
+    from core.sub_filter import check_subscription_non_long_term, filter_subscription_batch
 except ImportError:
     try:
         from .egress_geo import FOCUS_REGIONS, classify_candidate_focus, summarize_candidate_focus
         from .parsers import load_proxies
+        from .sub_filter import check_subscription_non_long_term, filter_subscription_batch
     except ImportError:
         from scripts.core.egress_geo import FOCUS_REGIONS, classify_candidate_focus, summarize_candidate_focus
         from scripts.core.parsers import load_proxies
+        from scripts.core.sub_filter import check_subscription_non_long_term, filter_subscription_batch
 
 urllib3.disable_warnings()
 
@@ -885,18 +888,26 @@ def fetch_subscription_nodes(targets: List[str], config: Optional[Dict[str, Any]
     crawl_list = targets[:max_targets] if max_targets else targets
 
     def _fetch_single(target: str) -> List[Dict[str, Any]]:
+        url_reason = check_subscription_non_long_term(url=target)
+        if url_reason:
+            print(f"      [跳过试用/短期源] 目标 {target} ({url_reason})，整源淘汰")
+            return []
         r = _make_request(target, headers=client_headers, proxy_url=proxy, timeout=timeout)
         if not r or r.status_code != 200 or len(r.text) < 20:
             return []
+        sub_reason = check_subscription_non_long_term(
+            url=target, headers=getattr(r, "headers", None), raw_text=r.text
+        )
+        if sub_reason:
+            print(f"      [跳过试用/短期源] 目标 {target} ({sub_reason})，整源淘汰")
+            return []
         try:
-            nodes = load_proxies(r.text)
-            if nodes:
-                if limit > 0 and len(nodes) > limit:
-                    print(f"      [跳过超量源] 目标 {target} 节点数 ({len(nodes)}) 超过上限 ({limit})，丢弃以防低质公开聚合源干扰")
-                    return []
-                for n in nodes:
+            nodes = load_proxies(r.text, filter_short_term=False)
+            kept = filter_subscription_batch(nodes, f"目标 {target}", limit=limit)
+            if kept:
+                for n in kept:
                     n.setdefault("_source_target", target)
-                return nodes
+                return kept
         except Exception:
             pass
         return []

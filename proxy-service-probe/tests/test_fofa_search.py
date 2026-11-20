@@ -332,12 +332,12 @@ proxies:
         # 测试 load_proxies("quake:recommended")
         nodes_q = load_proxies("quake:recommended")
         self.assertEqual(len(nodes_q), 1)
-        mock_search_and_fetch.assert_called_with(query_or_preset="recommended", engine="quake")
+        mock_search_and_fetch.assert_called_with(query_or_preset="recommended", engine="quake", max_nodes_per_sub=None)
 
         # 测试 load_proxies("spatial:billing")
         nodes_s = load_proxies("spatial:billing")
         self.assertEqual(len(nodes_s), 1)
-        mock_search_and_fetch.assert_called_with(query_or_preset="billing", engine="all")
+        mock_search_and_fetch.assert_called_with(query_or_preset="billing", engine="all", max_nodes_per_sub=None)
 
     def test_inspect_jwt_token(self):
         # 1. 空或非字符串

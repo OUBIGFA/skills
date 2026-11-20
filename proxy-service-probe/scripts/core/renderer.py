@@ -150,7 +150,7 @@ def _is_landing(p):
         return False
     if p.get("path") == "front":
         return True
-    if "_Lnd" in name:
+    if re.search(r'(?i)_lnd(?=_|\[|$)', name):
         return True
     # 规则升级：有 USAI / GOAI / GUI 后缀但不是落地节点而是直连节点的不作为落地，不注入 dialer-proxy，也不沉底
     if "_USAI" in name or "_GOAI" in name or "_GUI" in name:
@@ -350,7 +350,7 @@ def sort_nodes_by_region_and_landing(items, resort=False):
                 if proxy.get('path') == 'front':
                     return True
             name = _get_name(item)
-            if '_Lnd' in name:
+            if re.search(r'(?i)_lnd(?=_|\[|$)', name):
                 return True
             if '_USAI' in name or '_GOAI' in name or '_GUI' in name:
                 if item.get('path') == 'direct' or item.get('is_landing') is False or item.get('_is_landing') is False:
@@ -363,7 +363,7 @@ def sort_nodes_by_region_and_landing(items, resort=False):
             if isinstance(proxy, dict) and (proxy.get('dialer-proxy') or proxy.get('detour')):
                 return True
         name = _get_name(item)
-        if '_Lnd' in name:
+        if re.search(r'(?i)_lnd(?=_|\[|$)', name):
             return True
         return False
 
@@ -634,6 +634,25 @@ def sort_nodes_by_region_and_landing(items, resort=False):
                         new_name = new_name.replace("_USAI", "_Lnd" if _is_lnd(item) else "")
                     new_name = new_name.replace("_GOAI", "_Lnd" if _is_lnd(item) else "").replace("_GUI", "_Lnd" if _is_lnd(item) else "")
                     new_name = re.sub(r'_+', '_', new_name).strip('_')
+
+            # 无论何种测试，直连节点均移除 _Lnd/_lnd 后缀，落地节点则确保带有落地后缀
+            is_lnd_final = _is_lnd(item)
+            if not is_lnd_final:
+                new_name = re.sub(r'(?i)_lnd(?=_|\[|$)', '', new_name)
+                new_name = re.sub(r'_+', '_', new_name).strip('_')
+                if isinstance(item, dict):
+                    item.pop("dialer-proxy", None)
+                    item.pop("detour", None)
+                    if isinstance(item.get("proxy"), dict):
+                        item["proxy"].pop("dialer-proxy", None)
+                        item["proxy"].pop("detour", None)
+            elif not re.search(r'(?i)(?:_lnd|_usai|_goai|_gui)(?=_|\[|$)', new_name):
+                m_tail = re.search(r'((?:_(?:NF|D\+|ChromeGo|⚠️[A-Z0-9]+)|\[⚡WARP\])+.*)$', new_name)
+                if m_tail:
+                    pos = m_tail.start(1)
+                    new_name = new_name[:pos] + "_Lnd" + new_name[pos:]
+                else:
+                    new_name = f"{new_name}_Lnd"
 
             if isinstance(item, dict):
                 if inconsistent_flag:

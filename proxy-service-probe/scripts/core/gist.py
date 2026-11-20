@@ -24,6 +24,7 @@ urllib3.disable_warnings()
 
 from core.fofa import deduplicate_and_sort_proxies
 from core.parsers import load_proxies
+from core.sub_filter import check_subscription_non_long_term, filter_subscription_batch
 
 # Gist 搜索预设语法库
 PRESET_GIST_QUERIES = {
@@ -518,12 +519,27 @@ def fetch_gist_nodes(targets: List[Dict[str, Any]], config: Optional[Dict[str, A
     def _process_single_raw_file(file_item: Dict[str, str]) -> List[Dict[str, Any]]:
         raw_url = file_item["raw_url"]
         fname = file_item["filename"].lower()
+        source_label = f"gist:{file_item['username']}/{file_item['gist_id'][:8]}/{file_item['filename']}"
+
+        pre_reason = check_subscription_non_long_term(url=raw_url, filename=file_item["filename"])
+        if pre_reason:
+            print(f"      [跳过试用/短期源] Gist {source_label} ({pre_reason})，整源淘汰")
+            return []
+
         resp = _make_http_request(raw_url, headers=client_headers, proxy_url=proxy, timeout=timeout)
         if not resp or resp.status_code != 200 or len(resp.text) < 10:
             return []
 
         text = resp.text
-        source_label = f"gist:{file_item['username']}/{file_item['gist_id'][:8]}/{file_item['filename']}"
+        resp_reason = check_subscription_non_long_term(
+            url=raw_url,
+            filename=file_item["filename"],
+            headers=getattr(resp, "headers", None),
+            raw_text=text,
+        )
+        if resp_reason:
+            print(f"      [跳过试用/短期源] Gist {source_label} ({resp_reason})，整源淘汰")
+            return []
 
         # 检查是否为订阅直链列表 (如 subscribes.txt)
         nested_subs = extract_nested_subscription_urls(text)
@@ -531,33 +547,41 @@ def fetch_gist_nodes(targets: List[Dict[str, Any]], config: Optional[Dict[str, A
             nested_nodes: List[Dict[str, Any]] = []
             # 限制单 Gist 最多拉取前 5 条直链，防止嵌套雪崩
             for sub_url in nested_subs[:5]:
+                sub_url_reason = check_subscription_non_long_term(url=sub_url)
+                if sub_url_reason:
+                    print(f"      [跳过试用/短期嵌套源] {sub_url} ({sub_url_reason})，整源淘汰")
+                    continue
                 try:
                     s_resp = _make_http_request(sub_url, headers=client_headers, proxy_url=proxy, timeout=timeout)
                     if s_resp and s_resp.status_code == 200 and len(s_resp.text) > 20:
-                        parsed = load_proxies(s_resp.text)
-                        if parsed:
-                            if limit > 0 and len(parsed) > limit:
-                                print(f"      [跳过超量嵌套源] {sub_url} 节点数 ({len(parsed)}) 超过上限 ({limit})，丢弃以防垃圾源干扰")
-                                continue
-                            for n in parsed:
+                        s_reason = check_subscription_non_long_term(
+                            url=sub_url,
+                            headers=getattr(s_resp, "headers", None),
+                            raw_text=s_resp.text,
+                        )
+                        if s_reason:
+                            print(f"      [跳过试用/短期嵌套源] {sub_url} ({s_reason})，整源淘汰")
+                            continue
+                        parsed = load_proxies(s_resp.text, filter_short_term=False)
+                        kept = filter_subscription_batch(parsed, f"嵌套源 {sub_url}", limit=limit)
+                        if kept:
+                            for n in kept:
                                 n.setdefault("_source_target", sub_url)
                                 n.setdefault("_source_gist", source_label)
-                            nested_nodes.extend(parsed)
+                            nested_nodes.extend(kept)
                 except Exception:
                     pass
             return nested_nodes
 
         # 正常节点解析 (Clash YAML / sing-box JSON / Base64)
         try:
-            nodes = load_proxies(text)
-            if nodes:
-                if limit > 0 and len(nodes) > limit:
-                    print(f"      [跳过超量源] Gist {source_label} 节点数 ({len(nodes)}) 超过上限 ({limit})，丢弃以防低质公开聚合源干扰")
-                    return []
-                for n in nodes:
+            nodes = load_proxies(text, filter_short_term=False)
+            kept = filter_subscription_batch(nodes, f"Gist {source_label}", limit=limit)
+            if kept:
+                for n in kept:
                     n.setdefault("_source_target", raw_url)
                     n.setdefault("_source_gist", source_label)
-                return nodes
+                return kept
         except Exception:
             pass
 

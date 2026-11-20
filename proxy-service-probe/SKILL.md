@@ -19,7 +19,7 @@ description: 对代理节点执行服务能力测试（IP属地检测、AI解锁
 > 1. **全量服务检测**：默认执行 IP 属地、AI 全平台、Playwright YouTube 免登实播、多站免盾、流媒体与防断流快检。不得擅自用轻量模式；`--no-browser` 仅在用户指定或系统无浏览器时降级使用。
 > 2. **测速需主动触发**：默认只做防断流快检（低于代码淘汰线则淘汰），不授 Key/Free/Fast。用户明确要求“测速 / 测试节点速度 / 测速筛选”或传 `--speed-test` 时，才跑完整持续下载测速与 Key 遴选。本地与 Actions 同一套代码与判据，`--profile auto` 自动选资源参数，两处各自独立完整运行，不做云端粗筛 + 本地精测。
 > 3. **编号稳定**：默认保留原节点编号（属地未变不改号），新节点按国家补空号。仅当用户明确要求重排序/重编号时传 `--resort`，且先定位置再从 1 编号。
-> 4. **订阅搜索需主动触发**：FoFa / 360 Quake / GitHub Gist 搜索只在用户明确要求“搜索订阅”，或显式调用 `fofa_search.py` / `gist_search.py`、传入 `--input fofa:|quake:|spatial:|gist:...` 时启动；默认流水线绝不主动扫描或检索。默认预设 `residential`（家宽、双 ISP、高纯净度），超过单订阅源节点上限自动丢弃（阈值以代码与配置为准）。配置分别在 [fofa_config.json](fofa_config.json)（本地私密，模板见 [fofa_config.example.json](fofa_config.example.json)）与 [gist_config.json](gist_config.json)。
+> 4. **订阅搜索需主动触发**：FoFa / 360 Quake / GitHub Gist 搜索只在用户明确要求“搜索订阅”，或显式调用 `fofa_search.py` / `gist_search.py`、传入 `--input fofa:|quake:|spatial:|gist:...` 时启动；默认流水线绝不主动扫描或检索。默认预设 `residential`（家宽、双 ISP、高纯净度），**单订阅源节点上限默认为 `300`（超过 300 节点的聚合源自动丢弃；同时自动淘汰含试用/体验/临时/限时/短期/已过期等不可长期使用的订阅源与单个节点；严禁擅自传 `--max-nodes-per-sub 200` 降级，仅在用户本轮明确要求其它数值时才传参覆盖）**。配置分别在 [fofa_config.json](fofa_config.json)（本地私密，模板见 [fofa_config.example.json](fofa_config.example.json)）与 [gist_config.json](gist_config.json)。
 > 5. **合流并入**：`--merge-into` 默认保留底库原节点与原编号，新节点按国家补空号并按地区聚拢；仅当用户要求中间插入（`--insert` 或 `--resort`）时，才完整重排并从 1 连续编号。
 > 6. **默认重点地区（长期生效，无需用户重复提醒）**：搜索抓取、候选排序、`Key` 优选与结果汇总自动把 **高质量的美国节点（`US`：AI 全通 `❇️`/`_USAI`、家宽/双 ISP `🏠`/`_ISP`、高纯净 `♥️`、综合全通 `✨️`、流媒体全解）** 与 **高速直连的香港、台湾、日本、新加坡节点（`HK / TW / JP / SG`：直连、低延迟、低丢包、高稳态 `Key`/`Fast`，并作为 `Key` 前置跳板首选）** 作为重点目标。严守以实测为准，不凭原名直接授标。
 
@@ -51,6 +51,7 @@ description: 对代理节点执行服务能力测试（IP属地检测、AI解锁
 - 命名结构：`[国旗] [✨️] [🏠 / ♥️] [❇️] [Key / Free / Fast] [国家][_城市]_[编号][_IPLC 或 _ISP][落地][流媒体][来源][污染标记]`。
 - 前缀顺序 ✨️ > 🏠 > ❇️ > Key > Fast；🏠 与 ♥️ 互斥，且 🏠 真家宽节点专作高纯净出口、不参与 `[Key]` 前置跳板评选；Key/Free 与 Fast 互斥且只在主动测速达标时授予；`[⚡WARP]` 节点剥夺 `🏠`/`♥️`/`✨️` 但保留 AI 解锁标记（`❇️`/`_USAI`/`_GOAI`）。
 - 链式落地（`_Lnd` 或实测需前置的 `_USAI` / `_GOAI`）沉底并注入 `dialer-proxy: "🛡️ Front前置"`（sing-box 为 `detour`）；直连 USAI/GOAI 与 🏠/`_ISP` 家宽不沉底。
+- **实测为准、实时更新**：每次测试后（无论全量测试、只测活或单项测试），均以本次最新实测结果为准更新对应前缀或后缀（如直连测通一律移除 `_Lnd`/`_lnd` 后缀与 `dialer-proxy`，经前置测通则标为落地并补上 `_Lnd` 与 `dialer-proxy`），绝不保留与最新实测相冲突的旧标记。
 - 落地节点不得进入 `🛡️ Front前置` 或 `⚡ Fast自动选择`；无 Key 时使用已验证的备用前置，再回落直连节点或 `DIRECT`。
 - 导出只替换母版的 `proxies` / `proxy-groups`，其余注释与空行逐字保留；测试前先校验母版。`probe_services.py` 导出 `.yaml`，`probe_singbox.py` 与 `convert_dual.py` 同时导出 `.json` 与 `.yaml`。
 

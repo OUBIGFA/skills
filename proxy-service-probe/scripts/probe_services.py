@@ -49,7 +49,7 @@ def main(argv=None):
 
     print("[1/4] 加载并解析输入节点...")
     input_source = args.input[0] if (isinstance(args.input, list) and len(args.input) == 1) else args.input
-    proxies = load_proxies(input_source)
+    proxies = load_proxies(input_source, max_nodes_per_sub=getattr(args, "max_nodes_per_sub", None))
     if not proxies:
         print("错误: 未从输入源解析到有效代理节点。")
         sys.exit(1)

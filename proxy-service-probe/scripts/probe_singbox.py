@@ -19,6 +19,7 @@ from contextlib import ExitStack
 
 from core.mihomo_runner import detect_physical_interface, direct_listener, find_mihomo_bin
 from core.parsers import parse_singbox_outbound
+from core.sub_filter import get_node_non_long_term_reason
 from core.probe_flow import add_flow_arguments, dry_run, prepare_run, run_probe
 from core.renderer import export_clash_yaml
 from core.singbox_runner import SingboxKernel, clean_node_for_singbox, export_singbox_json, find_singbox_bin
@@ -66,6 +67,10 @@ def load_singbox_nodes(path):
                             else "无法转换为 Clash 节点"))
             continue
         proxy["_orig_name"] = proxy["name"]
+        short_reason = get_node_non_long_term_reason(proxy)
+        if short_reason:
+            skipped.append((outbound.get("tag"), f"不可长期使用节点 ({short_reason})"))
+            continue
         proxy["_singbox_outbound"] = node
         proxies.append(proxy)
     return config, proxies, skipped

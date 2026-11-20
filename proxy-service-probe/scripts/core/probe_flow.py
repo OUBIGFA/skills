@@ -64,13 +64,16 @@ def add_flow_arguments(parser):
     parser.add_argument("--workers", type=int, default=4, help="服务检测线同时检测的节点数 (默认: 4)")
     parser.add_argument("--dry-run", action="store_true", help="干跑测试: 仅解析节点与模版，不发起真实网络连接")
     parser.add_argument("--start-index", type=int, default=0, help="从指定节点序号 (0-based) 开始测试")
-    parser.add_argument("--checkpoint", help="断点续测状态 JSON 文件路径 (逐节点保存已完成结果，续测时跳过)")
+    parser.add_argument("--checkpoint", help="断点续测状态 JSON 文件路径 (默认自动开启并保存至 _temp/checkpoints/)")
+    parser.add_argument("--no-checkpoint", action="store_true", help="禁用默认断点保护 (不读取也不保存断点状态)")
     parser.add_argument("--resort", action="store_true",
                         help="仅在用户主动要求重排序时使用: 同地区按标签与信誉重排并从 1 重新编号 (默认保留原节点编号)")
     parser.add_argument("--merge-into", default=None,
                         help="合流目标配置路径 (Clash YAML / sing-box JSON): 测试完成后直接并入目标订阅底库")
     parser.add_argument("--insert", dest="insert_mode", action="store_true",
                         help="合流时的中间插入模式: 打破原有编号完全重排序并从 1 重新编号 (默认优先保留目标底库原节点及原有编号)")
+    parser.add_argument("--max-nodes-per-sub", type=int, default=None,
+                        help="单订阅源节点数量上限 (默认: 300，超过此上限的远程订阅/聚合源将被自动丢弃)")
     parser.add_argument("--loss-samples", type=int, default=10,
                         help="测活与丢包率测试的采样包数 (默认: 10)")
     parser.add_argument("--max-loss-rate", type=float, default=50.0,
@@ -372,6 +375,19 @@ class Checkpoint:
                 print(f"      [警告] 写入检查点失败: {e}")
 
 
+def default_checkpoint_path(args, kernel_label):
+    """默认开启断点保护：未显式禁用或指定路径时，按输出目标生成稳定的 _temp 检查点路径。"""
+    if getattr(args, "no_checkpoint", False):
+        return None
+    if getattr(args, "checkpoint", None):
+        return args.checkpoint
+    target = getattr(args, "output", None) or getattr(args, "merge_into", None) or "default"
+    key = os.path.abspath(target) if target != "default" else "default"
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+    scripts_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(scripts_dir, "_temp", "checkpoints", f"ckpt_{kernel_label}_{digest}.json")
+
+
 class ProbeRun:
     """一次完整运行的状态与各阶段编排。"""
 
@@ -386,7 +402,7 @@ class ProbeRun:
         self.t0 = time.monotonic()
         self._print_lock = threading.Lock()
         self.monitor = TrafficMonitor()
-        self.checkpoint = Checkpoint(args.checkpoint, proxies, kernel.label)
+        self.checkpoint = Checkpoint(default_checkpoint_path(args, kernel.label), proxies, kernel.label)
         # 链式前置只用于本地：云端 Runner 在海外，直连不通即视为不可用
         self.chain_enabled = profile_name == "local" and not args.no_landing_probe
         self.loss_samples = getattr(args, "loss_samples", 10)
@@ -621,13 +637,14 @@ class ProbeRun:
     def conclude_direct(self, row, note=""):
         live = row["liveness"]
         loss = live.get("loss_rate", 0.0)
-        # 实测直连通过的节点判定为直连 (is_landing=False)；有 _USAI 后缀但直连的绝不判定为落地
-        is_lnd = bool("_Lnd" in row["proxy"].get("name", ""))
+        # 实测直连通过的节点一律判定为直连 (is_landing=False)，不沿用旧名中的 _Lnd/_lnd
         row.update(alive=True, liveness_done=True, path="direct", delay=live.get("latency_ms"),
-                   loss_rate=loss, is_landing=is_lnd)
+                   loss_rate=loss, is_landing=False)
         if "proxy" in row and isinstance(row["proxy"], dict):
-            row["proxy"]["_is_landing"] = is_lnd
+            row["proxy"]["_is_landing"] = False
             row["proxy"]["path"] = "direct"
+            row["proxy"].pop("dialer-proxy", None)
+            row["proxy"].pop("detour", None)
         loss_text = f" (丢包: {loss:.0f}%"
         if live.get("jitter_ms") is not None:
             loss_text += f", 抖动: {live['jitter_ms']:.0f}ms"
@@ -725,6 +742,9 @@ class ProbeRun:
         row.update(alive=True, liveness_done=True, path="front", is_landing=True, front_idx=best,
                    front_node=self.front_label(best), delay=best_live.get("latency_ms"),
                    loss_rate=loss)
+        if "proxy" in row and isinstance(row["proxy"], dict):
+            row["proxy"]["_is_landing"] = True
+            row["proxy"]["path"] = "front"
         loss_text = f" (丢包: {loss:.0f}%)" if loss is not None else ""
         self.log(f"[测活✓] {self.node_label(row)}: 直连不通，经前置 {row['front_node']} 测通 {row['delay']:.0f}ms{loss_text} (落地)")
         self.sched.add(SERVICE, self.service_job(row))

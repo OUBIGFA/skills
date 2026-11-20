@@ -84,7 +84,7 @@ def parse_args(argv=None):
     parser.add_argument("--page-size", "--size", type=int, default=80, help="单页结果条数 (默认: 80)")
     parser.add_argument("--max-targets", type=int, default=None, help="最多抓取的订阅源数量 (默认全量抓取)")
     parser.add_argument("--max-nodes-per-sub", type=int, default=None,
-                        help="单订阅源节点数量上限 (默认读取配置文件或代码默认值)，超过此上限的聚合源将被丢弃以防垃圾节点干扰")
+                        help="单订阅源节点数量上限 (默认读取配置文件或代码默认值 300)，超过此上限的聚合源将被丢弃以防垃圾节点干扰")
     parser.add_argument("--timeout", type=int, default=None, help="HTTP 超时秒数 (默认使用配置文件中的值)")
     parser.add_argument("--proxy", default=None, help="本地 HTTP/SOCKS 代理地址 (如 http://127.0.0.1:3067)")
     parser.add_argument("--dry-run-targets", action="store_true",
@@ -211,7 +211,9 @@ def main(argv=None):
 
         g_query = resolve_gist_query(args.query or args.preset)
         query_str = " + ".join(str(q) for q in g_query) if isinstance(g_query, list) else str(g_query)
+        effective_max_nodes = args.max_nodes_per_sub if args.max_nodes_per_sub is not None else gist_cfg.get("max_nodes_per_subscription", 300)
         print(f"[*] 选用 Gist 搜索预设/语法: {args.preset} -> {query_str}")
+        print(f"[*] 单源节点熔断上限: {effective_max_nodes} 个节点")
         if gist_cfg.get("proxy"):
             print(f"[*] 请求代理: {gist_cfg['proxy']}")
 
@@ -245,7 +247,9 @@ def main(argv=None):
         print(f"      抓取完成，共提取到 {len(proxies)} 个独立有效代理节点 (已去重)")
     else:
         actual_query = resolve_query(args.query or args.preset, cfg.get("default_query"))
+        effective_max_nodes = args.max_nodes_per_sub if args.max_nodes_per_sub is not None else cfg.get("max_nodes_per_subscription", 300)
         print(f"[*] 选用搜索预设/语法: {args.preset} -> {actual_query}")
+        print(f"[*] 单源节点熔断上限: {effective_max_nodes} 个节点")
         if cfg.get("proxy"):
             print(f"[*] 请求代理: {cfg['proxy']}")
 
